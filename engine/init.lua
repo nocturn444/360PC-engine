@@ -16,6 +16,7 @@ local engine = {
   modifiers = require(prefix .. "modifiers"),
   rng = require(prefix .. "rng"),
   save = require(prefix .. "save"),
+  ui = require(prefix .. "ui"),
   -- set by init():
   config = nil,
   time = nil,      -- the Timestep
@@ -48,6 +49,7 @@ function engine.init(config)
   engine.states = engine.state.new()
   engine.controls = config.input and engine.input.new(config.input) or nil
   engine.screen = config.pixel and engine.pixel.new(config.pixel) or nil
+  engine.ui.pixel = engine.screen          -- the menus' size, and their mouse coordinates
   for name, st in pairs(config.states or {}) do engine.states:add(name, st) end
   if config.load then config.load(engine) end
   if config.start then engine.states:push(config.start) end

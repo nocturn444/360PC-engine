@@ -9,7 +9,8 @@ modifiers on its speed: one that stays (+25%) and one that the action key gives 
 
 Keys: Enter / A to start, arrows or WASD / left stick or d-pad to move, X / mouse button / X or
 right trigger to toggle the second layer and shake, P / Start to pause, Escape / B to quit while
-paused.
+paused. C / Y opens a pick-1-of-3 screen (`engine.ui`) whose cards add a modifier; arrows, d-pad
+or stick to move between the cards, Enter / A to choose, Escape / B to cancel.
 
 To run it on LÖVE 11.x, put copies (or links) of the repository's `engine/` and `lib/` folders in
 this folder, then `love examples/engine_demo`. The packaging script (objective 9) will do that

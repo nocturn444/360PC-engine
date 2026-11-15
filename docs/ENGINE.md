@@ -46,7 +46,7 @@ A fuller one, with every module: [examples/engine_demo](../examples/engine_demo)
 | `engine.run(config)` | Sets `love.load`, `love.update`, `love.draw`, `love.resize` and the input callbacks. Callbacks the game already defined still run, first. `love.run` is not touched (the console ignores it). |
 | `engine.init(config)`, `engine.update(dt)`, `engine.draw()` | The same three steps, to call from the game's own callbacks instead of `run`. |
 | `engine.time`, `engine.states`, `engine.controls`, `engine.screen` | The Timestep, the state Machine, the Input (if `config.input`) and the Pixel (if `config.pixel`), once `love.load` ran. |
-| `engine.state`, `.timestep`, `.input`, `.camera`, `.pixel`, `.layers`, `.entity`, `.modifiers`, `.rng`, `.anim` | The modules. `engine.anim` loads anim8 on first use. |
+| `engine.state`, `.timestep`, `.input`, `.camera`, `.pixel`, `.layers`, `.entity`, `.modifiers`, `.rng`, `.save`, `.ui`, `.anim` | The modules. `engine.anim` loads anim8 on first use. |
 
 Config: `rate` (Hz, 60), `max_steps` (5), `max_frame` (0.25 s), `input`, `pixel`, `states`
 (`name = table`), `load` (`function(engine)`, runs in `love.load` before the first state is
@@ -550,6 +550,118 @@ file runs the chain up to the current version; the file is rewritten at the next
   the new file is written to `.tmp` and renamed. On the console the runtime keeps two slots
   per file and reads the newest valid one, so `engine.save` writes once and keeps no `.bak`.
 - The checksum catches accidents (a cut write, a bad sector, a careless edit), not cheating.
+
+## engine.ui
+
+Menus made for the controller: a screen holds a tree of widgets, one widget has the focus, the
+directions move it and accept activates it. On PC the keyboard works the same way and the mouse
+too (hovering focuses, a click activates). Everything is drawn with rectangles and text, in game
+pixels, so it needs no images. `local ui = engine.ui`.
+
+**Actions.** A screen reads six actions of the `engine.input` it is given: `ui_up`, `ui_down`,
+`ui_left`, `ui_right`, `ui_accept`, `ui_back`. `ui.actions` has their default bindings (arrows and
+WASD, d-pad and left stick; Enter / Space / A; Escape / Backspace / B). A screen defines the ones
+the Input lacks the first time it sees it, so a game does nothing to get the defaults; to change
+them, declare actions with those names in the input config, call
+`ui.defineActions(input, { ui_accept = { keys = { "z" }, buttons = { "a" } } })`, or point a
+screen at other actions with `actions = { accept = "confirm", back = "cancel" }`.
+
+**Screen.** `screen = ui.screen(opts)`:
+
+| Option | Meaning |
+|---|---|
+| `root` | The widget tree, usually a stack. |
+| `width`, `height` | The game's resolution. Default: `engine.screen`'s (`config.pixel`), else the window's. |
+| `anchor`, `margin` | Where the root goes: `"center"` (default), `"top"`, `"bottomleft"`... or `{ ax, ay }` in 0..1; `margin` pixels from the edges. |
+| `theme` | A table of values that replace the default theme's (below). |
+| `transparent`, `dim` | As a state: the state under it is drawn first; `dim` (default: `transparent`) darkens it. |
+| `focus` | The widget (or id) focused first. Default: the first one that can be. |
+| `on_back(screen)`, `on_focus(screen, widget, previous)` | Callbacks. |
+| `repeat_delay`, `repeat_interval` | A held direction repeats after 0.4 s, every 0.1 s; rounded to whole fixed steps. |
+| `actions`, `mouse = false`, `pixel` | Action names; ignore the mouse; the `engine.pixel` for mouse coordinates (default `engine.screen`). |
+
+A screen has the hooks of a state (`enter`, `resume`, `input(input)`, `update(dt)`, `draw()`), so
+`engine.states:push(screen)` is all it takes; without the state machine, call those three each
+step and frame. Also `screen:focus(widget_or_id)`, `screen.focused`, `screen:get(id)`,
+`screen:navigate("up" | "down" | "left" | "right")`, `screen:accept()`, `screen:back()`,
+`screen:mouse(gx, gy, down)` and `screen:layout()`: call it after adding, removing, showing
+(`widget.visible`) or hiding widgets. Nothing is allocated per step or per frame.
+
+**Focus.** A direction goes, in this order, to: the focused widget itself (a slider's left and
+right, a list along its items); its explicit neighbour, the fields `up`, `down`, `left`, `right`
+(a widget or an id), or `next` (for down and right) and `prev` (for up and left); the nearest
+widget in that direction, looking first among the widgets of its own stack, then of the stack
+around that one, and so on. A stack with `wrap = true` (or `"vertical"` / `"horizontal"`) sends the
+focus round to its other end instead of letting it leave. Widgets with `disabled = true` are
+skipped. The mouse only takes the focus when it moves, so it does not fight the controller.
+
+**Widgets.** Every option is a field of the widget and can be changed later; all take `id`,
+`width`, `height`, `padding`, `disabled`, `visible`.
+
+| Constructor | Options |
+|---|---|
+| `ui.label` | `text`, `align`, `color`, `dim`; with `width` it wraps (printf). `label:setText(s)`. |
+| `ui.button` | `label`, `on_press(button, screen)`. |
+| `ui.toggle` | `label`, `value`, `on_change(toggle, value, screen)`. |
+| `ui.slider` | `label`, `min` (0), `max` (1), `step` (0.1), `value`, `track` (its width), `on_change(slider, value)`. Left and right move it one step; `slider:setValue(v)`. |
+| `ui.list` | `items` (strings, or tables with `label` or `name`; or `format(item, i)`), `orientation` (`"vertical"` / `"horizontal"`), `rows` (how many are shown: the rest scroll), `selected`, `wrap`, `item_width`, `item_height`, `on_change(list, i, item)`, `on_select(list, i, item, screen)` on accept. `list:select(i)`, `list:setItems(items)`. |
+| `ui.vstack`, `ui.hstack`, `ui.stack` | Children (the array part, or `children`) in a column or a row: `padding`, `spacing`, `align` across (`"start"`, `"center"`, `"end"`, `"stretch"`), `justify` along when the stack is given a larger `width` / `height`, `background` (a panel), `wrap`. |
+| `ui.card` | A button showing `choice = { name, description, icon, quad }` (the pick screen's). |
+
+**Theme.** `ui.theme` is plain data: `font` (nil: the current font), `padding`, `spacing`,
+`border`, and colours `{ r, g, b, a }`: `text`, `text_dim`, `text_focus`, `text_disabled`, `panel`,
+`panel_border`, `widget`, `widget_focus`, `focus` (the outline of the focused widget), `accent`,
+`track`, `select`, `dim`. Change it in place for the whole game, or give a screen
+`theme = { focus = { 1, 0, 0, 1 }, font = my_font }`.
+
+A pause menu, as a transparent state over the game:
+
+```lua
+local ui, states = engine.ui, engine.states
+local pause = ui.screen({
+  transparent = true,                                   -- the game stays on screen, dimmed
+  on_back = function() states:pop() end,                -- B / Escape
+  root = ui.vstack({ background = true, wrap = true, align = "stretch", spacing = 4,
+    ui.label({ text = "PAUSED", align = "center" }),
+    ui.button({ label = "Resume", on_press = function() states:pop() end }),
+    ui.toggle({ label = "Music", value = settings.music,
+      on_change = function(_, on) settings.music = on end }),
+    ui.slider({ label = "Volume", value = settings.volume, step = 0.1,
+      on_change = function(_, v) settings.volume = v end }),
+    ui.button({ label = "Quit", on_press = function() love.event.quit() end }),
+  }),
+})
+
+function play:input(input)
+  if input:pressed("pause") then states:push(pause) end
+end
+```
+
+**Pick 1 of N.** `ui.pick(opts)` builds a screen with a title and one card per choice, for an
+upgrade, a reward, a character. The choices are the game's own tables; the screen only reads
+`name`, `description`, `icon` (an Image, with an optional `quad`, or a
+`function(x, y, size, card)` that draws it) and `disabled`. Options: `title`, `hint`, `choices`,
+`on_choose(index, choice, screen)`, `on_cancel(screen)` (leave it out and the choice cannot be
+skipped), `dir` (`"horizontal"` / `"vertical"`), `card_width`, `card_height`, `icon_size`,
+`selected`, and the screen's options. `screen.cards` are the card widgets; `screen:choose(i)` picks
+from code.
+
+```lua
+local function offer_upgrades(three)        -- e.g. three modifier definitions drawn with engine.rng
+  states:push(ui.pick({
+    title = "Choose an upgrade", hint = "A: take   B: skip",
+    choices = three,                        -- { { id = "thorns", name = "Thorns", description = "Attackers take 2 damage" }, ... }
+    transparent = true,
+    on_choose = function(index, choice)
+      player.mods:add(choice.id)
+      states:pop()
+    end,
+    on_cancel = function() states:pop() end,
+  }))
+end
+```
+
+The screen is built when it is pushed, not every frame. `examples/engine_demo` has one (C / Y).
 
 ## engine.anim
 

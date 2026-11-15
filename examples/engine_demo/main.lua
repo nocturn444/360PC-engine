@@ -2,7 +2,8 @@
 -- A menu, a play state and a pause state; a sprite made of layers that moves with actions
 -- (keyboard or controller) through two rooms, with a camera that follows it, slides from room
 -- to room and shakes; all drawn at 320x180 and scaled to the screen. The sprite is an entity
--- with two modifiers on its speed: one that stays and one that lasts two seconds.
+-- with two modifiers on its speed: one that stays and one that lasts two seconds; a
+-- pick-1-of-3 screen (engine.ui) adds more.
 -- Needs engine/ and lib/ next to this file (copies or links of the repository's folders).
 local engine = require("engine")
 
@@ -19,7 +20,15 @@ local mods = engine.modifiers.new()
 mods:defineAll({
   { id = "light_feet", name = "Light feet", stats = { { "speed", "mul_base", 0.25 } } },
   { id = "dash", name = "Dash", stats = { { "speed", "add", 60 } }, stacking = "refresh", duration = 2 },
+  { id = "swift", name = "Swift", stats = { { "speed", "add", 30 } } },
+  { id = "heavy", name = "Heavy", stats = { { "speed", "add", -30 } } },
 })
+local CHOICES = {                    -- for the pick screen: any table with a name and a description
+  { id = "swift", name = "Swift", description = "Speed +30" },
+  { id = "heavy", name = "Heavy", description = "Speed -30" },
+  { id = "dash", name = "Dash", description = "Speed +60 for 2 s" },
+}
+local pick
 local player = world:add({ x = 100, y = 100, px = 100, py = 100, room = 1, facing = 1 }, { "player" })
 world:set(player, "mods", mods:attach(player, { speed = SPEED }))
 player.mods:add("light_feet")
@@ -48,6 +57,7 @@ end
 
 function play:input(input)
   if input:pressed("pause") then engine.states:push("pause") end
+  if input:pressed("pick") then engine.states:push(pick) end
   if input:pressed("action") then
     sprite:setVisible("held", not sprite:get("held").visible)
     camera:shake(3, 0.25)
@@ -124,6 +134,7 @@ engine.run({
       confirm = { keys = { "return", "space" }, buttons = { "a" } },
       back = { keys = { "escape" }, buttons = { "b" } },
       pause = { keys = { "p" }, buttons = { "start" } },
+      pick = { keys = { "c" }, buttons = { "y" } },
       action = { keys = { "x" }, mouse = { 1 }, buttons = { "x" }, axes = { "triggerright+" } },
       left = { keys = { "left", "a" }, buttons = { "dpleft" } },
       right = { keys = { "right", "d" }, buttons = { "dpright" } },
@@ -145,6 +156,14 @@ engine.run({
     sprite = engine.layers.new({ "body", "held", "effect" })
     sprite:set("body", { image = tiles, anim = anims.blink })
     sprite:set("held", { image = tiles, quad = grid(2, 1)[1], ox = 10, oy = 4, tint = { 1, 0.6, 0.2, 1 }, visible = false })
+    pick = engine.ui.pick({
+      title = "Choose one", choices = CHOICES, transparent = true,
+      on_choose = function(_, choice)
+        player.mods:add(choice.id)
+        engine.states:pop()
+      end,
+      on_cancel = function() engine.states:pop() end,
+    })
     print("engine_demo: loaded, " .. engine.screen.mode .. " mode, x" .. engine.screen.scale)
   end,
 })

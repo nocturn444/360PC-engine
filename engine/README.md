@@ -16,6 +16,7 @@ Reference and usage example: [docs/ENGINE.md](../docs/ENGINE.md).
 | `modifiers.lua` | Modifiers as data: stats evaluated in a fixed order, events, stacking, timers, save state. |
 | `rng.lua` | Seeded random numbers, identical on PC and console: xoshiro128**, named streams, save state, seed codes. |
 | `save.lua` | Saves: the run in progress and the permanent progress, versioned files with a checksum, migrations, a serializer and a parser that never runs code. |
+| `ui.lua` | Controller-first menus: focus and spatial navigation, widgets, stacks, themes as data, a pick-1-of-N screen. |
 | `anim.lua` | Animations with anim8 (`lib/anim8`). |
 | `modules/` | Optional, genre-specific modules (objective 7). |
 

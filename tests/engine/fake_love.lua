@@ -62,6 +62,33 @@ function F.install(opts)
   function g.clear(...) rec("clear", ...) end
   function g.rectangle(...) rec("rectangle", ...) end
   function g.print(...) rec("print", ...) end
+  function g.printf(...) rec("printf", ...) end
+  function g.line(...) rec("line", ...) end
+  -- a font with 6x8 characters, wrapping at spaces
+  local font = { kind = "font" }
+  function font:getWidth(s) return 6 * #tostring(s) end
+  function font:getHeight() return 8 end
+  function font:getWrap(s, limit)
+    local lines, widest = {}, 0
+    for para in (tostring(s) .. "\n"):gmatch("(.-)\n") do
+      local line = ""
+      for word in para:gmatch("%S+") do
+        local try = line == "" and word or line .. " " .. word
+        if line ~= "" and 6 * #try > limit then
+          lines[#lines + 1] = line
+          line = word
+        else
+          line = try
+        end
+      end
+      lines[#lines + 1] = line
+    end
+    for _, l in ipairs(lines) do widest = math.max(widest, 6 * #l) end
+    return widest, lines
+  end
+  local current_font = font
+  function g.getFont() return current_font end
+  function g.setFont(f) current_font = f end
   function g.draw(...) rec("draw", ...) end
   local function object(kind, w, h)
     return { kind = kind, w = w, h = h,
