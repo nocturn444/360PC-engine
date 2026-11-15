@@ -694,6 +694,9 @@ Optional, loaded by the game that wants them; nothing above requires one.
   ability tags (keys always before their locks), validation by breadth-first search, minimap
   data, a layout hash that is the same on PC and console, and generation spread over frames.
   Reference: [engine/modules/procgen/README.md](../engine/modules/procgen/README.md).
+- `engine/modules/items`: weighted item pools drawn with the run's `"loot"` stream, filtered by
+  room type and the run's tags, with unique items per run and entries that permanent unlocks add.
+  Reference: [engine/modules/items/README.md](../engine/modules/items/README.md).
 
 ```lua
 local platformer = require("engine.modules.platformer")
