@@ -15,7 +15,7 @@ local function stick(n)
   n = clamp(tonumber(n) or 0, -32768, 32767)
   return n / (n < 0 and 32768 or 32767)
 end
--- Corte radial sin reescalar: Balatro aplica sus propios umbrales (0.1/0.2/0.5).
+-- Corte radial sin reescalar: el juego aplica sus propios umbrales.
 local function pair(x, y, dz)
   x, y = stick(x), -stick(y) -- XInput: arriba positivo; LOVE: abajo positivo.
   if x*x + y*y <= dz*dz then return 0, 0 end
@@ -23,11 +23,9 @@ local function pair(x, y, dz)
 end
 function M.new(love, native, cfg)
   cfg = cfg or {}
-  local mode = cfg.mode or 'manual'
-  assert(mode == 'manual' or mode == 'bot', 'invalid input mode')
   local dz = cfg.deadzone or 0.2
   assert(type(dz) == 'number' and dz >= 0 and dz < 1, 'deadzone out of range')
-  assert(type(native.pad) == 'function', 'missing l360.pad; rebuild the ELF')
+  assert(type(native.pad) == 'function', 'missing l360.pad')
   local joy = {connected=false, buttons={}, axes={}}
   local blocked, blocked_axes, previous = {}, {}, {}
   local rumble_until, vibration_left, vibration_right = nil, 0, 0
@@ -68,7 +66,6 @@ function M.new(love, native, cfg)
     getJoystickCount=function() return joy.connected and 1 or 0 end,
     loadGamepadMappings=function() return 0 end, -- mapeo fijo, no SDL en libXenon
   }
-  function api:isBot() return mode == 'bot' end
   function api:update()
     local pad = native.pad(0)
     if not pad then
@@ -103,24 +100,19 @@ function M.new(love, native, cfg)
       for _, name in ipairs(axes) do blocked_axes[name] = values[name] ~= 0 end
       emit('joystickadded')
     end
-    local current, pressed = {}, false
+    local current = {}
     for _, b in ipairs(buttons) do
       local held = down(pad[b[2]])
       if not held then blocked[b[1]] = nil end
       current[b[1]] = held and not blocked[b[1]] or false
-      if current[b[1]] and not previous[b[1]] then pressed = true end
-    end
-    if pressed and mode == 'bot' then
-      mode = 'manual'
-      if native.log then native.log('[input] controller active: bot paused') end
     end
     local oldbuttons, oldaxes = joy.buttons, joy.axes
     joy.buttons, joy.axes = {}, {}
     for _, name in ipairs(axes) do
       if values[name] == 0 then blocked_axes[name] = nil end
-      joy.axes[name] = mode == 'manual' and not blocked_axes[name] and values[name] or 0
+      joy.axes[name] = not blocked_axes[name] and values[name] or 0
     end
-    if mode == 'manual' then joy.buttons = current end
+    joy.buttons = current
     -- Snapshot completo visible a todos los callbacks; releases antes de presses.
     for _, b in ipairs(buttons) do
       if oldbuttons[b[1]] and not joy.buttons[b[1]] then emit('gamepadreleased', b[1]) end

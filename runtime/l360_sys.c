@@ -1,5 +1,5 @@
 /*
- * Love360 sobre xsdk: mando, archivos, guardado y salida (tarea 05 fase 4, tarea 08).
+ * 360PC-Engine console runtime (from Love360): mando, archivos, guardado y salida (tarea 05 fase 4, tarea 08).
  *
  * Todo lo de la fase 4 vive aca para no chocar con la fase 2 (graficos), que trabaja en main.c:
  *   - l360.pad / l360.rumble sobre XamInputGetState / XamInputSetState, con la misma tabla y los
@@ -10,14 +10,14 @@
  *   - Salida: Back mantenido 3 s llama a quit_to_aurora; un toque de Back sigue siendo de Balatro.
  *     (Back + Start no: es el atajo de captura de pantalla de la consola y el juego no lo recibe.)
  *   - l360.fetch_start / fetch_step: los trozos de musica. Aca no hay red: el archivo se lee
- *     entero de game:\balatro\ en un hilo aparte y fetch_step lo devuelve cuando termino.
+ *     entero de game:\ en un hilo aparte y fetch_step lo devuelve cuando termino.
  *   - l360.save_dir / save_read / save_write: game:\save\ (archivos comunes), como pide la tarea.
  *   - l360.upload: escribe game:\<nombre> (en libXenon subia por TFTP). upload_log no hace falta:
  *     xsdk escribe el registro linea por linea con NtWriteFile, sin buffer que vaciar.
  *
  * El signo del eje Y: XAM entrega los sticks como el reporte HID de la 360, que es lo mismo que
  * entrega libXenon (libxenon/drivers/usb/usbctrl.c copia los mismos dos bytes con signo: arriba
- * positivo). Por eso se pasan tal cual; el que cambia el signo para LOVE es love360_input.lua
+ * positivo). Por eso se pasan tal cual; el que cambia el signo para LOVE es input.lua
  * (linea 20: "XInput: arriba positivo; LOVE: abajo positivo"), que no se toca.
  */
 #include <dirent.h>
@@ -38,20 +38,18 @@
 #include "lua.h"
 
 #include "l360_audio.h"
-#include "l360_importar.h"
 #include "l360_sys.h"
 
-/* Carpeta del juego (los .lua y resources\ de Balatro) y carpeta de guardado, las dos en game:
- * (la carpeta del .xex). No se usa game:\guardado\: en el pendrive del dueno es la carpeta de la
- * epoca de libXenon y tiene su partida real. */
-#define GAME_DIR "game:/balatro/"
-#define SAVE_DIR "game:/save/"
-#define SAVE_DIR_NO_SLASH "game:/save"
+/* Game folder: the folder of the .xex (main.c uses the same). The save folder is a subfolder of
+ * it, named by the game's game.lua through l360.save_set_dir ("save" until then). */
+#define GAME_DIR "game:/"
+#define SAVE_DIR_DEFAULT "save"
 
 enum {
 	PORTS = 4,               /* mandos 0 a 3 de XAM */
 	EXIT_HOLD_MS = 3000,     /* Back mantenido, para salir */
 	NAME_MAX_CHARS = 80,     /* igual que libXenon: l360.save_read/save_write */
+	SAVE_DIR_NAME_MAX = 32,  /* the save folder's name (l360.save_set_dir) */
 };
 
 /* Segundos de reloj monotono (para no depender de l360.time, que lo lleva main.c). */
@@ -293,7 +291,7 @@ static char *read_whole(const char *path, size_t *len)
 	return buf;
 }
 
-/* ---------- lista de lo que hay en game:\balatro\ (tarea 12, tirones) ----------
+/* ---------- lista de lo que hay en game:\ (tarea 12, tirones) ----------
  * En la consola, abrir un archivo que no esta en el pendrive tardo hasta 872 ms
  * ("no esta resources/sounds/ambientFire3.idx", justo antes de un tiron de 939 ms): el boot busca el
  * .idx de cada sonido la primera vez que suena, y casi ninguno tiene. Cada carpeta se lista una sola
@@ -305,7 +303,7 @@ static char *read_whole(const char *path, size_t *len)
 enum { LIST_DIRS = 48, LIST_DIR_CHARS = 160 };
 
 typedef struct {
-	char dir[LIST_DIR_CHARS];   /* en minusculas, sin barra al final; "" = game:\balatro\ */
+	char dir[LIST_DIR_CHARS];   /* en minusculas, sin barra al final; "" = game:\ */
 	char **names;               /* en minusculas y ordenados; NULL si no se pudo listar */
 	int count;
 } dirlist_t;
@@ -332,7 +330,7 @@ static int cmp_names(const void *a, const void *b)
 
 static double now_ms_sys(void) { return now_s() * 1000.0; }
 
-/* Lista game:\balatro\<dir> (dir ya en minusculas) y la deja en lists[]; NULL si no hay lugar. */
+/* Lista game:\<dir> (dir ya en minusculas) y la deja en lists[]; NULL si no hay lugar. */
 static dirlist_t *list_add(const char *dir)
 {
 	if (list_count >= LIST_DIRS)
@@ -340,7 +338,7 @@ static dirlist_t *list_add(const char *dir)
 	const int slot = list_count++;
 	snprintf(lists[slot].dir, sizeof(lists[slot].dir), "%s", dir);
 	char path[LIST_DIR_CHARS + 32];
-	snprintf(path, sizeof(path), dir[0] ? GAME_DIR "%s" : "game:/balatro", dir);
+	snprintf(path, sizeof(path), dir[0] ? GAME_DIR "%s" : GAME_DIR, dir);
 	const double t0 = now_ms_sys();
 	char line[300];
 	DIR *d = opendir(path);
@@ -467,7 +465,7 @@ static struct {
 	int active;
 	int id;                 /* id que vale ahora; 0 = no hay ninguna descarga en curso */
 	char name[200];         /* la ruta pedida, para el registro */
-	char path[460];         /* game:\balatro\<ruta>, para el hilo */
+	char path[460];         /* game:\<ruta>, para el hilo */
 	char error[260];        /* el motivo, si no se pudo leer */
 	char *data;
 	size_t len;
@@ -626,18 +624,66 @@ void l360_sys_readstats(int *files, double *bytes, double *ms)
 /* ---------- guardado (game:\save\, archivos comunes) ---------- */
 
 /* Carpeta de guardado: game:\save\. Se crea la primera vez que se usa, si no esta (game: es la
- * carpeta del .xex). Lo que antes caia a "game:\balatro\l360save_*" por no haber guard_dir ahora
- * queda ordenado en su carpeta; love360_save.lua no cambia (ya hace las dos ranuras). */
+ * carpeta del .xex). Lo que antes caia a "game:\l360save_*" por no haber guard_dir ahora
+ * queda ordenado en su carpeta; save.lua no cambia (ya hace las dos ranuras). */
+static char save_dir_path[48] = GAME_DIR SAVE_DIR_DEFAULT "/";   /* ends in '/' */
+static int save_dir_used;                /* 1 once the folder was used: its name can no longer change */
+
 static const char *save_dir(void)
 {
-	static int made;
-	if (!made) {
+	if (!save_dir_used) {
+		char bare[sizeof(save_dir_path)];
+		snprintf(bare, sizeof(bare), "%s", save_dir_path);
+		bare[strlen(bare) - 1] = 0;          /* without the final '/' */
 		struct stat st;
-		if (stat(SAVE_DIR_NO_SLASH, &st) != 0)
-			mkdir(SAVE_DIR_NO_SLASH, 0777);   /* la primera vez; si falla, save_write devuelve false */
-		made = 1;
+		if (stat(bare, &st) != 0)
+			mkdir(bare, 0777);   /* la primera vez; si falla, save_write devuelve false */
+		save_dir_used = 1;
 	}
-	return SAVE_DIR;
+	return save_dir_path;
+}
+
+/* 1 if name can be the save folder: flat (letters, digits, _ and -), 1 to SAVE_DIR_NAME_MAX
+ * characters, and not a folder the runtime uses for something else. */
+static int save_dir_name_ok(const char *name)
+{
+	const size_t len = strlen(name);
+	if (len < 1 || len > SAVE_DIR_NAME_MAX)
+		return 0;
+	for (const char *p = name; *p; p++)
+		if (!((*p >= 'a' && *p <= 'z') || (*p >= 'A' && *p <= 'Z') || (*p >= '0' && *p <= '9')
+		      || *p == '_' || *p == '-'))
+			return 0;
+	char low[SAVE_DIR_NAME_MAX + 1];
+	lower_copy(low, sizeof(low), name, len);
+	return strcmp(low, "l360") != 0 && strcmp(low, "shaders") != 0;
+}
+
+/* save_set_dir(name): the save folder becomes game:\<name>\ (game.lua's save_dir; boot.lua calls
+ * it before anything is saved). true if it was taken; false for a bad name or when the folder was
+ * already used under another name. */
+static int l_save_set_dir(lua_State *L)
+{
+	const char *name = luaL_checkstring(L, 1);
+	char want[sizeof(save_dir_path)];
+	int ok = save_dir_name_ok(name);
+	if (ok) {
+		snprintf(want, sizeof(want), GAME_DIR "%.32s/", name);
+		if (strcmp(want, save_dir_path) != 0) {
+			if (save_dir_used)
+				ok = 0;
+			else
+				memcpy(save_dir_path, want, sizeof(save_dir_path));
+		}
+	}
+	if (!ok) {
+		char line[200];
+		snprintf(line, sizeof(line), "  [ERROR] [save] save folder \"%.80s\" not accepted: keeping %s", name,
+			 save_dir_path);
+		l360_log(line);
+	}
+	lua_pushboolean(L, ok);
+	return 1;
 }
 
 /* Nombre plano (letras, numeros, _ . -) de hasta 80 caracteres -> ruta completa; -1 si no sirve. */
@@ -665,7 +711,7 @@ static int l_save_dir(lua_State *L)
  * (SAVE_HW_THREAD, lejos del hilo 0 que corre Lua) los escribe en orden. Lo que ve Lua no cambia:
  *  - save_read de un archivo que todavia esta en la cola devuelve lo que se mando a escribir.
  *  - Si un archivo esta dos veces en la cola sin empezar, se escribe solo el ultimo.
- *  - Las dos ranuras de love360_save.lua (.a y .b, por turno) siguen cuidando que un corte de luz a
+ *  - Las dos ranuras de save.lua (.a y .b, por turno) siguen cuidando que un corte de luz a
  *    mitad de una escritura deje la otra entera: el hilo escribe una ranura por vez, en orden.
  *  - Un error al escribir sale en el registro desde el hilo principal (l360_sys_poll), no desde el
  *    hilo de escritura, que no toca el registro ni Lua.
@@ -914,6 +960,72 @@ static int l_save_write(lua_State *L)
 	return 1;
 }
 
+/* ---------- the game folder, for love.filesystem ---------- */
+
+/* GAME_DIR<path> without "./" at the start or '/' at the end; -1 for a path that leaves the folder. */
+static int game_path(char *out, size_t n, const char *path)
+{
+	while (path[0] == '.' && path[1] == '/')
+		path += 2;
+	size_t len = strlen(path);
+	while (len > 0 && (path[len - 1] == '/' || path[len - 1] == '\\'))
+		len--;
+	if (len > 400 || strstr(path, "..") || strchr(path, ':') || path[0] == '/' || path[0] == '\\')
+		return -1;
+	snprintf(out, n, GAME_DIR "%.*s", (int)len, path);
+	return 0;
+}
+
+/* filetype(path): "file" and its size, "directory", or nil if it is not in the game folder. */
+static int l_filetype(lua_State *L)
+{
+	const char *path = luaL_checkstring(L, 1);
+	char full[460];
+	struct stat st;
+	if (game_path(full, sizeof(full), path) || l360_sys_game_missing(path) || stat(full, &st) != 0) {
+		lua_pushnil(L);
+		return 1;
+	}
+	if (S_ISDIR(st.st_mode)) {
+		lua_pushstring(L, "directory");
+		return 1;
+	}
+	lua_pushstring(L, "file");
+	lua_pushnumber(L, (lua_Number)st.st_size);
+	return 2;
+}
+
+/* listdir(path): the names in that folder of the game ("" is the game folder itself), as the disk
+ * has them, or nil if it could not be listed. */
+static int l_listdir(lua_State *L)
+{
+	const char *path = luaL_checkstring(L, 1);
+	char full[460];
+	DIR *d = game_path(full, sizeof(full), path) ? NULL : opendir(full);
+	if (!d) {
+		lua_pushnil(L);
+		return 1;
+	}
+	lua_newtable(L);
+	int n = 0;
+	for (struct dirent *e; (e = readdir(d)) != NULL;) {
+		if (!strcmp(e->d_name, ".") || !strcmp(e->d_name, ".."))
+			continue;
+		lua_pushstring(L, e->d_name);
+		lua_rawseti(L, -2, ++n);
+	}
+	closedir(d);
+	return 1;
+}
+
+/* quit(): love.event.quit. Leaves like Back held 3 s does; it does not return. */
+static int l_quit(lua_State *L)
+{
+	(void)L;
+	l360_log("exit: asked by the game (love.event.quit)");
+	quit_to_aurora();
+}
+
 /* ---------- registro y archivos en game:\ ---------- */
 
 /* upload(nombre, datos): en libXenon subia a la PC por TFTP; aca escribe game:\<nombre>. */
@@ -942,7 +1054,7 @@ static int l_upload(lua_State *L)
 
 /* El registro de xsdk (game:\<nombre del .xex>.log, default.log en la consola) se escribe linea
  * por linea con NtWriteFile: cuando l360.upload_log() vuelve ya esta en el disco, sin buffer que
- * vaciar y sin PC a la que subirlo. Se deja la funcion porque love360_boot.lua la llama. */
+ * vaciar y sin PC a la que subirlo. Se deja la funcion porque boot.lua la llama. */
 static int l_upload_log(lua_State *L)
 {
 	(void)L;
@@ -970,9 +1082,6 @@ void l360_sys_poll(void)
 
 void l360_sys_register(lua_State *L)
 {
-	/* la primera vez sin nada en game:\save\: pasa la partida de la version de libXenon
-	 * (game:\guardado\, que solo se lee) antes de que el boot lea los guardados */
-	(void)l360_import_saves("game:/guardado/", save_dir(), l360_log);
 	lua_pushcfunction(L, l_pad);         lua_setfield(L, -2, "pad");
 	lua_pushcfunction(L, l_rumble);      lua_setfield(L, -2, "rumble");
 	lua_pushcfunction(L, l_poll);        lua_setfield(L, -2, "poll");
@@ -980,6 +1089,10 @@ void l360_sys_register(lua_State *L)
 	lua_pushcfunction(L, l_fetch_step);  lua_setfield(L, -2, "fetch_step");
 	lua_pushcfunction(L, l_upload);      lua_setfield(L, -2, "upload");
 	lua_pushcfunction(L, l_upload_log);  lua_setfield(L, -2, "upload_log");
+	lua_pushcfunction(L, l_filetype);    lua_setfield(L, -2, "filetype");
+	lua_pushcfunction(L, l_listdir);     lua_setfield(L, -2, "listdir");
+	lua_pushcfunction(L, l_quit);        lua_setfield(L, -2, "quit");
+	lua_pushcfunction(L, l_save_set_dir); lua_setfield(L, -2, "save_set_dir");
 	lua_pushcfunction(L, l_save_dir);    lua_setfield(L, -2, "save_dir");
 	lua_pushcfunction(L, l_save_read);   lua_setfield(L, -2, "save_read");
 	lua_pushcfunction(L, l_save_write);  lua_setfield(L, -2, "save_write");

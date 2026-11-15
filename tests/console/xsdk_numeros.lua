@@ -2,7 +2,7 @@
 -- consola, PR #23). Cada cuenta toma sus valores de argumentos, asi el parser no la resuelve antes
 -- (con constantes sueltas, 17+3 se vuelve 20 al compilar y no prueba el interprete).
 -- En la PC:     luajit -joff tests/console/xsdk_numeros.lua      (tiene que dar 0 mal)
--- En la consola: copiarlo a Love360\balatro\love360\xsdk_numeros.lua; runtime_xsdk/main.c lo corre
+-- En la consola: copiarlo a <juego>\l360\xsdk_numeros.lua; runtime/main.c lo corre
 -- antes del juego si esta, y deja cada linea en el registro y en pantalla ([ok] o [MAL]).
 local log = (l360 and l360.log) or print
 local bad, total = 0, 0

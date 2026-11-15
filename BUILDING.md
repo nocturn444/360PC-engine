@@ -12,6 +12,8 @@ objectives land (see [docs/ROADMAP.md](docs/ROADMAP.md)).
 | `runtime/lua/` | The LÖVE layer in Lua that runs on the console. |
 | `toolchain/` | Script and patch to build LuaJIT for xsdk. |
 | `tests/console/` | Checks that run on the console (and on PC). |
+| `tests/pc/`, `tests/fixtures/` | PC checks of the Lua layer and the games they use. |
+| `tools/` | Build and packaging tools (`read_game_config.lua`). |
 
 ## Requirements
 
@@ -44,21 +46,27 @@ Changing the LuaJIT commit needs its own pull request that remakes the patch and
 ```sh
 cmake -S runtime -B runtime/build -G Ninja \
   -DCMAKE_TOOLCHAIN_FILE=<xsdk>/cmake/xsdk.cmake -DXSDK_TOOLCHAIN=~/xsdk-gcc \
-  -DCMAKE_BUILD_TYPE=RelWithDebInfo
+  -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+  -DGAME_TITLE_ID="$(luajit tools/read_game_config.lua <game folder> title_id)" \
+  -DGAME_NAME="$(luajit tools/read_game_config.lua <game folder> name)"
 cmake --build runtime/build
 ```
 
-The output is `runtime/build/love360.xex`; on the console it goes as `default.xex` (folder
-layout in [runtime/README.md](runtime/README.md)). Add `-DL360_PUBLICADO=ON` for a release build
-with a short log (errors, missing features, summaries and hitches).
+The same source builds one `.xex` per game: the Title ID and the name Aurora shows come from the
+game's `game.lua` ([docs/GAME_CONFIG.md](docs/GAME_CONFIG.md)). Without both options the build
+uses a development Title ID (`0xFFFF0360`) and warns; do not distribute that.
 
-The target name, Title ID and Aurora name are still Love360's. Objective 2 makes them per game:
-the same source builds one `.xex` per game, with the Title ID and name from the game's config.
+The output is `runtime/build/game.xex`; on the console it goes as `default.xex` in the game's
+folder, next to its `main.lua` (layout in [runtime/README.md](runtime/README.md)). Add
+`-DL360_PUBLICADO=ON` for a release build with a short log (errors, missing features, summaries
+and hitches).
 
 ## 3. Checks
 
+- The boot, on PC: `luajit -joff tests/pc/boot_pc.lua` runs `runtime/lua/boot.lua` against
+  `tests/fixtures/minimal_game` with a fake `l360` table and must end with a line starting with `OK:`.
 - LuaJIT numbers, on PC: `luajit -joff tests/console/xsdk_numeros.lua` must end with
   `== numeros: 0 de 36 mal ==`.
 - LuaJIT numbers, on the console: copy `tests/console/xsdk_numeros.lua` to
-  `<folder>\balatro\love360\xsdk_numeros.lua`; `main.c` runs it before the game and the log must
+  `<folder>\l360\xsdk_numeros.lua`; `main.c` runs it before the game and the log must
   end with the same line.

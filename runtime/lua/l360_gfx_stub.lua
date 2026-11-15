@@ -1,7 +1,7 @@
--- l360.gfx de la fase 1 del .xex (runtime_xsdk/main.c lo corre antes de love360_boot.lua; va en
--- game:\balatro\love360\ con los otros .lua). La misma API que runtime/source/l360_gfx.c, sin dibujar nada.
--- Cuenta llamadas como el simulador de PC (pruebas/p4_shim_pc.lua) para que love360_boot.lua
--- llegue al bucle principal. La fase 2 lo reemplaza por l360_gfx.c sobre la GPU de xsdk.
+-- l360.gfx sin dibujar (runtime/main.c lo corre antes de boot.lua si la GPU no arranco; va en
+-- game:\l360\ con los otros .lua). La misma API que runtime/l360_gfx.c, sin dibujar nada.
+-- Cuenta llamadas para que boot.lua (y tests/pc/boot_pc.lua)
+-- llegue al bucle principal.
 local st = { draws = 0, sends = 0, skipped = 0, dropped = 0, frames = 0, missing_images = 0,
   texture_bytes = 0, image_ms = 0, gpu_wait_ms = 0 }
 local function nop() end

@@ -17,8 +17,8 @@ void l360_log(const char *s);
 void l360_log_flush(void);
 
 /* Agrega a la tabla que esta en la cima de la pila (la tabla l360) los campos de esta fase:
- * pad, rumble, poll, fetch_start, fetch_step, upload, upload_log, save_dir, save_read y
- * save_write. poll_input lo pone main.c, que es quien llama a l360_sys_poll(). Deja la tabla
+ * pad, rumble, poll, fetch_start, fetch_step, upload, upload_log, filetype, listdir, quit,
+ * save_set_dir, save_dir, save_read y save_write. poll_input lo pone main.c, que es quien llama a l360_sys_poll(). Deja la tabla
  * donde estaba. */
 void l360_sys_register(lua_State *L);
 
@@ -30,9 +30,9 @@ void l360_sys_poll(void);
  * de l360.read viven en main.c). */
 void l360_sys_readstats(int *files, double *bytes, double *ms);
 
-/* Lista de lo que hay en cada carpeta de game:\balatro\ (tarea 12, tirones): en el pendrive,
- * abrir un archivo que no esta tardaba hasta 872 ms. l360_sys_list_dir("resources/sounds") lista
- * esa carpeta ya (main.c lo hace al arrancar); las demas se listan la primera vez que se lee algo
+/* Lista de lo que hay en cada carpeta de game:\ (tarea 12, tirones): en el pendrive,
+ * abrir un archivo que no esta tardaba hasta 872 ms. l360_sys_list_dir(dir) lista
+ * esa carpeta ya; las demas se listan la primera vez que se lee algo
  * de ellas. l360_sys_game_missing(ruta) da 1 solo si la carpeta se listo entera y ruta no esta:
  * entonces ni se intenta abrir. l360_sys_list_off() la apaga ("sin_lista" en l360_gfx.txt). */
 void l360_sys_list_dir(const char *dir);

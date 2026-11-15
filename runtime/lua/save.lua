@@ -1,11 +1,10 @@
 -- Guardado de partidas (love.filesystem). Lua 5.1 / LuaJIT sin JIT.
--- Cada archivo de guardado vive en el pendrive de la consola (l360.save_read / save_write, en
--- <usb>:/love360/guardado/) o, si no hay, en la PC (tftp\love360\balatro\, por TFTP). Tiene dos
+-- Cada archivo de guardado vive en la carpeta de guardado del juego (l360.save_read / save_write,
+-- game:\<save_dir>\). Tiene dos
 -- ranuras (.a y .b) que se escriben por turno. Cada ranura lleva al final una linea de control con
 -- un numero de secuencia, el largo y la suma adler32: al leer se usa la ranura valida mas nueva.
 -- Si una escritura se corta a la mitad queda la anterior; si las dos estan rotas el archivo se da
 -- por inexistente (y se deja una copia .corrupto para mirarla).
--- Detalle en docs/tareas/04_guardado.md.
 local M = {}
 
 local PREFIX = 'l360save_'
@@ -25,7 +24,7 @@ local function adler32(s)
 end
 M.adler32 = adler32
 
--- '1/save.jkr' -> 'l360save_1_save.jkr' (todo plano en una carpeta)
+-- 'slot1/save.dat' -> 'l360save_slot1_save.dat' (todo plano en una carpeta)
 local function remote_name(path)
   return PREFIX .. path:gsub('^%./', ''):gsub('[/\\]', '_'):gsub('[^%w_%.%-]', '-')
 end
@@ -54,22 +53,9 @@ local function unpack_slot(raw)
 end
 M.unpack_slot = unpack_slot
 
--- Donde guardar. choice: el texto de love360/guardado.txt ('pendrive', 'pc' o nada = automatico).
--- Automatico: el pendrive si el ELF lo ofrece y hay USB; si no, la PC por TFTP.
-function M.backend(native, choice)
-  choice = choice and choice:lower():match('%a+') or 'auto'
-  local pc = { get = native.read, put = function(n, d) return native.upload('balatro/' .. n, d) end }
-  local pc_where = 'PC over TFTP (tftp\\love360\\balatro\\)'
-  if choice == 'pc' then return pc, pc_where .. ', chosen in guardado.txt' end
-  local dir = native.save_dir and native.save_dir()
-  if dir then
-    return { get = native.save_read, put = native.save_write }, 'USB drive (' .. dir .. ')'
-  end
-  if choice == 'pendrive' then return pc, pc_where .. ': guardado.txt asks for the USB drive but there is none' end
-  return pc, pc_where
-end
-
 -- backend: tabla con get(nombre) -> datos o nil y put(nombre, datos) -> true si salio bien
+-- backend.has(name) (optional) -> false when that file is surely not there: then get is not
+-- called (on the console, opening a file that does not exist can take most of a second).
 -- clock (opcional, segundos): con el, cada escritura anota cuanto tardo armar la ranura (suma de
 -- control) y cuanto entregarla al backend (tarea 12: medir los tirones del guardado).
 function M.new(backend, log, clock)
@@ -83,7 +69,8 @@ function M.new(backend, log, clock)
     local base = remote_name(path)
     local best, broken = nil, nil
     for _, slot in ipairs({'a', 'b'}) do
-      local raw = backend.get(base .. '.' .. slot)
+      local name = base .. '.' .. slot
+      local raw = (not backend.has or backend.has(name)) and backend.get(name) or nil
       if raw then
         local data, seq, deleted = unpack_slot(raw)
         if data then
@@ -130,6 +117,20 @@ function M.new(backend, log, clock)
     if not api.exists(path) then return false end
     store(path, '', true)
     return true
+  end
+  -- Names directly inside the folder `dir` ('' is the root), among the files used so far in this
+  -- run: name -> 'file' or 'directory'.
+  function api.items(dir)
+    local pre = dir == '' and '' or dir .. '/'
+    local out = {}
+    for p, f in pairs(files) do
+      if f.data and p:sub(1, #pre) == pre then
+        local rest = p:sub(#pre + 1)
+        local first = rest:match('^([^/]+)/')
+        if first then out[first] = 'directory' elseif rest ~= '' then out[rest] = 'file' end
+      end
+    end
+    return out
   end
   function api.isdir(path)
     local pre = path .. '/'

@@ -1,13 +1,14 @@
--- Love360 P4: Balatro dibujado en la Xbox 360.
--- love.graphics viene de C (l360.gfx, sobre Xenos); el resto de LOVE se arma aca.
--- Mando manual por defecto; modo bot seleccionable para medir rendimiento.
--- Sonido en Lua; guardado de partidas en el pendrive de la consola (love360_save.lua).
+-- 360PC-Engine console boot: runs a LÖVE game on the console runtime.
+-- love.graphics comes from C (l360.gfx); the rest of the LÖVE API is built here in Lua.
+-- Order, like LÖVE: game.lua (engine config, docs/GAME_CONFIG.md), conf.lua (love.conf),
+-- main.lua, love.load, and then the frame loop at 30 FPS (love.update, love.draw).
+-- Lua 5.1 / LuaJIT without JIT.
 --
--- Funciones que pone el programa en C (tabla l360):
---   l360.time()        segundos con alta resolucion
---   l360.read(path)    contenido de un archivo del juego, o nil
---   l360.log(s)        imprime una linea (pantalla en la 360)
---   l360.platform      'pc' o 'xbox360'
+-- What the C program provides (the l360 table): see runtime/main.c and runtime/l360_sys.c.
+--   l360.time()        seconds, high resolution
+--   l360.read(path)    contents of a file of the game folder, or nil
+--   l360.log(s)        one line to the log (and to the text screen)
+--   l360.runtime_dir   folder of this Lua layer inside the game folder ("l360/")
 
 local l360 = l360
 local now = l360.time
@@ -16,54 +17,45 @@ local log = l360.log
 local W, H = l360.width or 1280, l360.height or 720
 local DT = 1 / 30
 local gfx = l360.gfx
--- Configuracion: cambiar mode a "bot" para la partida de prueba.
--- El shim puede sobrescribirla sin editar este archivo.
-local input_config = l360.input_config or {mode = "manual", deadzone = 0.2}
+local RT = l360.runtime_dir or "l360/"
+local input_config = l360.input_config or { deadzone = 0.2 }
 
----------------------------------------------------------------------------
--- Lista de archivos del juego (en la 360 no se puede listar por TFTP)
----------------------------------------------------------------------------
-local DIRS = {
-  ["resources/shaders"] = {"background.fs","booster.fs","CRT.fs","debuff.fs","dissolve.fs","flame.fs",
-    "flash.fs","foil.fs","gold_seal.fs","holo.fs","hologram.fs","negative_shine.fs","negative.fs",
-    "played.fs","polychrome.fs","skew.fs","splash.fs","vortex.fs","voucher.fs"},
-  ["resources/sounds"] = {"ambientFire1.ogg","ambientFire2.ogg","ambientFire3.ogg","ambientOrgan1.ogg",
-    "button.ogg","cancel.ogg","card1.ogg","card3.ogg","cardFan2.ogg","cardSlide1.ogg","cardSlide2.ogg",
-    "chips1.ogg","chips2.ogg","coin1.ogg","coin2.ogg","coin3.ogg","coin4.ogg","coin5.ogg","coin6.ogg",
-    "coin7.ogg","crumple1.ogg","crumple2.ogg","crumple3.ogg","crumple4.ogg","crumple5.ogg",
-    "crumpleLong1.ogg","crumpleLong2.ogg","explosion_buildup1.ogg","explosion_release1.ogg",
-    "explosion1.ogg","foil1.ogg","foil2.ogg","generic1.ogg","glass1.ogg","glass2.ogg","glass3.ogg",
-    "glass4.ogg","glass5.ogg","glass6.ogg","gold_seal.ogg","gong.ogg","highlight1.ogg","highlight2.ogg",
-    "holo1.ogg","introPad1.ogg","magic_crumple.ogg","magic_crumple2.ogg","magic_crumple3.ogg",
-    "multhit1.ogg","multhit2.ogg","music1.ogg","music2.ogg","music3.ogg","music4.ogg","music5.ogg",
-    "negative.ogg","other1.ogg","paper1.ogg","polychrome1.ogg","slice1.ogg","splash_buildup.ogg",
-    "tarot1.ogg","tarot2.ogg","timpani.ogg","voice1.ogg","voice10.ogg","voice11.ogg","voice2.ogg",
-    "voice3.ogg","voice4.ogg","voice5.ogg","voice6.ogg","voice7.ogg","voice8.ogg","voice9.ogg",
-    "whoosh_long.ogg","whoosh.ogg","whoosh1.ogg","whoosh2.ogg","win.ogg"},
-}
--- Archivos que existen aunque no los bajemos (fuentes: solo hace falta saber que estan)
-local KNOWN = {}
-for _, f in ipairs({"m6x11plus.ttf","GoNotoCJKCore.ttf","GoNotoCurrent-Bold.ttf","NotoSans-Bold.ttf",
-  "NotoSansJP-Bold.ttf","NotoSansKR-Bold.ttf","NotoSansSC-Bold.ttf","NotoSansTC-Bold.ttf"}) do
-  KNOWN["resources/fonts/" .. f] = true
+local function runtime_module(name)
+  local src = assert(l360.read(RT .. name), "missing " .. RT .. name)
+  return assert(loadstring(src, "@" .. name))()
 end
-for d, list in pairs(DIRS) do for _, f in ipairs(list) do KNOWN[d .. "/" .. f] = true end end
 
-local file_cache = {}
-local function game_file(path)
-  path = path:gsub("^%./", "")
-  local c = file_cache[path]
-  if c == nil then
-    c = l360.read(path) or false
-    file_cache[path] = c
+---------------------------------------------------------------------------
+-- game.lua: the per-game config (name, identity, save folder...)
+---------------------------------------------------------------------------
+local Config = runtime_module("config.lua")
+local game
+do
+  local src = l360.read("game.lua")
+  if src then
+    local cfg, err = Config.load(src)
+    if not cfg then log("[ERROR] " .. tostring(err)); return end
+    game = cfg
+  else
+    game = Config.defaults()
+    log("  [missing] game.lua: using defaults (name \"" .. game.name .. "\", save folder \"" .. game.save_dir .. "\")")
   end
-  return c or nil
+end
+l360.game = game
+log(string.format("game.lua: %s (identity %s, save folder %s)", game.name, game.identity, game.save_dir))
+if l360.save_set_dir and not l360.save_set_dir(game.save_dir) then return end
+
+local function clean_path(path)
+  path = tostring(path):gsub("\\", "/"):gsub("^%./", ""):gsub("/+$", "")
+  return path
+end
+local function game_file(path)
+  return l360.read(clean_path(path))
 end
 
 ---------------------------------------------------------------------------
--- Estadisticas
+-- Missing LÖVE functions: logged once each, and they do nothing
 ---------------------------------------------------------------------------
-local S = { draws = 0, sends = 0, xform = 0, texts = 0 }
 local missing = {}
 local function note_missing(name)
   if not missing[name] then missing[name] = true; log("  [missing] " .. name) end
@@ -72,22 +64,17 @@ end
 local function nop() end
 local function module(name, t)
   return setmetatable(t, { __index = function(_, k)
-    note_missing(name .. "." .. k); return nop end })
+    note_missing(name .. "." .. tostring(k)); return nop end })
 end
 local function object(kind, t)
   return setmetatable(t, { __index = function(_, k)
-    note_missing(kind .. ":" .. k); return nop end })
+    note_missing(kind .. ":" .. tostring(k)); return nop end })
 end
 
 ---------------------------------------------------------------------------
--- Fuentes y texto (metricas reales de m6x11plus)
+-- Fonts and text without a TTF: approximate metrics, nothing drawn
 ---------------------------------------------------------------------------
-local FM = assert(loadstring(assert(l360.read("love360/font_metrics.lua"), "missing font_metrics.lua")))()
-local function text_width(s, size)
-  local w = 0
-  for i = 1, #s do w = w + (FM.adv[s:byte(i)] or 448) end
-  return w * size / FM.upm
-end
+local function text_width(s, size) return #s * size * 0.5 end
 local function flatten(t)
   if type(t) ~= "table" then return tostring(t or "") end
   local out = {}
@@ -113,7 +100,6 @@ local function new_font(_, size)
 end
 
 local function new_text(font, s)
-  S.texts = S.texts + 1
   local size = font and font._size or 12
   local str = flatten(s)
   local t
@@ -130,160 +116,167 @@ local function new_text(font, s)
 end
 
 ---------------------------------------------------------------------------
--- Imagenes: tamano leido del encabezado PNG
----------------------------------------------------------------------------
-local function png_size(data)
-  if not data or #data < 24 then return 64, 64 end
-  local function u32(o) local a, b, c, d = data:byte(o, o + 3); return ((a * 256 + b) * 256 + c) * 256 + d end
-  return u32(17), u32(21)
-end
-local function new_image(path, opts)
-  local w, h = png_size(game_file(path))
-  local dpi = (opts and opts.dpiscale) or 1
-  w, h = w / dpi, h / dpi
-  return object("Image", {
-    getWidth = function() return w end, getHeight = function() return h end,
-    getDimensions = function() return w, h end,
-    getPixelWidth = function() return w * dpi end, getPixelHeight = function() return h * dpi end,
-    setFilter = nop, setWrap = nop, setMipmapFilter = nop, release = nop,
-    getDPIScale = function() return dpi end,
-  })
-end
-local function new_canvas(w, h)
-  w, h = w or W, h or H
-  return object("Canvas", {
-    getWidth = function() return w end, getHeight = function() return h end,
-    getDimensions = function() return w, h end, setFilter = nop, release = nop,
-    getPixelWidth = function() return w end, getPixelHeight = function() return h end,
-    getPixelDimensions = function() return w, h end,
-    renderTo = function(_, f) f() end,
-  })
-end
-local function new_shader()
-  return object("Shader", {
-    send = function() S.sends = S.sends + 1 end,
-    hasUniform = function() return true end, release = nop,
-  })
-end
-local function new_quad(x, y, w, h)
-  return object("Quad", { getViewport = function() return x, y, w, h end, setViewport = function(_, a, b, c, d) x, y, w, h = a, b, c, d end, release = nop })
-end
-
-local function count_draw() S.draws = S.draws + 1 end
-local function count_xform() S.xform = S.xform + 1 end
-
----------------------------------------------------------------------------
--- Canales e hilos: los de sonido y guardado corren como corrutina en el hilo principal
+-- Channels and threads. There are no real threads: a love.thread runs as a coroutine on the main
+-- thread, resumed once per frame. It gives the turn back when Channel:demand finds nothing or
+-- when it calls love.timer.sleep; a thread that never does either stops the game.
 ---------------------------------------------------------------------------
 local channels = {}
 local threads = {}
-local function get_channel(name)
-  local c = channels[name]
-  if c then return c end
+local current_thread            -- the thread whose coroutine is running now
+local function new_channel()
   local q = {}
-  c = object("Channel", {
+  return object("Channel", {
     push = function(_, v) if #q < 256 then q[#q + 1] = v end return #q end,
     supply = function(_, v) if #q < 256 then q[#q + 1] = v end return true end,
     pop = function() return table.remove(q, 1) end,
     demand = function()
       local v = table.remove(q, 1)
       if v ~= nil then return v end
-      if coroutine.running() then coroutine.yield() end
-      return nil
+      if current_thread then coroutine.yield() end
+      return table.remove(q, 1)
     end,
     peek = function() return q[1] end,
     getCount = function() return #q end,
     clear = function() q = {} end,
   })
-  channels[name] = c
+end
+local function get_channel(name)
+  local c = channels[name]
+  if not c then c = new_channel(); channels[name] = c end
   return c
 end
 
--- El hilo de sonido de Balatro es un archivo con un while true. Se carga como
--- corrutina: cuando no hay pedidos, demand() hace yield y el bucle principal
--- lo despierta una vez por frame. Lo mismo con save_manager.lua (guardado). Los demas hilos siguen siendo falsos.
-local function new_thread(path)
-  if type(path) ~= "string" or not (path:match("sound_manager%.lua$") or path:match("save_manager%.lua$")) then
-    return object("Thread", { start = nop, wait = nop,
-      isRunning = function() return false end, getError = nop })
+-- st: the state of a thread ({ name, co, error, started, thread }), kept apart from the Thread
+-- object, whose unknown fields are "missing" functions.
+local function thread_resume(st, ...)
+  local co = st.co
+  if not co or coroutine.status(co) ~= "suspended" then return end
+  local before = current_thread
+  current_thread = st
+  local ok, err = coroutine.resume(co, ...)
+  current_thread = before
+  if not ok then
+    st.error = tostring(err)
+    st.co = nil
+    log("  [thread] ERROR in " .. st.name .. ": " .. st.error)
+    local f = rawget(love, "threaderror")
+    if f then f(st.thread, st.error) end
+  elseif coroutine.status(co) == "dead" then
+    st.co = nil
   end
-  local src = game_file(path)
-  local fn, err = src and loadstring(src, "@" .. path)
+end
+
+-- newThread(file name or code): like LÖVE, a string with a line break (or a long one) is code.
+local function new_thread(source)
+  local name, src = "thread code", source
+  if type(source) == "string" and #source < 1024 and not source:find("\n", 1, true) then
+    name, src = source, game_file(source)
+  end
+  local fn, err
+  if type(src) == "string" then fn, err = loadstring(src, "@" .. name) else err = "not found" end
   if not fn then
-    log("  [thread] could not load " .. path .. ": " .. tostring(err))
+    log("  [thread] could not load " .. tostring(name) .. ": " .. tostring(err))
     return object("Thread", { start = nop, wait = nop,
       isRunning = function() return false end, getError = function() return err end })
   end
-  -- En LOVE cada hilo tiene sus propios globales. Sin esto, SOURCES y las
-  -- funciones PLAY_SOUND/MODULATE del hilo pisarian las del hilo principal.
-  if setfenv then setfenv(fn, setmetatable({}, { __index = _G })) end
-  local co = coroutine.create(fn)
-  local t
-  t = object("Thread", {
+  -- In LÖVE every thread has its own globals.
+  setfenv(fn, setmetatable({}, { __index = _G }))
+  local st = { name = name, co = coroutine.create(fn) }
+  st.thread = object("Thread", {
     start = function(_, ...)
-      if t._co and coroutine.status(t._co) == "suspended" then
-        local ok, e = coroutine.resume(t._co, ...)
-        if not ok then t._error = e; t._co = nil
-          log("  [thread] ERROR in " .. path .. ": " .. tostring(e)) end
+      if not st.started then
+        st.started = true
+        threads[#threads + 1] = st
+        thread_resume(st, ...)
       end
       return true
     end,
     wait = nop,
-    isRunning = function() return t._co ~= nil and coroutine.status(t._co) == "suspended" end,
-    getError = function() return t._error end,
+    isRunning = function() return st.started == true and st.co ~= nil end,
+    getError = function() return st.error end,
+    release = nop,
   })
-  t._co = co
-  t._saver = path:match("save_manager%.lua$") ~= nil
-  threads[#threads + 1] = t
-  return t
+  return st.thread
 end
 
 local function threads_step()
-  for i = 1, #threads do
-    local t = threads[i]
-    local co = t._co
-    if co and coroutine.status(co) == "suspended" then
-      local t0 = l360.time()
-      local ok, err = coroutine.resume(co)
-      -- tarea 12: cuanto tarda el hilo de guardado de Balatro (save_run: armar el texto y escribirlo)
-      local ms = (l360.time() - t0) * 1000
-      if t._saver and ms > 20 then log(string.format("  [save] save_manager: %.0f ms this frame", ms)) end
-      if not ok then
-        t._error = err
-        t._co = nil
-        log("  [thread] ERROR: " .. tostring(err))
-      end
-    end
+  for i = #threads, 1, -1 do
+    local st = threads[i]
+    if st.co then thread_resume(st) else table.remove(threads, i) end
   end
 end
 
 ---------------------------------------------------------------------------
--- Guardados: los .jkr de Balatro van al pendrive (love360_save.lua); el resto, en memoria
+-- Saves: everything love.filesystem writes goes to the game's save folder (save.lua, two slots
+-- per file). Reading looks there first and then in the game folder, like LÖVE.
 ---------------------------------------------------------------------------
-local save = {}     -- ruta -> contenido
-local save_dirs = {}
-local Save = assert(loadstring(assert(l360.read("love360/love360_save.lua"),
-  "missing love360/love360_save.lua"), "@love360_save.lua"))()
-local save_backend, save_where = Save.backend(l360, l360.read("love360/guardado.txt"))
-local saves = Save.new(save_backend, log, l360.time)
-log("  [save] at " .. save_where)
-local function persistent(path) return path:match("%.jkr$") ~= nil end
+local Save = runtime_module("save.lua")
+local saves
+do
+  local backend
+  if l360.save_read and l360.save_write then
+    backend = { get = l360.save_read, put = l360.save_write }
+    -- What is in the save folder now, so that reading a game file does not first try to open two
+    -- save slots that are not there.
+    local names = l360.listdir and l360.listdir(game.save_dir)
+    if names or (l360.filetype and not l360.filetype(game.save_dir)) then
+      local present = {}
+      for _, n in ipairs(names or {}) do present[n:lower()] = true end
+      backend.has = function(n) return present[n:lower()] == true end
+      backend.put = function(n, d) present[n:lower()] = true; return l360.save_write(n, d) end
+    end
+    log("  [save] at " .. tostring(l360.save_dir and l360.save_dir() or game.save_dir))
+  else
+    local mem = {}
+    backend = { get = function(n) return mem[n] end, put = function(n, d) mem[n] = d; return true end }
+    log("  [save] no l360.save_read/save_write: saves are kept in memory only")
+  end
+  saves = Save.new(backend, log, l360.time)
+end
+local made_dirs = {}
 
-local function fs_info(path)
-  path = path:gsub("^%./", "")
-  if persistent(path) then
-    local d = saves.read(path)
-    return d and { type = "file", size = #d, modtime = 0 } or nil
+local function fs_read(path)
+  path = clean_path(path)
+  local d = saves.read(path) or game_file(path)
+  if d then return d, #d end
+  return nil, "Could not open file " .. path .. ". Does not exist."
+end
+
+local function fs_info(path, filter)
+  path = clean_path(path)
+  local info
+  local d = saves.read(path)
+  if d then
+    info = { type = "file", size = #d, modtime = 0 }
+  elseif path == "" or made_dirs[path] or saves.isdir(path) then
+    info = { type = "directory", size = 0, modtime = 0 }
+  elseif l360.filetype then
+    local kind, size = l360.filetype(path)
+    if kind then info = { type = kind, size = size or 0, modtime = 0 } end
+  else
+    d = game_file(path)
+    if d then info = { type = "file", size = #d, modtime = 0 } end
   end
-  if save[path] then return { type = "file", size = #save[path], modtime = 0 } end
-  if save_dirs[path] or saves.isdir(path) then return { type = "directory", size = 0, modtime = 0 } end
-  if DIRS[path] then return { type = "directory", size = 0, modtime = 0 } end
-  if KNOWN[path] then return { type = "file", size = 1, modtime = 0 } end
-  if path:match("%.lua$") or path:match("%.png$") then
-    local d = game_file(path)
-    if d then return { type = "file", size = #d, modtime = 0 } end
+  if info and type(filter) == "string" and info.type ~= filter then return nil end
+  return info
+end
+
+-- The game folder plus what was saved in this run. Saves of earlier runs are not listed (their
+-- names on disk are flattened), only found by name.
+local function fs_items(path)
+  path = clean_path(path)
+  local seen, out = {}, {}
+  local function add(n) if not seen[n] then seen[n] = true; out[#out + 1] = n end end
+  for n in pairs(saves.items(path)) do add(n) end
+  local pre = path == "" and "" or path .. "/"
+  for d in pairs(made_dirs) do
+    local n = d:sub(1, #pre) == pre and d:sub(#pre + 1):match("^[^/]+")
+    if n then add(n) end
   end
-  return nil
+  local names = l360.listdir and l360.listdir(path)
+  for _, n in ipairs(names or {}) do add(n) end
+  table.sort(out)
+  return out
 end
 
 ---------------------------------------------------------------------------
@@ -415,7 +408,7 @@ end
 
 -- El juego sigue pidiendo .ogg porque asi esta en su lista. La herramienta de
 -- PC deja .wav con el mismo nombre base; probamos primero el .wav para no pedir
--- por TFTP un .ogg que no existe. Asi no hace falta tocar el codigo de Balatro.
+-- por TFTP un .ogg que no existe. Asi no hace falta tocar el codigo del juego.
 local function read_sound(path)
   if path:match("%.ogg$") then
     local wav = l360.read((path:gsub("%.ogg$", ".wav")))
@@ -457,10 +450,10 @@ local function new_sound_data(source)
 end
 
 ---------------------------------------------------------------------------
--- Musica en segundo plano: IMA ADPCM partido en trozos (herramientas/pc/14_convertir_sonidos.bat)
+-- Musica en segundo plano: IMA ADPCM partido en trozos
 -- musicN.idx dice el tamano total; los trozos musicN.p000.wav, p001... se bajan con
 -- l360.fetch_* en el tiempo libre de cada frame, en orden "trozo 0 de todas las pistas,
--- trozo 1 de todas...", y se agregan al buffer con append. Si Balatro pide tocar una pista
+-- trozo 1 de todas...", y se agregan al buffer con append. Si el juego pide tocar una pista
 -- antes de que esten los trozos 0 de todas, el pedido espera y arrancan todas juntas.
 ---------------------------------------------------------------------------
 local streams = {}            -- pistas en el orden en que se crearon
@@ -839,51 +832,74 @@ Audio.getActiveSourceCount = function()
 end
 
 ---------------------------------------------------------------------------
--- La tabla love
+-- The love table
 ---------------------------------------------------------------------------
 love = module("love", {})
--- love.graphics: lo que dibuja viene de C; lo que falta (texto, fuentes) en Lua
+love.getVersion = function() return 11, 5, 0, "Mysterious Mysteries" end
+local identity, title = game.identity, game.name
+local quit_requested = false
+local last_dt = DT
+
+-- love.graphics: what draws comes from C; the rest is here
 local G_ = {}
 for k, v in pairs(gfx) do G_[k] = v end
 local c_newImage, c_newShader = gfx.newImage, gfx.newShader
--- Cache de imagenes: Balatro vuelve a cargar todas las texturas cada vez que se cambia
--- "Pixel art smoothing" (y otras opciones). Las texturas de la 360 no se liberan, asi que
--- sin cache cada cambio sumaba ~87 MB y tardaba 5-10 s en bajarlas otra vez.
+-- Image cache: console textures are never freed, so loading the same file again (some games
+-- reload every texture when an option changes) must not upload it again.
 local image_cache = {}
 G_.newImage = function(path, opts)
   local dpi = (opts and opts.dpiscale) or 1
   local key = tostring(path) .. "@" .. dpi
   local img = image_cache[key]
   if img then return img end
-  local data = l360.read(path)
+  local data = type(path) == "string" and game_file(path)
   if not data then log("  [missing image] " .. tostring(path)) end
-  img = c_newImage(path, data or "", dpi)
+  img = c_newImage(tostring(path), data or "", dpi)
   image_cache[key] = img
   return img
 end
-G_.newShader = function(path)
-  local name = tostring(path):match("([^/]+)%.fs$") or tostring(path)
+-- Shaders are compiled on PC (objective 3): here a shader is looked up by the name of its file.
+G_.newShader = function(src)
+  src = tostring(src)
+  local name = src:find("\n", 1, true) and "(shader code)" or src:match("([^/\\]+)%.%w+$") or src
   local sh, translated = c_newShader(name)
   if not translated then log("  [untranslated shader, drawn with the default one] " .. name) end
   return sh
 end
--- Fuentes: todas usan m6x11plus (la del juego en ingles); las CJK pesan 18 MB y no hacen falta
-local FONT_PATH = "resources/fonts/m6x11plus.ttf"
-local font_ttf
+-- Fonts: newFont(path, size) loads that TTF from the game folder; newFont(size) uses game.lua's
+-- default_font. Without a TTF the font only measures (roughly).
 local c_newFont, c_newText = gfx.newFont, gfx.newText
-local function real_font(_, size)
-  font_ttf = font_ttf or l360.read(FONT_PATH)
-  if not font_ttf then log("  [missing font] " .. FONT_PATH); return new_font(nil, size) end
-  return c_newFont(FONT_PATH, font_ttf, tonumber(size) or 12)
+local font_files = {}
+local function real_font(path, size)
+  if type(path) ~= "string" then path, size = game.default_font, path end
+  size = tonumber(size) or 12
+  if not path then
+    note_missing("default font (set default_font in game.lua)")
+    return new_font(nil, size)
+  end
+  path = clean_path(path)
+  local ttf = font_files[path]
+  if ttf == nil then
+    ttf = l360.read(path) or false
+    font_files[path] = ttf
+    if not ttf then log("  [missing font] " .. path) end
+  end
+  return ttf and c_newFont(path, ttf, size) or new_font(nil, size)
 end
 local default_font
+local background = { 0, 0, 0, 1 }
 G_.newFont = real_font
 G_.setNewFont = real_font
-G_.getFont = function() default_font = default_font or real_font(nil, 12); return default_font end
+G_.getFont = function() default_font = default_font or real_font(12); return default_font end
 G_.newText = function(font, s)
   if type(font) == "userdata" then return c_newText(font, s) end
   return new_text(font, s)
 end
+G_.setBackgroundColor = function(r, g, b, a)
+  if type(r) == "table" then r, g, b, a = r[1], r[2], r[3], r[4] end
+  background = { tonumber(r) or 0, tonumber(g) or 0, tonumber(b) or 0, tonumber(a) or 1 }
+end
+G_.getBackgroundColor = function() return background[1], background[2], background[3], background[4] end
 G_.newVideo = function() return object("Video", {}) end
 G_.getDPIScale = function() return 1 end
 G_.isActive = function() return true end
@@ -898,43 +914,28 @@ G_.setStencilTest = nop
 G_.setColorMask = nop
 love.graphics = module("love.graphics", G_)
 love.filesystem = module("love.filesystem", {
-  read = function(path)
-    path = path:gsub("^%./", "")
-    if persistent(path) then
-      local d = saves.read(path)
-      if d then return d, #d end
-      return nil, "no existe"
-    end
-    if save[path] then return save[path], #save[path] end
-    local d = game_file(path)
-    if d then return d, #d end
-    return nil, "no existe"
-  end,
-  write = function(path, data)
-    path = path:gsub("^%./", "")
-    if persistent(path) then return saves.write(path, data) end
-    save[path] = tostring(data); return true
-  end,
-  append = function(path, data)
-    path = path:gsub("^%./", "")
-    if persistent(path) then return saves.append(path, data) end
-    save[path] = (save[path] or "") .. tostring(data); return true
-  end,
-  getInfo = function(path) return fs_info(path) end,
-  createDirectory = function(path) save_dirs[path:gsub("^%./", "")] = true; return true end,
+  read = function(path) return fs_read(path) end,
+  write = function(path, data) return saves.write(clean_path(path), data) end,
+  append = function(path, data) return saves.append(clean_path(path), data) end,
+  getInfo = fs_info,
+  createDirectory = function(path) made_dirs[clean_path(path)] = true; return true end,
   remove = function(path)
-    path = path:gsub("^%./", "")
-    if persistent(path) then return saves.remove(path) end
-    local had = save[path] ~= nil or save_dirs[path] ~= nil
-    save[path] = nil; save_dirs[path] = nil
-    return had
+    path = clean_path(path)
+    if made_dirs[path] then made_dirs[path] = nil; return true end
+    return saves.remove(path)
   end,
-  getDirectoryItems = function(path) local l = DIRS[path:gsub("/$", "")]; local o = {}
-    if l then for i = 1, #l do o[i] = l[i] end end; return o end,
-  getSaveDirectory = function() return "save" end,
+  getDirectoryItems = fs_items,
+  getSaveDirectory = function() return l360.save_dir and l360.save_dir() or game.save_dir end,
   getSourceBaseDirectory = function() return "." end,
-  getIdentity = function() return "Balatro" end, setIdentity = nop,
-  load = function(path) local d = game_file(path); return d and loadstring(d, "@" .. path) end,
+  getSource = function() return "." end,
+  isFused = function() return true end,
+  getIdentity = function() return identity end,
+  setIdentity = function(name) identity = tostring(name) end,  -- the save folder is game.lua's
+  load = function(path)
+    local d, err = fs_read(path)
+    if not d then return nil, err end
+    return loadstring(d, "@" .. clean_path(path))
+  end,
 })
 love.data = module("love.data", {
   compress = function(_, _, s) return s end,
@@ -942,13 +943,19 @@ love.data = module("love.data", {
 })
 love.thread = module("love.thread", {
   newThread = new_thread,
-  getChannel = get_channel, newChannel = function() return get_channel({}) end,
+  getChannel = get_channel, newChannel = new_channel,
 })
 love.timer = module("love.timer", {
-  getTime = now, step = function() return DT end, sleep = nop,
-  getFPS = function() return 60 end, getDelta = function() return DT end,
+  getTime = now, step = function() return last_dt end,
+  sleep = function() if current_thread then coroutine.yield() end end,
+  getFPS = function() return math.floor(1 / last_dt + 0.5) end, getDelta = function() return last_dt end,
+  getAverageDelta = function() return last_dt end,
 })
-love.event = module("love.event", { pump = nop, poll = function() return nop end, quit = nop, push = nop })
+love.event = module("love.event", {
+  pump = nop, poll = function() return nop end, clear = nop,
+  quit = function() quit_requested = true end,
+  push = function(name) if name == "quit" then quit_requested = true end end,
+})
 love.mouse = module("love.mouse", {
   getPosition = function() return W / 2, H / 2 end, getX = function() return W / 2 end,
   getY = function() return H / 2 end, setVisible = nop, isVisible = function() return false end,
@@ -956,26 +963,25 @@ love.mouse = module("love.mouse", {
   setPosition = nop, getSystemCursor = nop, setCursor = nop,
 })
 love.keyboard = module("love.keyboard", { isDown = function() return false end, setKeyRepeat = nop })
-local Input = assert(loadstring(assert(l360.read("love360/love360_input.lua"),
-  "missing love360/love360_input.lua"), "@love360_input.lua"))()
-local input = Input.new(love, l360, input_config)
+local input = runtime_module("input.lua").new(love, l360, input_config)
 love.touch = module("love.touch", { getTouches = function() return {} end })
 love.window = module("love.window", {
   setMode = function() return true end, updateMode = function() return true end,
-  getMode = function() return W, H, { fullscreen = false, fullscreentype = "desktop", vsync = 1,
-    display = 1, resizable = true, borderless = false, highdpi = false, msaa = 0 } end,
+  getMode = function() return W, H, { fullscreen = true, fullscreentype = "exclusive", vsync = 1,
+    display = 1, resizable = false, borderless = false, highdpi = false, msaa = 0 } end,
   getDesktopDimensions = function() return W, H end,
   getFullscreenModes = function() return { { width = W, height = H } } end,
   getDisplayCount = function() return 1 end, isOpen = function() return true end,
   toPixels = function(x) return x end, fromPixels = function(x) return x end,
-  setTitle = nop, getTitle = function() return "Balatro" end, showMessageBox = function() return 1 end,
+  setTitle = function(s) title = tostring(s) end, getTitle = function() return title end,
+  showMessageBox = function() return 1 end,
   setIcon = nop, getDPIScale = function() return 1 end, setVSync = nop, getVSync = function() return 1 end,
   isMinimized = function() return false end, hasFocus = function() return true end,
-  getDisplayName = function() return "Love360" end, setFullscreen = nop,
-  getFullscreen = function() return false end,
+  getDisplayName = function() return "Xbox 360" end, setFullscreen = nop,
+  getFullscreen = function() return true, "exclusive" end,
 })
 love.system = module("love.system", {
-  getOS = function() return "Windows" end, openURL = nop,
+  getOS = function() return "Xbox 360" end, openURL = nop,
   getClipboardText = function() return "" end, setClipboardText = nop,
   getProcessorCount = function() return 6 end,
 })
@@ -986,257 +992,140 @@ love.arg = module("love.arg", { parseGameArguments = function(a) return a end })
 love.handlers = {}
 arg = arg or {}
 
-package.preload["luasteam"] = function()
-  return object("luasteam", { init = function() return true end, shutdown = nop, runCallbacks = nop,
-    userStats = object("userStats", {}), friends = object("friends", {}), utils = object("utils", {}) })
+-- print goes to the log
+print = function(...)
+  local out = {}
+  for i = 1, select("#", ...) do out[i] = tostring((select(i, ...))) end
+  log(table.concat(out, "\t"))
 end
-for _, m in ipairs({"love.filesystem","love.timer","love.thread","love.audio","love.sound","love.system","love.data"}) do
+
+for _, m in ipairs({"love", "love.filesystem", "love.timer", "love.thread", "love.audio", "love.sound",
+    "love.system", "love.data", "love.graphics", "love.event", "love.math", "love.window",
+    "love.keyboard", "love.mouse", "love.joystick", "love.touch"}) do
   package.preload[m] = function() return love end
 end
 
--- require de los modulos del juego desde l360.read (en la 360, por TFTP)
+-- require of the game's modules from the game folder: a.b -> a/b.lua, then a/b/init.lua
 table.insert(package.loaders, 2, function(name)
-  local path = name:gsub("%.", "/") .. ".lua"
-  local d = game_file(path)
-  if not d then return "\n\tnot found: " .. path end
-  local f, err = loadstring(d, "@" .. path)
-  if not f then error(err) end
-  return f
+  local base = name:gsub("%.", "/")
+  for _, path in ipairs({ base .. ".lua", base .. "/init.lua" }) do
+    local d = game_file(path)
+    if d then
+      local f, err = loadstring(d, "@" .. path)
+      if not f then error(err, 0) end
+      return f
+    end
+  end
+  return "\n\tno file " .. base .. ".lua or " .. base .. "/init.lua in the game folder"
 end)
 
 ---------------------------------------------------------------------------
--- Arranque del juego
+-- Start of the game: conf.lua, main.lua, love.load
 ---------------------------------------------------------------------------
+local function callback(name) return rawget(love, name) end   -- without the "missing" stub
+
+local function run_file(path)
+  local src = game_file(path)
+  if not src then return false, "not found" end
+  local f, err = loadstring(src, "@" .. path)
+  if not f then return false, err end
+  return xpcall(f, debug.traceback)
+end
+
 local t_boot = now()
-LOAD_TIMES = {}
-local ok, err = pcall(require, "main")
+local conf = {
+  identity = nil, appendidentity = false, version = "11.5", console = false,
+  accelerometerjoystick = false, externalstorage = false, gammacorrect = false,
+  audio = { mic = false, mixwithsystem = true },
+  window = { title = game.name, icon = nil, width = W, height = H, borderless = false,
+    resizable = false, minwidth = 1, minheight = 1, fullscreen = true, fullscreentype = "exclusive",
+    vsync = 1, msaa = 0, depth = nil, stencil = nil, display = 1, highdpi = false,
+    usedpiscale = true, x = nil, y = nil },
+  modules = { audio = true, data = true, event = true, font = true, graphics = true, image = true,
+    joystick = true, keyboard = true, math = true, mouse = true, physics = true, sound = true,
+    system = true, thread = true, timer = true, touch = true, video = true, window = true },
+}
+local ok, err = run_file("conf.lua")
+if not ok and err ~= "not found" then log("ERROR loading conf.lua: " .. tostring(err)); return end
+if callback("conf") then
+  ok, err = xpcall(function() love.conf(conf) end, debug.traceback)
+  if not ok then log("ERROR in love.conf: " .. tostring(err)); return end
+end
+if type(conf.identity) == "string" and conf.identity ~= "" then identity = conf.identity end
+if type(conf.window) == "table" and type(conf.window.title) == "string" then title = conf.window.title end
+log(string.format("conf.lua: identity %s, title %s (the screen is %dx%d)", identity, title, W, H))
+
+ok, err = run_file("main.lua")
 if not ok then log("ERROR loading main.lua: " .. tostring(err)); return end
+package.loaded.main = package.loaded.main or true
 log(string.format("main.lua and modules: %.0f ms", (now() - t_boot) * 1000))
-LOAD_TIMES[#LOAD_TIMES + 1] = string.format("main.lua and modules: %.1f s", now() - t_boot)
 
 local t_load = now()
-G.F_SKIP_TUTORIAL = true
-ok, err = xpcall(love.load, debug.traceback)
-if not ok then log("ERROR in love.load: " .. tostring(err)); return end
-love.resize(W, H)
-log(string.format("love.load (G:start_up): %.0f ms", (now() - t_load) * 1000))
-LOAD_TIMES[#LOAD_TIMES + 1] = string.format("love.load (G:start_up): %.1f s", now() - t_load)
-LOAD_TIMES[#LOAD_TIMES + 1] = string.format("since program start: %.1f s", now())
+if callback("load") then
+  ok, err = xpcall(function() love.load(arg, arg) end, debug.traceback)
+  if not ok then log("ERROR in love.load: " .. tostring(err)); return end
+end
+log(string.format("love.load: %.0f ms (%.1f s since the program started)", (now() - t_load) * 1000, now()))
 
 ---------------------------------------------------------------------------
--- El bot: juega una partida corta con acciones del propio juego
+-- Main loop: 30 FPS
 ---------------------------------------------------------------------------
-local game_time = 0
-local wait_until = 0
-local function wait(s) wait_until = game_time + s end
-local function idle()
-  if game_time < wait_until then return false end
-  for _, e in ipairs(G.E_MANAGER.queues.base) do
-    if e.blocking then return false end       -- quedan animaciones que frenan la partida
-  end
-  return not (G.CONTROLLER and G.CONTROLLER.locked)
-end
-
-local played_rounds, max_rounds = 0, tonumber(l360.rounds) or 2
-local shop_rerolled = false
-local phase = "menu"
-local done = false
-local hand_actions = 0
-local showcase_done = false
-
--- Para ver los efectos: comodines con cada edicion y algunas cartas con edicion y sello
-local function showcase()
-  local jokers = {
-    {"j_joker", {foil = true}}, {"j_greedy_joker", {holo = true}},
-    {"j_lusty_joker", {polychrome = true}}, {"j_wrathful_joker", {negative = true}},
-  }
-  for _, j in ipairs(jokers) do
-    local ok, err = pcall(function()
-      local c = create_card("Joker", G.jokers, nil, nil, nil, nil, j[1])
-      c:set_edition(j[2], true, true)
-      c:add_to_deck()
-      G.jokers:emplace(c)
-    end)
-    if not ok then log("  [bot] could not create " .. j[1] .. ": " .. tostring(err)) end
-  end
-  local eds = {{foil = true}, {holo = true}, {polychrome = true}}
-  for i = 1, math.min(#G.playing_cards, 12) do
-    local c = G.playing_cards[i]
-    pcall(function()
-      if i <= 6 then c:set_edition(eds[(i - 1) % 3 + 1], true, true) end
-      if i > 6 then c:set_seal(i % 2 == 0 and "Gold" or "Red", true, true) end
-    end)
-  end
-end
-
-local function state_name()
-  for k, v in pairs(G.STATES) do if v == G.STATE then return k end end
-  return tostring(G.STATE)
-end
-
-local function bot()
-  local st = G.STATE
-  if phase == "menu" then
-    if st == G.STATES.MENU and G.MAIN_MENU_UI and game_time > 6 then
-      G.FUNCS.start_run(nil, { stake = 1, seed = "LOVE360" })
-      phase = "run"; wait(2)
-    end
-    return
-  end
-  if not idle() then return end
-  if st == G.STATES.BLIND_SELECT and G.blind_select and G.STATE_COMPLETE then
-    if not showcase_done then showcase_done = true; showcase(); wait(2); return end
-    if played_rounds >= max_rounds then done = true; return end
-    local key = G.GAME.round_resets.blind_choices[G.GAME.blind_on_deck]
-    G.FUNCS.select_blind({ config = { ref_table = G.P_BLINDS[key] }, UIBox = G.blind_select })
-    hand_actions = 0
-    wait(1.5)
-  elseif st == G.STATES.SELECTING_HAND and #G.hand.cards > 0 then
-    hand_actions = hand_actions + 1
-    if hand_actions == 1 and G.GAME.current_round.discards_left > 0 then
-      for i = 1, math.min(3, #G.hand.cards) do G.hand:add_to_highlighted(G.hand.cards[i], true) end
-      G.FUNCS.discard_cards_from_highlighted(nil, true)
-    else
-      -- jugar las 5 primeras; la segunda mano gana la ronda para que la partida avance
-      if hand_actions >= 3 then G.GAME.blind.chips = 1 end
-      for i = 1, math.min(5, #G.hand.cards) do G.hand:add_to_highlighted(G.hand.cards[i], true) end
-      G.FUNCS.play_cards_from_highlighted(nil)
-    end
-    wait(1)
-  elseif st == G.STATES.ROUND_EVAL and G.round_eval and G.STATE_COMPLETE then
-    G.FUNCS.cash_out({ config = {} })
-    played_rounds = played_rounds + 1
-    shop_rerolled = false
-    wait(2)
-  elseif st == G.STATES.SHOP and G.shop and G.STATE_COMPLETE then
-    if not shop_rerolled then
-      shop_rerolled = true
-      G.GAME.dollars = math.max(G.GAME.dollars, 20)
-      G.FUNCS.reroll_shop()
-      wait(2.5)
-    else
-      G.FUNCS.toggle_shop()
-      wait(2)
-    end
-  elseif st == G.STATES.GAME_OVER then
-    done = true
-  end
-end
-
----------------------------------------------------------------------------
--- Bucle principal: 30 FPS, con medicion
----------------------------------------------------------------------------
-local per, order = {}, {}
-local function bucket(name)
-  local b = per[name]
-  if not b then
-    b = { n = 0, up = 0, dr = 0, gpu = 0, tot = 0, upmax = 0, drmax = 0, totmax = 0, draws = 0, over = 0 }
-    per[name] = b; order[#order + 1] = name
-  end
-  return b
-end
-
-local function report(title)
-  local R = {}
-  local function out(s) R[#R + 1] = s end
-  local st = l360.gfxstats()
-  out("Love360 P4 (" .. l360.platform .. "): " .. title)
-  for _, l in ipairs(LOAD_TIMES) do out("Load: " .. l) end
-  local rs = l360.readstats()
-  out(string.format("Files loaded from the PC: %d (%.1f MB) in %.1f s", rs.files, rs.bytes / 1048576, rs.ms / 1000))
-  out(string.format("Images: %.0f MB of textures, decoded in %.1f s; missing: %d",
-    st.texture_bytes / 1048576, st.image_ms / 1000, st.missing_images))
-  out(string.format("Draws dropped because the VB was full: %d. Calls not drawn (text, video): %d", st.dropped, st.skipped))
-  out("State             frames  update avg/max    draw avg/max    GPU wait    frame avg/max    >33ms  draws")
-  for _, name in ipairs(order) do
-    local b = per[name]
-    out(string.format("%-16s %7d  %6.2f / %6.1f  %6.2f / %6.1f  %7.2f  %7.2f / %6.1f  %5d  %6.0f",
-      name, b.n, b.up / b.n, b.upmax, b.dr / b.n, b.drmax, b.gpu / b.n, b.tot / b.n, b.totmax, b.over, b.draws / b.n))
-  end
-  local miss = {}
-  for k in pairs(missing) do miss[#miss + 1] = k end
-  table.sort(miss)
-  out("Missing LOVE functions (in Lua): " .. (#miss > 0 and table.concat(miss, ", ") or "none"))
-  local txt = table.concat(R, "\n") .. "\n"
-  for _, s in ipairs(R) do log(s) end
-  l360.upload("p4_resultados.txt", txt)
-  l360.upload_log()
-end
-
 l360.start_render()
+l360.set_context(title)
 local frame = 0
-local dt_smooth = 1 / 60
 local last = now()
-local reported = false
-local last_ctx_name
-local t_begin = now()
 while true do
   local t0 = now()
   local dt = math.min(t0 - last, 0.1)
   last = t0
-  dt_smooth = math.min(0.8 * dt_smooth + 0.2 * dt, 0.1)
+  if dt > 0 then last_dt = dt end
   frame = frame + 1
-  game_time = game_time + dt
-  local name = input:isBot() and (phase == "menu") and (G.STATE == G.STATES.SPLASH and "SPLASH" or "MENU") or state_name()
-  if done then name = "FIN_DEL_BOT" end
-  if name ~= last_ctx_name then
-    last_ctx_name = name
-    l360.set_context(name)
-    log(string.format("  [state] %s (frame %d, %.0f s, Lua %.0f KB)", name, frame, now(), collectgarbage("count")))
-  end
   if frame % 300 == 0 then
     local used, arena = 0, 0
     if l360.heap then used, arena = l360.heap() end
-    log(string.format("  [memory] frame %d, %.0f s, Lua %.0f KB, malloc %.0f / %.0f MB, %s",
-      frame, now(), collectgarbage("count"), used / 1024, arena / 1024, name))
+    log(string.format("  [memory] frame %d, %.0f s, Lua %.0f KB, malloc %.0f / %.0f MB",
+      frame, now(), collectgarbage("count"), used / 1024, arena / 1024))
     if l360.audio then
       local a = l360.audio.stats()
       log(string.format("  [audio] voices %d, chunks %d, underruns %d, starved %d, mix max %d us, thread %s",
         a.voices, a.chunks, a.underruns, a.starved or 0, a.mix_us_max, a.running and "yes" or "NO"))
     end
   end
-  local st0 = l360.gfxstats().draws
 
   ok, err = xpcall(function()
-    l360.poll_input() -- USB, Start (recarga) y red, una vez por frame; l360.pad lee el snapshot.
-    input:update() -- callbacks antes del update, incluso durante pausa
-    if input:isBot() then
-      if not done then bot() end
-    else
-      done = false -- nunca terminar una partida manual por el limite del bot
-    end
-    love.update(dt_smooth)
+    l360.poll_input()   -- the controller, once per frame; l360.pad reads that snapshot
+    input:update()      -- gamepad callbacks before love.update
+    local update = callback("update")
+    if update then update(last_dt) end
     threads_step()
   end, debug.traceback)
-  local t1 = now()
   if not ok then log("ERROR in update (frame " .. frame .. "): " .. tostring(err)); break end
-  local tg = now()
-  gfx.sync()                       -- la GPU termino el frame anterior mientras corria update
-  local wait_gpu = (now() - tg) * 1000
-  ok, err = xpcall(love.draw, debug.traceback)
-  local t2 = now()
+  gfx.sync()            -- the GPU finished the previous frame while update ran
+  ok, err = xpcall(function()
+    gfx.origin()
+    gfx.clear(background[1], background[2], background[3], background[4])
+    local draw = callback("draw")
+    if draw then draw() end
+  end, debug.traceback)
   if not ok then log("ERROR in draw (frame " .. frame .. "): " .. tostring(err)); break end
-  local gst = l360.gfxstats()
-  love.graphics.present()
-  local t3 = now()
+  gfx.present()
 
-  local b = bucket(name)
-  local up, dr, gp, tot = (t1 - t0) * 1000, (t2 - t1) * 1000 - wait_gpu, wait_gpu, (t3 - t0) * 1000
-  b.n = b.n + 1; b.up = b.up + up; b.dr = b.dr + dr; b.gpu = b.gpu + gp; b.tot = b.tot + tot
-  if up > b.upmax then b.upmax = up end
-  if dr > b.drmax then b.drmax = dr end
-  if tot > b.totmax then b.totmax = tot end
-  if tot > 33.4 then b.over = b.over + 1 end
-  b.draws = b.draws + (gst.draws - st0)
-
-  if done and not reported then
-    reported = true
-    report(string.format("bot run finished in %.0f s, %d frames", now() - t_begin, frame))
+  if quit_requested then
+    quit_requested = false
+    local quit = callback("quit")
+    local stay
+    if quit then
+      ok, stay = xpcall(quit, debug.traceback)
+      if not ok then log("ERROR in love.quit: " .. tostring(stay)); stay = false end
+    end
+    if not stay then
+      log("love.event.quit: leaving the game")
+      if l360.quit then l360.quit() end
+      break
+    end
   end
 
-  -- 30 FPS: la musica se baja en lo que sobra del frame; despues, esperar el resto
-  -- atendiendo la red (sin polling de USB).
-  streams_step(t0 + 1 / 30)
-  l360.wait_frame(t0 + 1 / 30)
+  -- 30 FPS: music chunks are loaded in what is left of the frame; then wait for the rest
+  streams_step(t0 + DT)
+  l360.wait_frame(t0 + DT)
 end
-report("stopped by an error")

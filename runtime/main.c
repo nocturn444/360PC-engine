@@ -1,16 +1,19 @@
 /*
- * Love360 sobre xsdk: Balatro como un .xex que se abre desde Aurora (tarea 05).
+ * 360PC-Engine console runtime: a LOVE game as a .xex opened from Aurora (from Love360, tarea 05).
  *
- * LuaJIT 2.1 (interprete) + la tabla l360 que ve love360_boot.lua, igual que en runtime/ (libXenon).
+ * The game is the folder of the .xex (game:\): game.lua, conf.lua, main.lua and its assets. The
+ * runtime's own Lua layer is in game:\l360\ (runtime/lua/ in the repository).
+ *
+ * LuaJIT 2.1 (interprete) + la tabla l360 que ve l360/boot.lua.
  * Fase 1: tiempo, registro, archivos y memoria de verdad. Fase 2 (tarea 07): l360.gfx es
  * l360_gfx.c sobre la GPU de xsdk, con los shaders de game:\shaders\; si no arranca (faltan los
  * shaders), sigue el stub en Lua de la fase 1 (l360_gfx_stub.lua) con la pantalla de texto. No hay
  * sonido. El mando, los archivos en trozos, el guardado y la salida estan en l360_sys.c (fase 4).
  *
- * Archivos: todo se lee de game:\balatro\ (la carpeta del .xex). El registro es game:\<nombre del
+ * Archivos: todo se lee de game:\ (la carpeta del .xex). El registro es game:\<nombre del
  * .xex>.log (lo escribe xsdk: default.log en la consola) y tambien se ve en pantalla, como la consola
  * de texto de libXenon. Back mantenido 3 s sale y abre Aurora (o vuelve al dashboard si no la
- * encuentra): un toque de Back lo usa Balatro.
+ * encuentra): un toque de Back lo usa el juego.
  */
 #include <malloc.h>
 #include <pthread.h>
@@ -38,8 +41,10 @@
 #include "l360_gfx.h"
 #include "l360_sys.h"
 
-/* Carpeta del juego: los .lua y resources\ de Balatro, y love360\ con los .lua de Love360 */
-#define GAME_DIR "game:/balatro/"
+/* Game folder: the folder of the .xex. RUNTIME_DIR, inside it, has the runtime's own .lua files
+ * (runtime/lua/ in the repository); l360_sys.c reserves the same name. */
+#define GAME_DIR "game:/"
+#define RUNTIME_DIR "l360/"
 
 enum {
 	SPLASH_MS = 2000,
@@ -91,20 +96,20 @@ static void screen_open(void)
 {
 	NTSTATUS status = xsdk_gpu_open();
 	if (!NT_SUCCESS(status)) {
-		xsdk_log_write("love360: xsdk_gpu_open failed: 0x%08X", (unsigned)status);
+		xsdk_log_write("runtime: xsdk_gpu_open failed: 0x%08X", (unsigned)status);
 		return;
 	}
 	status = xsdk_present_open(XSDK_DISPLAY_720P, BUFFERS, SWAP_INTERVAL, &screen_w, &screen_h);
 	if (!NT_SUCCESS(status)) {
-		xsdk_log_write("love360: xsdk_present_open failed: 0x%08X", (unsigned)status);
+		xsdk_log_write("runtime: xsdk_present_open failed: 0x%08X", (unsigned)status);
 		return;
 	}
 	status = xsdk_text_open();
 	if (!NT_SUCCESS(status)) {
-		xsdk_log_write("love360: xsdk_text_open failed: 0x%08X", (unsigned)status);
+		xsdk_log_write("runtime: xsdk_text_open failed: 0x%08X", (unsigned)status);
 		return;
 	}
-	xsdk_log_write("love360: screen is %ux%u", (unsigned)screen_w, (unsigned)screen_h);
+	xsdk_log_write("runtime: screen is %ux%u", (unsigned)screen_w, (unsigned)screen_h);
 	screen_on = 1;
 }
 
@@ -115,7 +120,7 @@ static void screen_draw(void)
 	uint32_t address;
 	const NTSTATUS status = xsdk_present_begin(&address, BEGIN_TIMEOUT_MS);
 	if (!NT_SUCCESS(status)) {
-		xsdk_log_write("love360: xsdk_present_begin failed: 0x%08X (stopping drawing)", (unsigned)status);
+		xsdk_log_write("runtime: xsdk_present_begin failed: 0x%08X (stopping drawing)", (unsigned)status);
 		screen_on = 0;
 		return;
 	}
@@ -257,7 +262,7 @@ static void log_thread_start(void)
 	const NTSTATUS st = xsdk_thread_create_on(&log_thread, LOG_STACK, log_worker, NULL, LOG_HW_THREAD);
 	log_thread_on = NT_SUCCESS(st);
 	if (!log_thread_on)
-		xsdk_log_write("love360: the log thread did not start (0x%08X): writing from the main thread",
+		xsdk_log_write("runtime: the log thread did not start (0x%08X): writing from the main thread",
 			       (unsigned)st);
 }
 
@@ -361,7 +366,7 @@ static int l_log(lua_State *L)
 	return 0;
 }
 
-/* read(ruta): contenido de game:\balatro\<ruta>, o nil */
+/* read(ruta): contenido de game:\<ruta>, o nil */
 static int l_read(lua_State *L)
 {
 	const char *path = luaL_checkstring(L, 1);
@@ -419,7 +424,7 @@ static char crash_ctx[128];
 static int frames;
 
 /* ---------- tirones: los frames lentos, partidos en pedazos ----------
- * El bucle del boot (runtime/love360_boot.lua) hace por frame: poll_input, love.update, gfx.sync,
+ * El bucle del boot (runtime/lua/boot.lua) hace por frame: poll_input, love.update, gfx.sync,
  * love.draw, present, la musica y wait_frame. Con las marcas de poll_input y wait_frame, mas las de
  * sync y present de l360_gfx.c, cada frame que tarda mas de TIRON_MS en llegar a wait_frame va al
  * registro con: update, espera de la GPU, draw, present y lo demas; la memoria de Lua al empezar y
@@ -593,7 +598,7 @@ static int l_start_render(lua_State *L)
 /* ---------- arranque ---------- */
 
 /* Despues de un error o del final del boot: deja el registro en pantalla hasta que se apriete
- * Back mantenido 3 s (un toque de Back lo usa Balatro). */
+ * Back mantenido 3 s (un toque de Back lo usa el juego). */
 static void wait_back_forever(void) __attribute__((noreturn));
 static void wait_back_forever(void)
 {
@@ -663,13 +668,13 @@ static int run_game_lua(lua_State *L, const char *path)
 int main(void)
 {
 	clock_gettime(CLOCK_MONOTONIC, &t_start);
-	xsdk_log_write("love360: Love360 on xsdk (graphics with canvas and shaders, sound, controller, save and exit)");
+	xsdk_log_write("runtime: 360PC-Engine on xsdk");
 	const NTSTATUS splash = xsdk_splash_show(SPLASH_MS);
 	if (!NT_SUCCESS(splash))
-		xsdk_log_write("love360: xsdk_splash_show failed: 0x%08X", (unsigned)splash);
+		xsdk_log_write("runtime: xsdk_splash_show failed: 0x%08X", (unsigned)splash);
 	screen_open();
 	log_thread_start();              /* desde aca el registro lo escribe otro hilo */
-	logline("Love360 on xsdk - graphics with canvas and shaders, sound, controller, save and exit");
+	logline("360PC-Engine on xsdk");
 	if (screen_on) {
 		gfx_ok = l360_gfx_init(screen_w, screen_h, logline) == 0;
 		if (gfx_ok)
@@ -677,7 +682,7 @@ int main(void)
 		else
 			logline("[ERROR] graphics did not start: continuing with the text screen (l360.gfx stub)");
 	}
-	/* sonido (fase 3): sin el, el juego sigue mudo (love360_boot.lua avisa que falta l360.audio) */
+	/* sonido (fase 3): sin el, el juego sigue mudo (boot.lua avisa que falta l360.audio) */
 	const int audio = l360_audio_init();
 	if (audio == 0) {
 		atexit(l360_audio_close);
@@ -710,10 +715,6 @@ int main(void)
 	if (log_short)
 		logline("short log: from start_render on, only errors, missing items, summaries and [hitch]"
 			" (registro_completo in l360_gfx.txt for everything)");
-	/* Los sonidos se cargan la primera vez que suenan: su carpeta se lista ya, en la carga, para no
-	 * buscar en el pendrive (hasta 872 ms cada uno) los .idx que no estan (tarea 12). */
-	l360_sys_list_dir("resources/sounds");
-
 	lua_State *L = luaL_newstate();
 	if (!L) {
 		logline("[ERROR] luaL_newstate returned NULL (out of memory?)");
@@ -737,6 +738,7 @@ int main(void)
 		l360_audio_register(L);           lua_setfield(L, -2, "audio");
 	}
 	lua_pushstring(L, "xbox360-luajit");  lua_setfield(L, -2, "platform");
+	lua_pushstring(L, RUNTIME_DIR);       lua_setfield(L, -2, "runtime_dir");
 	lua_pushnumber(L, gfx_ok ? l360_gfx_width() : 1280);  lua_setfield(L, -2, "width");
 	lua_pushnumber(L, gfx_ok ? l360_gfx_height() : 720);  lua_setfield(L, -2, "height");
 	if (gfx_ok) {
@@ -745,22 +747,20 @@ int main(void)
 	}
 	lua_setglobal(L, "l360");
 
-	/* Prueba de numeros del interprete (pruebas/xsdk_numeros.lua), solo si esta copiada */
-	char probe[64];
-	snprintf(probe, sizeof(probe), GAME_DIR "love360/xsdk_numeros.lua");
-	FILE *pf = fopen(probe, "rb");
+	/* Interpreter number test (tests/console/xsdk_numeros.lua), only if it was copied */
+	FILE *pf = fopen(GAME_DIR RUNTIME_DIR "xsdk_numeros.lua", "rb");
 	if (pf) {
 		fclose(pf);
-		logline("Number test (love360/xsdk_numeros.lua):");
-		run_game_lua(L, "love360/xsdk_numeros.lua");
+		logline("Number test (" RUNTIME_DIR "xsdk_numeros.lua):");
+		run_game_lua(L, RUNTIME_DIR "xsdk_numeros.lua");
 	}
 
 	/* l360.gfx y l360.gfxstats: si l360_gfx.c no arranco, el stub en Lua de la fase 1; despues el boot */
-	if (!gfx_ok && run_game_lua(L, "love360/l360_gfx_stub.lua"))
+	if (!gfx_ok && run_game_lua(L, RUNTIME_DIR "l360_gfx_stub.lua"))
 		wait_back_forever();
-	logline("Loading Balatro...");
-	if (!run_game_lua(L, "love360/love360_boot.lua"))
-		logline("love360_boot.lua finished");
+	logline("Loading the game...");
+	if (!run_game_lua(L, RUNTIME_DIR "boot.lua"))
+		logline(RUNTIME_DIR "boot.lua finished");
 	char line[200];
 	snprintf(line, sizeof(line), "Files read: %d (%d KB) in %d ms", files_read, (int)(bytes_read / 1024),
 		 (int)read_ms);
