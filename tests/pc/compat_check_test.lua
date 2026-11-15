@@ -68,10 +68,12 @@ local fake = {
     newCanvas = rec('love.graphics.newCanvas', 'canvas'),
     rectangle = rec('love.graphics.rectangle'),
     polygon = function() error('polygon failed', 0) end,
+    isGammaCorrect = rec('love.graphics.isGammaCorrect', false),
+    _shaderCodeToGLSL = rec('love.graphics._shaderCodeToGLSL', 'glsl'),
     limits = { not_a_function = 1 },
   },
   physics = { newWorld = rec('love.physics.newWorld', 'world') },
-  event = { pump = rec('love.event.pump'), push = rec('love.event.push') },
+  event = { pump = rec('love.event.pump'), push = rec('love.event.push'), poll_i = rec('love.event.poll_i') },
   filesystem = {
     read = function(path) return files[path] end,
     append = function(path, text) saved[path] = (saved[path] or '') .. text; return true end,
@@ -94,7 +96,7 @@ check(#printed == 0, 'installing prints nothing')
 -- What is wrapped
 local g = fake.graphics
 for k, v in pairs(originals) do
-  check((g[k] ~= v) == (type(v) == 'function'), 'love.graphics.' .. k .. ' wrapped only if a function')
+  check((g[k] ~= v) == (type(v) == 'function' and k:sub(1, 1) ~= '_'), 'love.graphics.' .. k .. ' wrapped only if a function of the API')
 end
 check(fake.getVersion ~= nil and fake.run == default_run and fake.handlers.quit ~= nil and #calls == 0, 'love.run and love.handlers are left alone')
 check(type(Image.__gc) == 'function' and Image.__index == Image and Mesh.setVertex ~= nil, 'metamethods are left alone')
@@ -123,6 +125,15 @@ check(fake.physics.newWorld(0, 0) == 'world' and count('love.physics.newWorld: n
   'a function of an absent module')
 fake.event.pump(); fake.event.pump()
 check(count('love.event.pump') == 0, 'love.event.pump (called by LÖVE\'s own love.run) is not logged')
+-- LÖVE's internals: its own helpers are not wrapped, and a call from LÖVE's own Lua code
+-- (chunk names like '=[love "wrap_Graphics.lua"]') is not the game's
+check(g._shaderCodeToGLSL == originals._shaderCodeToGLSL,
+  'names LÖVE keeps for itself (_shaderCodeToGLSL, poll_i) are not wrapped')
+local love_chunk = assert(loadstring('local g = ...; local v = g.isGammaCorrect(); return v', '=[love "wrap_Graphics.lua"]'))
+love_chunk(g); love_chunk(g)
+check(count('isGammaCorrect') == 0, 'a call from LÖVE\'s own code is not logged')
+g.isGammaCorrect()
+check(count('love.graphics.isGammaCorrect: not on the console (missing)') == 1, 'the same function called by the game is logged')
 image:replacePixels(); image:replacePixels(); image:setWrap('repeat')
 check(count('Image:replacePixels: not on the console (missing)') == 1 and count('Image:setWrap: a stub') == 1, 'methods: missing and stub')
 
@@ -170,11 +181,11 @@ local lines = #printed
 check(saved['compat_check.txt'] == table.concat(printed, '\n') .. '\n', 'every line went to the file too')
 local r = compat.report()
 check(count('love.run: the console never calls it') == 2, 'a replaced love.run is found by report() (line and its repeat)')
-check(r.missing == 3 and r.stub == 2 and r.limit == 9 and r.callback == 2 and r.total == 16,
+check(r.missing == 4 and r.stub == 2 and r.limit == 9 and r.callback == 2 and r.total == 17,
   string.format('report counts: %d missing, %d stub, %d limit, %d callback', r.missing, r.stub, r.limit, r.callback))
-check(r.called == 18, 'distinct functions called: ' .. r.called)
+check(r.called == 19, 'distinct functions called: ' .. r.called)
 check(#compat.lines() == r.total and #printed == lines + 1 + 1 + r.total, 'report() prints the totals and each line again')
-check(count('[compat] report: 18 LÖVE functions called; 3 missing on the console, 2 stubs, 9 used beyond a limit, 2 callbacks never called') == 1,
+check(count('[compat] report: 19 LÖVE functions called; 4 missing on the console, 2 stubs, 9 used beyond a limit, 2 callbacks never called') == 1,
   'the report line')
 
 -- The committed list matches the code
