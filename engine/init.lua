@@ -14,6 +14,7 @@ local engine = {
   layers = require(prefix .. "layers"),
   entity = require(prefix .. "entity"),
   modifiers = require(prefix .. "modifiers"),
+  rng = require(prefix .. "rng"),
   -- set by init():
   config = nil,
   time = nil,      -- the Timestep

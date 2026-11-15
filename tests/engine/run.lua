@@ -1,5 +1,8 @@
 -- The engine's tests, on plain LuaJIT with a fake love (tests/engine/fake_love.lua).
 -- Usage, from the repository root: luajit -joff tests/engine/run.lua [test name...]
+-- Without -joff it passes too: rng_test then runs with the JIT (its numbers have to be the same
+-- both ways); the other files always run without it, because their "allocates nothing" checks
+-- count the collector's bytes and the JIT's traces use them too.
 package.path = "./?.lua;./?/init.lua;./tests/engine/?.lua;" .. package.path
 
 local T = { checks = 0 }
@@ -21,11 +24,15 @@ function T.no_new_globals(before)
 end
 
 local names = { "state_test", "timestep_test", "input_test", "camera_test", "pixel_test",
-  "layers_test", "anim_test", "entity_test", "modifiers_test", "engine_test", "demo_test" }
+  "layers_test", "anim_test", "entity_test", "modifiers_test", "rng_test", "engine_test", "demo_test" }
 if arg[1] then names = { unpack(arg) } end
 
+local jit_on = jit and jit.status()
 local failed = 0
 for _, name in ipairs(names) do
+  if jit then
+    if jit_on and name == "rng_test" then jit.on() else jit.off() end
+  end
   local before = T.checks
   local ok, err = xpcall(function() assert(loadfile("tests/engine/" .. name .. ".lua"))(T) end, debug.traceback)
   if ok then

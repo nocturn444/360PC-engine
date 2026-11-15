@@ -14,6 +14,7 @@ Reference and usage example: [docs/ENGINE.md](../docs/ENGINE.md).
 | `layers.lua` | Sprites made of named layers drawn in a fixed order. |
 | `entity.lua` | Entities made of components, cached queries, tags and ordered systems. |
 | `modifiers.lua` | Modifiers as data: stats evaluated in a fixed order, events, stacking, timers, save state. |
+| `rng.lua` | Seeded random numbers, identical on PC and console: xoshiro128**, named streams, save state, seed codes. |
 | `anim.lua` | Animations with anim8 (`lib/anim8`). |
 | `modules/` | Optional, genre-specific modules (objective 7). |
 

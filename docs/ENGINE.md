@@ -46,7 +46,7 @@ A fuller one, with every module: [examples/engine_demo](../examples/engine_demo)
 | `engine.run(config)` | Sets `love.load`, `love.update`, `love.draw`, `love.resize` and the input callbacks. Callbacks the game already defined still run, first. `love.run` is not touched (the console ignores it). |
 | `engine.init(config)`, `engine.update(dt)`, `engine.draw()` | The same three steps, to call from the game's own callbacks instead of `run`. |
 | `engine.time`, `engine.states`, `engine.controls`, `engine.screen` | The Timestep, the state Machine, the Input (if `config.input`) and the Pixel (if `config.pixel`), once `love.load` ran. |
-| `engine.state`, `.timestep`, `.input`, `.camera`, `.pixel`, `.layers`, `.entity`, `.modifiers`, `.anim` | The modules. `engine.anim` loads anim8 on first use. |
+| `engine.state`, `.timestep`, `.input`, `.camera`, `.pixel`, `.layers`, `.entity`, `.modifiers`, `.rng`, `.anim` | The modules. `engine.anim` loads anim8 on first use. |
 
 Config: `rate` (Hz, 60), `max_steps` (5), `max_frame` (0.25 s), `input`, `pixel`, `states`
 (`name = table`), `load` (`function(engine)`, runs in `love.load` before the first state is
@@ -366,13 +366,80 @@ set only answers `has`, `stacks`, `timeLeft` and `hasTag` about the others. Modi
 other only through stats and through `ctx`. A handler may call `set:add` / `set:remove`: it
 returns nil and is done when the event is over, so the list never changes under a dispatch.
 Nothing here draws random numbers: a handler that needs them takes the game's seeded generator
-from `ctx` or the entity.
+(`engine.rng`) from `ctx` or the entity.
 
 ### Saving
 
 `data = set:serialize()` is a plain table (`base`, and for each modifier `id`, `stacks`, `time`,
 `duration`, `seq`, `state`); `set:restore(data)` puts it back without sending `on_add`, keeps the
 event order, and returns the list of ids that are not defined any more (skipped), or nil.
+
+## engine.rng
+
+Seeded random numbers that are the same, bit for bit, on PC (LuaJIT with the JIT) and on the
+console (LuaJIT interpreter): the same seed gives the same level, loot and run on both.
+
+```lua
+local rng = engine.rng
+local run = rng.streams("daily 2026-11-15")    -- or a number; one per run
+local level, loot = run:get("level"), run:get("loot")
+
+local width = level:int(8, 20)                  -- whole number in [8, 20], every value equally likely
+local x = level:float() * 320                   -- [0, 1)
+if loot:chance(0.1) then ... end                -- true 1 time in 10
+local enemy = level:pick(enemies)               -- an item (and its index)
+local drop = loot:weighted(table)               -- by item.weight; or ("field") or (function(item, i))
+level:shuffle(rooms)                            -- in place, Fisher-Yates
+```
+
+| | |
+|---|---|
+| `rng.new(seed)` | A generator. `seed` is an integer (taken modulo 2^32) or a string (hashed with FNV-1a, 32 bits). |
+| `r:next_u32()` | The next 32 bits, an integer in [0, 2^32). |
+| `r:int(lo, hi)`, `r:int(n)` | An integer in [lo, hi] (or [1, n]) without bias: values outside the range are thrown away and drawn again, so it takes one draw or more. Up to 2^32 values. |
+| `r:float()` | k / 2^24, in [0, 1). One draw. |
+| `r:chance(p)` | `r:float() < p`. Always one draw, also for 0 and 1. |
+| `r:pick(list)` | `item, index`; nil, without a draw, for an empty list. |
+| `r:weighted(list, weight)` | `item, index`, with a probability proportional to the weight: the field named `weight` (default `"weight"`), the result of `weight(item, index)`, or the item itself in a list of numbers. Whole weights are exact (one `int(1, total)`); weights with fractions use `float() * total`. Weights of 0 are never picked; an error if none is above 0. |
+| `r:shuffle(list)` | Shuffles in place and returns the list. |
+| `r:state()`, `r:set_state(s)` | The state as a string of 32 hex digits, and back. |
+| `r:clone()` | A copy that continues with the same numbers (to look ahead without spending the original). |
+| `rng.streams(seed)` | A set of generators by name. `s:get(name)` makes it the first time, from the seed and the name alone, and returns the same one after that. `s.seed` is the number in use. |
+| `s:state()`, `s:set_state(data)` | `{ seed = number, streams = { name = state string } }`, a plain table for the save; `set_state` puts it back (generators already handed out stay valid; a stream that is not in the save starts from the seed). |
+| `s:reset(seed)` | Starts every stream again, from a new seed if one is given. |
+| `rng.seed_to_code(seed)`, `rng.code_to_seed(text)` | The seed as 7 characters to show and type (`"0000C1S"`; Crockford's base 32, no I, L, O or U), and back to the number (or `nil, message`). Typing accepts lower case, spaces and dashes, O as 0, I and L as 1. `rng.seed_number(seed)` is the number a string seed becomes. |
+
+**Algorithm.** xoshiro128** (Blackman and Vigna): 128 bits of state, period 2^128 - 1. The 4
+state words come from the seed (and, for a stream, the FNV-1a hash of its name) through the
+MurmurHash3 finalizer. Everything is done with the `bit` library on values that fit in 32 bits
+signed; the multiplications are done in limbs so no intermediate value reaches 2^31. So nothing
+depends on integer overflow, on how a big double becomes 32 bits, on float rounding or on the
+JIT, which is where the two LuaJIT builds could differ. `float` is a 24-bit integer times 2^-24,
+exact. It is not for cryptography.
+
+**Guarantees.** The same seed and the same calls in the same order give the same results on
+every platform and in every later version of the engine: the sequences are pinned by
+`tests/console/rng_check.lua` (checked against a C version of the algorithms), which runs on PC
+with and without the JIT and on the console. Nothing is allocated per draw.
+
+**Streams.** Use one stream per purpose (`"level"`, `"loot"`, `"fx"`, or any name the game
+wants): drawing from one never changes another, and the order in which they are first asked
+for does not matter. So adding a particle effect (`fx`) does not change the levels, and the
+loot of a room does not depend on how many enemies were rolled before it. Anything that does
+not affect the game (particles, screen shake) goes in its own stream, never in a gameplay one.
+
+**What not to do.**
+
+- No `math.random` or `love.math.random` for gameplay: they differ between PC and console
+  and are not saved. (For a new run's seed, something like `os.time()` is fine: that is the one
+  number that is not reproducible, and it is shown as the seed code.)
+- Do not draw gameplay numbers in `draw` or per frame: only in the fixed `update`, so the count
+  of draws does not depend on the frame rate.
+- Do not draw while iterating with `pairs`: its order is not defined. Use arrays, or sort the keys.
+- Weights with fractions and `float() * something` are still IEEE doubles, the same on both
+  platforms, but prefer whole weights and `int`: they are exact by construction.
+- A string seed is always hashed: `rng.new("0000C1S")` is not `rng.new(rng.code_to_seed("0000C1S"))`.
+- Two stream names with the same 32-bit hash would share a sequence (1 in 2^32 per pair).
 
 ## engine.anim
 
