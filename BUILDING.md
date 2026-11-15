@@ -39,7 +39,7 @@ math gives wrong results on the console. The script ends with four checks that m
 frame layout present, patch present, no `__emutls`, no `mcrxr`); it stops if any fails.
 
 Changing the LuaJIT commit needs its own pull request that remakes the patch and passes
-`tests/console/xsdk_numeros.lua` on the console.
+`tests/console/number_check.lua` on the console.
 
 ## 2. The `.xex`
 
@@ -58,15 +58,15 @@ uses a development Title ID (`0xFFFF0360`) and warns; do not distribute that.
 
 The output is `runtime/build/game.xex`; on the console it goes as `default.xex` in the game's
 folder, next to its `main.lua` (layout in [runtime/README.md](runtime/README.md)). Add
-`-DL360_PUBLICADO=ON` for a release build with a short log (errors, missing features, summaries
+`-DL360_RELEASE=ON` for a release build with a short log (errors, missing features, summaries
 and hitches).
 
 ## 3. Checks
 
 - The boot, on PC: `luajit -joff tests/pc/boot_pc.lua` runs `runtime/lua/boot.lua` against
   `tests/fixtures/minimal_game` with a fake `l360` table and must end with a line starting with `OK:`.
-- LuaJIT numbers, on PC: `luajit -joff tests/console/xsdk_numeros.lua` must end with
-  `== numeros: 0 de 36 mal ==`.
-- LuaJIT numbers, on the console: copy `tests/console/xsdk_numeros.lua` to
-  `<folder>\l360\xsdk_numeros.lua`; `main.c` runs it before the game and the log must
+- LuaJIT numbers, on PC: `luajit -joff tests/console/number_check.lua` must end with
+  `== numbers: 0 of 36 wrong ==`.
+- LuaJIT numbers, on the console: copy `tests/console/number_check.lua` to
+  `<folder>\l360\number_check.lua`; `main.c` runs it before the game and the log must
   end with the same line.

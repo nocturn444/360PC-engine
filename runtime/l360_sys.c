@@ -180,7 +180,7 @@ static int l_rumble(lua_State *L)
 
 /* ---------- exit ---------- */
 
-/* Where to look for Aurora on exit: the path in game:\lanzador_aurora.txt (one line), if it is there,
+/* Where to look for Aurora on exit: the path in game:\aurora_launcher.txt (one line), if it is there,
  * and then the usual ones. Same as in runtime/ and in herramientas/lanzador_aurora. */
 static const char *const AURORA[] = {
 	"usb:\\Apps\\Aurora\\Aurora.xex",
@@ -219,7 +219,7 @@ static void quit_to_aurora(void)
 	l360_sys_save_flush();           /* what is left in the save queue, before leaving */
 	l360_audio_close();              /* xsdk_audio_close before opening another .xex (phase 3) */
 	char path[260] = { 0 };
-	FILE *f = fopen("game:/lanzador_aurora.txt", "r");
+	FILE *f = fopen("game:/aurora_launcher.txt", "r");
 	if (f) {
 		if (fgets(path, sizeof(path), f)) {
 			path[strcspn(path, "\r\n")] = 0;
@@ -298,7 +298,7 @@ static char *read_whole(const char *path, size_t *len)
  * only once (xsdk's opendir/readdir; resources/sounds at startup, the others the first time something
  * is read from them), and what is not in the list is not opened. Names are compared without case,
  * like the USB stick's FAT. If a folder could not be listed in full, everything in it is still opened
- * (something that might exist is never treated as missing). "sin_lista" in game:\l360_gfx.txt turns
+ * (something that might exist is never treated as missing). "no_listing" in game:\l360_gfx.txt turns
  * it off. */
 enum { LIST_DIRS = 48, LIST_DIR_CHARS = 160 };
 
@@ -399,7 +399,7 @@ static dirlist_t *list_add(const char *dir)
 void l360_sys_list_off(void)
 {
 	list_off = 1;
-	l360_log("  [files] sin_lista: opening each file without checking the folder listing");
+	l360_log("  [files] no_listing: opening each file without checking the folder listing");
 }
 
 void l360_sys_list_dir(const char *dir)
@@ -454,7 +454,7 @@ int l360_sys_game_missing(const char *path)
  * reading it in fetch_start stalled the main thread, and the boot asks for it after present, so the
  * first frames (SPLASH, chunk 0 of every track) took 60-90 ms (the "rest" of 60-70 ms in the [hitch],
  * task 12), and a USB stall in the middle of the game would be a hitch of almost a second.
- * fetch_step waits at most the ms it is given and returns "pendiente" if it has not finished.
+ * fetch_step waits at most the ms it is given and returns "pending" if it has not finished.
  * A missing file is reported in fetch_step (nil and the reason), not in fetch_start, as with libXenon.
  * The folder listing (l360_sys_game_missing) is checked in fetch_start, on the main thread: the reader
  * thread does not touch the log, the listing or Lua. If the thread does not start, it is read in
@@ -559,7 +559,7 @@ static int l_fetch_start(lua_State *L)
 	return 1;
 }
 
-/* fetch_step(id, ms): "pendiente", the data, or nil and the reason. Waits at most ms (0 to 1000)
+/* fetch_step(id, ms): "pending", the data, or nil and the reason. Waits at most ms (0 to 1000)
  * for the thread to finish reading. */
 static int l_fetch_step(lua_State *L)
 {
@@ -582,7 +582,7 @@ static int l_fetch_step(lua_State *L)
 		if (!pending)
 			break;
 		if (now_s() >= until) {
-			lua_pushstring(L, "pendiente");
+			lua_pushstring(L, "pending");
 			return 1;
 		}
 		const struct timespec one_ms = { 0, 1000 * 1000 };
@@ -717,7 +717,7 @@ static int l_save_dir(lua_State *L)
  *    which does not touch the log or Lua.
  *  - Before leaving for Aurora it waits for the queue to empty (SAVE_FLUSH_MS at most).
  *  - If the thread does not start or there is no memory for the copy, it is written as before, right away.
- * "guardado_directo" in game:\l360_gfx.txt turns it off (everything as before). */
+ * "direct_save" in game:\l360_gfx.txt turns it off (everything as before). */
 enum {
 	SAVE_HW_THREAD = 3,               /* core 1, with the audio mixer (2); not core 0 (Lua) */
 	SAVE_STACK = 64 * 1024,
@@ -740,7 +740,7 @@ static save_job_t *save_head, *save_tail;   /* not started, in order */
 static save_job_t *save_busy;               /* the one being written (save_read reads it) */
 static size_t save_queued_bytes;
 static int save_thread_state;               /* 0 not started, 1 running, -1 did not start: direct */
-static int save_direct;                     /* "guardado_directo" in l360_gfx.txt */
+static int save_direct;                     /* "direct_save" in l360_gfx.txt */
 static HANDLE save_thread;
 /* What the thread leaves for the main thread to log (under save_mu) */
 static char save_note[8][300];
@@ -915,7 +915,7 @@ void l360_sys_save_flush(void)
 void l360_sys_save_direct(void)
 {
 	save_direct = 1;
-	l360_log("  [save] guardado_directo: writing synchronously, without a separate thread");
+	l360_log("  [save] direct_save: writing synchronously, without a separate thread");
 }
 
 static int l_save_read(lua_State *L)

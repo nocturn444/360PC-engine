@@ -181,7 +181,7 @@ local function run(path)
 end
 
 -- Like main.c: the number test, then the graphics stub (as when the GPU did not start), then the boot
-local nums = assert(loadstring(assert(game_file(RT .. 'xsdk_numeros.lua')), '@xsdk_numeros.lua'))()
+local nums = assert(loadstring(assert(game_file(RT .. 'number_check.lua')), '@number_check.lua'))()
 check(nums == 0, 'the number test: ' .. tostring(nums) .. ' wrong')
 run(RT .. 'l360_gfx_stub.lua')
 check(type(l360.gfx) == 'table' and type(l360.gfxstats) == 'function', 'the stub set l360.gfx and l360.gfxstats')

@@ -18,7 +18,7 @@ export PATH=$XSDK_TOOLCHAIN/bin:$PATH
 CROSS=${CROSS:-powerpc-xsdk-elf-}
 
 # Fixed commit: toolchain/luajit_xsdk.patch is made against this one. To change it, a PR of its own that
-# redoes the patch and runs tests/console/xsdk_numeros.lua on the console again.
+# redoes the patch and runs tests/console/number_check.lua on the console again.
 LUAJIT_COMMIT=a4c064539ea931274d407e1249b4bb575424a0f4
 PATCH="$PWD/toolchain/luajit_xsdk.patch"
 mkdir -p third_party
@@ -32,10 +32,10 @@ fi
 echo "LuaJIT: $(git rev-parse HEAD)"
 # Patch for xsdk (interpreter fixes for GPR64; see the header of luajit_xsdk.patch)
 if git apply --reverse --check "$PATCH" 2>/dev/null; then
-    echo "Parche luajit_xsdk.patch: ya aplicado"
+    echo "Patch luajit_xsdk.patch: already applied"
 else
     git apply "$PATCH"
-    echo "Parche luajit_xsdk.patch: aplicado"
+    echo "Patch luajit_xsdk.patch: applied"
 fi
 
 # Why each option (the usual ones are explained in build_luajit.sh):
@@ -62,23 +62,23 @@ make -C src libluajit.a HOST_CC="gcc -m32 -D_XBOX_VER=200" CROSS="$CROSS" TARGET
     DASM_XFLAGS="-D FRAME32 -D PPE -D MODE32" TARGET_CFLAGS="-D_XBOX_VER=200 -O2 -mcpu=cell -fno-pic" XCFLAGS="$X"
 
 if [ "$CROSS" != "powerpc-xsdk-elf-" ]; then
-    echo "Armado con $CROSS: solo prueba, no copiar a la consola."
+    echo "Built with $CROSS: test only, do not copy to the console."
     exit 0
 fi
 OBJDUMP=${CROSS}objdump
 # Check: the interpreter was generated for the 360 (384-byte frame: stwu sp,-384(sp) on entry)
 n=$($OBJDUMP -d src/libluajit.a | grep -cE "stwu +r?1,-384\(r?1\)" || true)
-echo "Entradas al interprete con el marco de la 360: $n (tiene que ser mas de 0)"
+echo "Interpreter entries with the 360 frame: $n (must be more than 0)"
 [ "$n" != "0" ]
 # Check: the patch is in the generated interpreter (num2int returns the right value: clrldi r3,r4,32)
 p=$($OBJDUMP -d src/libluajit.a | grep -cE "(clrldi +r?3,r?4,32|rldicl +r?3,r?4,0,32)" || true)
-echo "lj_vm_num2int_check con el parche: $p (tiene que ser mas de 0)"
+echo "lj_vm_num2int_check with the patch: $p (must be more than 0)"
 [ "$p" != "0" ]
 # Check: no thread variables (xsdk compiles without TLS: __thread would go through emutls)
 t=$($OBJDUMP -t src/libluajit.a | grep -c "__emutls" || true)
-echo "Variables __thread en libluajit.a: $t (tiene que ser 0)"
+echo "__thread variables in libluajit.a: $t (must be 0)"
 [ "$t" = "0" ]
 # Check: no mcrxr instructions (it does not exist on the Xenon)
 m=$($OBJDUMP -d src/libluajit.a | grep -c mcrxr || true)
-echo "Instrucciones mcrxr en libluajit.a: $m (tiene que ser 0)"
+echo "mcrxr instructions in libluajit.a: $m (must be 0)"
 [ "$m" = "0" ]

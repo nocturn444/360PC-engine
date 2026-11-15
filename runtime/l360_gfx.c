@@ -46,14 +46,14 @@
 #define L360_SHADERS 1
 
 /* Interruptores de prueba sin recompilar: palabras en game:\l360_gfx.txt (una o varias):
- *   sin_canvas      setCanvas no hace nada y dibujar un canvas tampoco: todo va directo a la pantalla
+ *   no_canvas      setCanvas no hace nada y dibujar un canvas tampoco: todo va directo a la pantalla
  *   canvas_default  el canvas se dibuja con default.psu en lugar del shader que pida el juego (CRT)
- *   sin_shaders     todo con default.psu/.vsu (como L360_SHADERS 0)
- *   sin_literales   no carga los literales de los shaders de XNA (como antes de arreglarlo)
- *   sin_lotes       un draw por cada submit, sin juntar los que comparten estado
+ *   no_shaders     todo con default.psu/.vsu (como L360_SHADERS 0)
+ *   no_literals   no carga los literales de los shaders de XNA (como antes de arreglarlo)
+ *   no_batching       un draw por cada submit, sin juntar los que comparten estado
  * Los shaders de xost (compilar_xost.py) y los de XNA van juntos en game:\shaders\: cada .psu/.vsu
  * se reconoce por su cabecera (L3X1 = xost). El interruptor shaders_xost ya no hace falta. */
-static int opt_sin_canvas, opt_canvas_default, opt_sin_shaders, opt_sin_lotes;
+static int opt_no_canvas, opt_canvas_default, opt_no_shaders, opt_no_batching;
 /* para el registro cada 300 frames */
 static long st_canvas_resolves, st_screen_resolves, st_last_draws, st_last_submits;
 
@@ -353,7 +353,7 @@ static void parse_literals(shader_t *s, const uint8_t *c, uint32_t n, const char
     }
 }
 
-static int opt_sin_literales;
+static int opt_no_literals;
 
 /* c252-c255 de pixel: xsdk_gpu_set_pixel_constants no llega (assert), porque xsdk usa c255 para el
  * gl_FragCoord de los shaders de xost. Love360 no usa esos shaders ni los pases en bandas, asi que
@@ -623,7 +623,7 @@ static void wait_vb(void)
  * que se ve ni el orden: solo cuantas veces se arma el estado y se llama a xsdk_gpu_draw. El lote
  * pendiente se dibuja (flush) antes de lo que cambia el estado de afuera: un resolve (setCanvas,
  * present), un send (cambia las constantes que el lote todavia no subio) y la pantalla de texto.
- * "sin_lotes" en l360_gfx.txt dibuja cada submit por separado, como antes. */
+ * "no_batching" en l360_gfx.txt dibuja cada submit por separado, como antes. */
 static struct {
     int n;                       /* vertices en el lote; 0 = no hay lote */
     int first;                   /* primer vertice en la mitad actual del buffer */
@@ -680,7 +680,7 @@ static void flush(void)
     }
     /* los literales van despues de las constantes del juego, como en libXenon (las sube al dibujar):
      * si comparten un registro que el shader no declara, gana el literal */
-    if (lits_dirty && !opt_sin_literales) {
+    if (lits_dirty && !opt_no_literals) {
         apply_literals(vs);
         apply_literals(ps);
         if (((const shader_t *)vs)->vmin < 5)
@@ -709,7 +709,7 @@ static void submit(surf_t *tex, vertex_t *v, int nverts)
     if (!gpu_ok || guide_open)
         return;
 
-    shader_ud *sh = (L360_SHADERS && !opt_sin_shaders) ? cur_shader : NULL;
+    shader_ud *sh = (L360_SHADERS && !opt_no_shaders) ? cur_shader : NULL;
     prog_t *p = &progs[sh ? sh->prog : PROG_DEFAULT];
     XsdkShader *ps = p->ps, *vs = p->vs;
     if (sh && sh->prog == PROG_DISSOLVE && sh->ps[0][0] > 0.0001f && p->ps_alt && p->vs_alt) {
@@ -722,7 +722,7 @@ static void submit(surf_t *tex, vertex_t *v, int nverts)
         vs = p->vs;
     }
     surf_t *t = tex ? tex : white_tex;
-    if (!(pend.n && !opt_sin_lotes && pend.first + pend.n == vb_cur && pend.tex == t && pend.linear == t->linear
+    if (!(pend.n && !opt_no_batching && pend.first + pend.n == vb_cur && pend.tex == t && pend.linear == t->linear
           && pend.sh == sh && pend.ps == ps && pend.vs == vs)) {
         flush();
         pend.first = vb_cur;
@@ -737,7 +737,7 @@ static void submit(surf_t *tex, vertex_t *v, int nverts)
     vb_cur += nverts;
     pend.n += nverts;
     st_submits++;
-    if (opt_sin_lotes)
+    if (opt_no_batching)
         flush();                  /* como antes de los lotes: cada submit se dibuja en el momento */
 }
 
@@ -1417,7 +1417,7 @@ static int g_draw(lua_State *L)
 {
     tex_ud *t = to_tex(L, 1);
     text_ud *tx = t ? NULL : luaL_testudata(L, 1, MT_TEXT);
-    if ((!t && !tx) || (t && !t->s) || (t && t->kind == TEX_CANVAS && opt_sin_canvas)) {
+    if ((!t && !tx) || (t && !t->s) || (t && t->kind == TEX_CANVAS && opt_no_canvas)) {
         l360_gfx_stats.skipped++;        /* Video y otros: todavia no; texturas desde el paso 2b */
         return 0;
     }
@@ -1560,7 +1560,7 @@ static int g_setCanvas(lua_State *L)
     } else if (!lua_isnoneornil(L, 1)) {
         t = to_tex(L, 1);
     }
-    if (opt_sin_canvas)
+    if (opt_no_canvas)
         t = NULL;
     if (t == cur_canvas)
         return 0;
@@ -1680,13 +1680,13 @@ static void read_options(void)
     size_t n = fread(buf, 1, sizeof(buf) - 1, f);
     fclose(f);
     buf[n] = 0;
-    opt_sin_canvas = strstr(buf, "sin_canvas") != NULL;
+    opt_no_canvas = strstr(buf, "no_canvas") != NULL;
     opt_canvas_default = strstr(buf, "canvas_default") != NULL;
-    opt_sin_shaders = strstr(buf, "sin_shaders") != NULL;
-    opt_sin_literales = strstr(buf, "sin_literales") != NULL;
-    opt_sin_lotes = strstr(buf, "sin_lotes") != NULL;
-    gfx_log("[gfx] l360_gfx.txt: sin_canvas=%d canvas_default=%d sin_shaders=%d sin_literales=%d sin_lotes=%d",
-            opt_sin_canvas, opt_canvas_default, opt_sin_shaders, opt_sin_literales, opt_sin_lotes);
+    opt_no_shaders = strstr(buf, "no_shaders") != NULL;
+    opt_no_literals = strstr(buf, "no_literals") != NULL;
+    opt_no_batching = strstr(buf, "no_batching") != NULL;
+    gfx_log("[gfx] l360_gfx.txt: no_canvas=%d canvas_default=%d no_shaders=%d no_literals=%d no_batching=%d",
+            opt_no_canvas, opt_canvas_default, opt_no_shaders, opt_no_literals, opt_no_batching);
     if (strstr(buf, "shaders_xost"))
         gfx_log("[gfx] shaders_xost is no longer needed: xost shaders are read from shaders\\ by their header");
 }

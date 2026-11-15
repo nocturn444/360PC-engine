@@ -34,14 +34,14 @@ void l360_sys_readstats(int *files, double *bytes, double *ms);
  * that is not there took up to 872 ms. l360_sys_list_dir(dir) lists that folder now; the others
  * are listed the first time something is read from them. l360_sys_game_missing(path) returns 1
  * only if the folder was listed in full and path is not in it: then it is not even opened.
- * l360_sys_list_off() turns it off ("sin_lista" in l360_gfx.txt). */
+ * l360_sys_list_off() turns it off ("no_listing" in l360_gfx.txt). */
 void l360_sys_list_dir(const char *dir);
 int l360_sys_game_missing(const char *path);
 void l360_sys_list_off(void);
 
 /* Saving on a separate thread (task 12): save_write queues and returns. l360_sys_save_flush() waits
  * until what is left is written (called on the exit to Aurora). l360_sys_save_direct() turns it off
- * ("guardado_directo" in l360_gfx.txt): it writes right away, as before. */
+ * ("direct_save" in l360_gfx.txt): it writes right away, as before. */
 void l360_sys_save_flush(void);
 void l360_sys_save_direct(void);
 

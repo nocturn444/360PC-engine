@@ -302,7 +302,7 @@ end
 local function parse_wav(data)
   if type(data) ~= "string" or #data < 12 or data:sub(1, 4) ~= "RIFF"
       or data:sub(9, 12) ~= "WAVE" then
-    return nil, "no es un WAV"
+    return nil, "not a WAV"
   end
   local fmt, fact, data_pos, data_size
   local pos = 13
@@ -344,7 +344,7 @@ local function parse_wav(data)
     data_size = math.min(data_size, math.ceil(frames / spb) * ba)
     return data_pos, data_size, 1, fmt.rate, frames, ba
   end
-  if fmt.format ~= 1 then return nil, "no es PCM" end
+  if fmt.format ~= 1 then return nil, "not PCM" end
   if fmt.channels ~= 1 and fmt.channels ~= 2 then return nil, "channels must be 1 or 2" end
   if fmt.bits ~= 16 then return nil, "must be 16-bit" end
   if not fmt.rate or fmt.rate < 4000 or fmt.rate > 96000 then return nil, "sample rate out of range" end
@@ -416,12 +416,12 @@ local function read_sound(path)
     local ogg = l360.read(path)
     if ogg and ogg:sub(1, 4) ~= "OggS" then return ogg end
     if ogg or wav then return nil, "OGG not converted" end
-    return nil, "no existe"
+    return nil, "does not exist"
   end
   local data = l360.read(path)
   if data and data:sub(1, 4) ~= "OggS" then return data end
   if data then return nil, "OGG not converted" end
-  return nil, "no existe"
+  return nil, "does not exist"
 end
 
 local function load_sound_data(path)
@@ -445,7 +445,7 @@ end
 local function new_sound_data(source)
   if type(source) == "table" and getmetatable(source) == SoundMT then return source end
   if type(source) ~= "string" then return nil end
-  if source:sub(1, 4) == "RIFF" then return make_sound_data(source, "datos") end
+  if source:sub(1, 4) == "RIFF" then return make_sound_data(source, "data") end
   return load_sound_data(source)
 end
 
@@ -556,7 +556,7 @@ local function streams_step(deadline)
     local ms = (deadline - now()) * 1000 - 1
     if ms <= 0 then return end
     local r, err = l360.fetch_step(fetch_id, ms)
-    if r == "pendiente" then return end
+    if r == "pending" then return end
     local t = fetch_track
     fetch_id = nil
     if r then

@@ -42,11 +42,11 @@ set_target_properties(game PROPERTIES C_STANDARD 17 C_EXTENSIONS ON)
 target_compile_options(game PRIVATE -Wall -Wextra -Werror)
 target_include_directories(game PRIVATE "${LUAJIT}" "${CMAKE_CURRENT_SOURCE_DIR}/third_party/stb")
 target_link_libraries(game PRIVATE "${LUAJIT}/libluajit.a")
-# Release build: -DL360_PUBLICADO=ON keeps the log short (errors, summaries and [hitch]; see
-# main.c). In game:\l360_gfx.txt, registro_completo turns the full log back on.
-option(L360_PUBLICADO "Release build: short log" OFF)
-if(L360_PUBLICADO)
-	target_compile_definitions(game PRIVATE L360_REGISTRO_CORTO=1)
+# Release build: -DL360_RELEASE=ON keeps the log short (errors, summaries and [hitch]; see
+# main.c). In game:\l360_gfx.txt, full_log turns the full log back on.
+option(L360_RELEASE "Release build: short log" OFF)
+if(L360_RELEASE)
+	target_compile_definitions(game PRIVATE L360_SHORT_LOG=1)
 endif()
 # The Title ID separates the game's system saves and what Aurora remembers about it. Do not change
 # a released game's Title ID: Aurora would treat it as another game.

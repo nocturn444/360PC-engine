@@ -187,12 +187,12 @@ static void con_add(const char *s)
 
 /* ---------- short log (task 12, published version) ----------
  * Each log line is written to the USB stick. In the published version (built with
- * -DL360_PUBLICADO=ON, which defines L360_REGISTRO_CORTO) only these go to the .log: errors, what is
+ * -DL360_RELEASE=ON, which defines L360_SHORT_LOG) only these go to the .log: errors, what is
  * missing, the summaries every 300 frames ([memory], [audio], [gfx] frame, [hitches]) and the [hitch]
  * lines. Up to start_render the startup lines also go (not the ones for each file read), to know what
- * it started with. The text screen still shows everything. In game:\l360_gfx.txt, "registro_completo"
- * or "registro_corto" choose something other than the built-in setting. */
-#ifdef L360_REGISTRO_CORTO
+ * it started with. The text screen still shows everything. In game:\l360_gfx.txt, "full_log"
+ * or "short_log" choose something other than the built-in setting. */
+#ifdef L360_SHORT_LOG
 static int log_short = 1;
 #else
 static int log_short;
@@ -426,12 +426,12 @@ static int frames;
 /* ---------- hitches: slow frames, broken into pieces ----------
  * The boot loop (runtime/lua/boot.lua) does per frame: poll_input, love.update, gfx.sync,
  * love.draw, present, the music and wait_frame. With the marks of poll_input and wait_frame, plus
- * those of sync and present in l360_gfx.c, every frame that takes more than TIRON_MS to reach
+ * those of sync and present in l360_gfx.c, every frame that takes more than HITCH_MS to reach
  * wait_frame goes to the log with: update, GPU wait, draw, present and the rest; Lua memory at the
  * start and at the end; how many garbage collections finished in the frame (an object with __gc that
  * is created again each time); how much texture data was uploaded; and the draws. */
-#define TIRON_MS 40.0
-#define TIRON_MAX_POR_300 30            /* so as not to fill the log if everything is slow */
+#define HITCH_MS 40.0
+#define HITCH_MAX_PER_300 30            /* so as not to fill the log if everything is slow */
 
 static double ms_now(void)
 {
@@ -467,9 +467,9 @@ static struct {
 	long cycles, draws, tex_bytes;
 	unsigned long image_ms;
 } fr;
-static long tirones, tirones_logged, tirones_omitted, tiron_frames;
-static double tiron_worst;
-static int opt_gc_paso;                  /* "gc_paso" in game:\l360_gfx.txt (see wait_frame) */
+static long hitch_count, hitches_logged, hitches_omitted, hitch_frames;
+static double hitch_worst;
+static int opt_gc_step;                  /* "gc_step" in game:\l360_gfx.txt (see wait_frame) */
 static long gc_steps;
 
 static void frame_begin(lua_State *L)
@@ -492,12 +492,12 @@ static void frame_end(lua_State *L)
 		return;
 	double end = ms_now(), total = end - fr.at;
 	const l360_gfx_stats_t *g = &l360_gfx_stats;
-	tiron_frames++;
-	if (total > TIRON_MS) {
-		tirones++;
-		if (total > tiron_worst) tiron_worst = total;
-		if (tirones_logged < TIRON_MAX_POR_300) {
-			tirones_logged++;
+	hitch_frames++;
+	if (total > HITCH_MS) {
+		hitch_count++;
+		if (total > hitch_worst) hitch_worst = total;
+		if (hitches_logged < HITCH_MAX_PER_300) {
+			hitches_logged++;
 			/* the l360_gfx.c marks belong to this frame only if they were set after poll_input */
 			int ok = g->sync_at >= fr.at && g->sync_end_at >= g->sync_at && g->present_at >= g->sync_end_at &&
 				 g->present_end_at >= g->present_at && end >= g->present_end_at;
@@ -517,22 +517,22 @@ static void frame_end(lua_State *L)
 				 crash_ctx[0] ? crash_ctx : "-");
 			logline(line);
 		} else {
-			tirones_omitted++;
+			hitches_omitted++;
 		}
 	}
-	if (tiron_frames % 300 == 0) {
+	if (hitch_frames % 300 == 0) {
 		char line[200];
 		snprintf(line, sizeof(line), "[hitches] last 300 frames: %ld over %.0f ms (worst %.0f ms, %ld not logged),"
-			 " %ld collections in total%s", tirones, TIRON_MS, tiron_worst, tirones_omitted, gc_cycles,
-			 opt_gc_paso ? ", gc_paso" : "");
+			 " %ld collections in total%s", hitch_count, HITCH_MS, hitch_worst, hitches_omitted, gc_cycles,
+			 opt_gc_step ? ", gc_step" : "");
 		logline(line);
-		if (opt_gc_paso) {
-			snprintf(line, sizeof(line), "[hitches] gc_paso: %ld steps in the spare time", gc_steps);
+		if (opt_gc_step) {
+			snprintf(line, sizeof(line), "[hitches] gc_step: %ld steps in the spare time", gc_steps);
 			logline(line);
 			gc_steps = 0;
 		}
-		tirones = tirones_logged = tirones_omitted = 0;
-		tiron_worst = 0;
+		hitch_count = hitches_logged = hitches_omitted = 0;
+		hitch_worst = 0;
 	}
 }
 
@@ -559,9 +559,9 @@ static int l_wait_frame(lua_State *L)
 	set_status(status);
 	if (!gfx_active)
 		screen_draw();
-	/* gc_paso (test): small collector steps in the spare time of the frame, leaving 3 ms, so that
+	/* gc_step (test): small collector steps in the spare time of the frame, leaving 3 ms, so that
 	 * collection does not all land in one frame. It stops when a collection finishes. */
-	while (opt_gc_paso && (until - now_s()) * 1000 > 3) {
+	while (opt_gc_step && (until - now_s()) * 1000 > 3) {
 		gc_steps++;
 		if (lua_gc(L, LUA_GCSTEP, 0))
 			break;
@@ -693,28 +693,28 @@ int main(void)
 		logline(line);
 	}
 
-	/* gc_paso: the same switch list as l360_gfx.c (game:\l360_gfx.txt) */
+	/* gc_step: the same switch list as l360_gfx.c (game:\l360_gfx.txt) */
 	FILE *opts = fopen("game:/l360_gfx.txt", "rb");
 	if (opts) {
 		char buf[256] = { 0 };
 		size_t n = fread(buf, 1, sizeof(buf) - 1, opts);
 		fclose(opts);
 		buf[n] = 0;
-		opt_gc_paso = strstr(buf, "gc_paso") != NULL;
-		if (opt_gc_paso)
-			logline("gc_paso: Lua collector steps in the spare time of each frame");
-		if (strstr(buf, "sin_lista"))
+		opt_gc_step = strstr(buf, "gc_step") != NULL;
+		if (opt_gc_step)
+			logline("gc_step: Lua collector steps in the spare time of each frame");
+		if (strstr(buf, "no_listing"))
 			l360_sys_list_off();
-		if (strstr(buf, "guardado_directo"))
+		if (strstr(buf, "direct_save"))
 			l360_sys_save_direct();
-		if (strstr(buf, "registro_completo"))
+		if (strstr(buf, "full_log"))
 			log_short = 0;
-		else if (strstr(buf, "registro_corto"))
+		else if (strstr(buf, "short_log"))
 			log_short = 1;
 	}
 	if (log_short)
 		logline("short log: from start_render on, only errors, missing items, summaries and [hitch]"
-			" (registro_completo in l360_gfx.txt for everything)");
+			" (full_log in l360_gfx.txt for everything)");
 	lua_State *L = luaL_newstate();
 	if (!L) {
 		logline("[ERROR] luaL_newstate returned NULL (out of memory?)");
@@ -747,12 +747,12 @@ int main(void)
 	}
 	lua_setglobal(L, "l360");
 
-	/* Interpreter number test (tests/console/xsdk_numeros.lua), only if it was copied */
-	FILE *pf = fopen(GAME_DIR RUNTIME_DIR "xsdk_numeros.lua", "rb");
+	/* Interpreter number test (tests/console/number_check.lua), only if it was copied */
+	FILE *pf = fopen(GAME_DIR RUNTIME_DIR "number_check.lua", "rb");
 	if (pf) {
 		fclose(pf);
-		logline("Number test (" RUNTIME_DIR "xsdk_numeros.lua):");
-		run_game_lua(L, RUNTIME_DIR "xsdk_numeros.lua");
+		logline("Number test (" RUNTIME_DIR "number_check.lua):");
+		run_game_lua(L, RUNTIME_DIR "number_check.lua");
 	}
 
 	/* l360.gfx and l360.gfxstats: if l360_gfx.c did not start, the Lua stub from phase 1; then the boot */
