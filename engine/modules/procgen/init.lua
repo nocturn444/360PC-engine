@@ -24,6 +24,7 @@ return {
   graph = require(prefix .. "graph"),
   map = map,
   reach = require(prefix .. "reach"),
+  seeds = require(prefix .. "seeds"),
   generate = generator.generate,
   hash = map.hash,
 }

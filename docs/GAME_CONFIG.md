@@ -24,6 +24,7 @@ return {
 | `aurora` | table | `{}` | Aurora assets, as paths inside the game folder: `icon`, `cover`, `background`, `banner`. Placeholders until the packaging objective uses them. |
 | `shaders` | table | `{}` | The game's shaders: console name to the GLSL it is built from. Each value is a path, `{ glsl = path }` (one file), or `{ pixel = path, vertex = path }` (one file per stage, either optional). Names: 1 to 24 letters, digits or `_`, starting with a letter, not `l360_`. Used by the shader build and by `love.graphics.newShader` on the console: [SHADERS.md](SHADERS.md). |
 | `default_font` | string | none | TTF (path inside the game folder) that `love.graphics.newFont(size)` uses on the console, which has no built-in font. |
+| `debug` | boolean | `false` | Development builds only: turns `engine.debug` on (seed entry, modifier list, hitbox overlay; [ENGINE.md](ENGINE.md)). `tools/package.py` warns when it is set. |
 
 Rules:
 
@@ -45,7 +46,7 @@ local cfg, err = Config.load(source_text)     -- normalized table, or nil and th
 
 `cfg` always has `name`, `identity`, `save_dir`, `aurora` and `shaders` (each shader normalized
 to a table with `glsl`, or `pixel` and/or `vertex`); `title_id` (normalized to
-`0x` and 8 upper-case digits) and `default_font` only if the game set them. On the console the
+`0x` and 8 upper-case digits), `default_font` and `debug` (only when `true`) only if the game set them. On the console the
 boot leaves it in `l360.game`.
 
 From the shell or CMake:

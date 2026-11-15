@@ -32,6 +32,11 @@ setmetatable(engine, { __index = function(t, k)
     rawset(t, "anim", anim)
     return anim
   end
+  if k == "debug" then        -- engine.debug: loaded on first use (development builds)
+    local dbg = require(prefix .. "debug")
+    rawset(t, "debug", dbg)
+    return dbg
+  end
 end })
 
 -- Builds the engine's objects from the config (call it from love.load, or let run() do it):

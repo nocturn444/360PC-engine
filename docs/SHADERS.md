@@ -61,8 +61,8 @@ read `game.lua`):
 python tools\shaders\build_shaders.py mygame --tools C:\xost --out build\mygame\shaders
 ```
 
-Copy the contents of `--out` into the game's `shaders\` folder on the console (the packaging
-objective will do it). It holds, for each declared shader, `<name>.psu` and/or `<name>.vsu` and
+`tools/package.py --shaders <that folder>` puts the contents of `--out` in the game's
+`shaders\` folder on the console ([NEW_GAME.md](NEW_GAME.md)). It holds, for each declared shader, `<name>.psu` and/or `<name>.vsu` and
 `<name>.meta.lua`, plus the engine's own `l360_default.psu/.vsu` and `l360_love.psu/.vsu`
 (`runtime/shaders/*.hlsl`), which every game needs. Nothing is written unless every shader
 compiled. The `.glsl` files only need to be on the console if the game reads them itself.

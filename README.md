@@ -19,6 +19,15 @@ copied here and made generic.
 Early development. Nothing is released yet. The roadmap is in
 [docs/ROADMAP.md](docs/ROADMAP.md).
 
+## Start a game
+
+[docs/NEW_GAME.md](docs/NEW_GAME.md) goes from `template/` to the game running on PC and on
+the console: build the `.xex` with the game's Title ID ([BUILDING.md](BUILDING.md)), compile
+the shaders ([docs/SHADERS.md](docs/SHADERS.md)), package (`tools/package.py`), install over
+FTP (`tools/install_ftp.py`) and launch from Aurora. The tools are listed in
+[tools/README.md](tools/README.md), the engine layer in [docs/ENGINE.md](docs/ENGINE.md) and
+the tests in [tests/README.md](tests/README.md).
+
 ## Layout (planned)
 
 | Path | What it is |
@@ -27,7 +36,7 @@ Early development. Nothing is released yet. The roadmap is in
 | `engine/` | Generic engine layer in Lua. |
 | `engine/modules/` | Optional modules per genre (e.g. tilemap and collisions for platformers). |
 | `lib/` | Third-party Lua libraries, each with its LICENSE. |
-| `tools/` | Shader build, packaging, FTP installer, `compat_check`. |
+| `tools/` | Shader build, packaging, FTP installer, seed validator, `compat_check`. |
 | `template/` | Minimal project to start a new game. |
 | `examples/perf_platformer/` | Example and performance test. |
 | `docs/` | Documentation. |

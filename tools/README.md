@@ -1,7 +1,7 @@
 # tools/
 
-Build and packaging tools. Still to come: game packaging and the generic FTP installer
-(objective 9).
+Build, packaging and validation tools. The whole path from a new game to the console is in
+[../docs/NEW_GAME.md](../docs/NEW_GAME.md).
 
 - `read_game_config.lua`: prints `title_id`, `name`, `identity` and `save_dir` of a game's
   `game.lua` for the build ([../docs/GAME_CONFIG.md](../docs/GAME_CONFIG.md)).
@@ -18,3 +18,20 @@ Build and packaging tools. Still to come: game packaging and the generic FTP ins
   ([../docs/SHADERS.md](../docs/SHADERS.md)).
 - `shaders/xost_windows/`: builds the xost compiler (`xsc.dll`, `glslang.exe`) that
   `build_shaders.py` runs.
+- `package.py`: assembles a game's console folder from the game folder, the built `.xex` and
+  the compiled shaders: the game's files without development files, the `engine/` core and the
+  modules and `lib/` libraries the game uses, `l360/` (the runtime's Lua), `shaders/`, and a
+  `package_manifest.txt`. It reads and validates `game.lua` (through `read_game_config.lua`,
+  or a small built-in parser when there is no LuaJIT), has `--dry-run` and `--zip`. Python 3,
+  standard library only, Windows and Linux.
+  `python tools/package.py <game> --xex runtime/build/game.xex --shaders <built shaders>`.
+- `install_ftp.py`: uploads a packaged folder to the console over FTP (Aurora), by default to
+  `Hdd1:/Games/<folder name>/`. Host, port, user, password and target come from arguments or
+  `X360_FTP_*` variables. Uploads only changed files (size, and CRC-32 against the manifest of
+  the last install), never deletes anything, never touches saves or the log; `--dry-run`,
+  `--force`. `python tools/install_ftp.py dist/<identity> --host <console IP>`.
+- `seed_validator.lua`: bulk seed validation for games with procedural levels
+  (`engine/modules/procgen`). `luajit tools/seed_validator.lua <game> <spec module> --count N
+  [--out level_hashes.txt]` generates N seeds from the spec the game provides and reports
+  failures, attempts statistics and hashes; `--out` writes the hash list that
+  `tests/console/level_hash_check.lua` compares on the console.

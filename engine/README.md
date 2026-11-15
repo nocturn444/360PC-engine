@@ -18,6 +18,7 @@ Reference and usage example: [docs/ENGINE.md](../docs/ENGINE.md).
 | `save.lua` | Saves: the run in progress and the permanent progress, versioned files with a checksum, migrations, a serializer and a parser that never runs code. |
 | `ui.lua` | Controller-first menus: focus and spatial navigation, widgets, stacks, themes as data, a pick-1-of-N screen. |
 | `anim.lua` | Animations with anim8 (`lib/anim8`). |
+| `debug.lua` | Debug mode for development builds, off by default: seed code display and entry, a list that grants modifiers, a hitbox overlay fed by the game or a combat world (objective 17). |
 | `modules/` | Optional, genre-specific modules: [`modules/README.md`](modules/README.md). `platformer/` (objective 12), `combat/` (objective 13), `procgen/` (objective 14) and `items/` (objective 15). |
 
 Plain Lua 5.1: no FFI, no `goto`, only the LÖVE functions in

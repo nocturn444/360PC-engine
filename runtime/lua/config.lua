@@ -39,7 +39,7 @@ end
 local function validate(t)
   if type(t) ~= 'table' then fail('game.lua must return a table') end
   local known = { name = true, identity = true, title_id = true, save_dir = true, aurora = true,
-    shaders = true, default_font = true }
+    shaders = true, default_font = true, debug = true }
   for k in pairs(t) do
     if not known[k] then fail('unknown field: ' .. tostring(k)) end
   end
@@ -102,6 +102,12 @@ local function validate(t)
   end
 
   if t.default_font ~= nil then cfg.default_font = check_path(t.default_font, 'default_font') end
+
+  -- debug: development builds only; engine.debug reads it (docs/ENGINE.md). Absent means off.
+  if t.debug ~= nil then
+    if type(t.debug) ~= 'boolean' then fail('debug must be true or false') end
+    cfg.debug = t.debug or nil
+  end
   return cfg
 end
 

@@ -104,6 +104,23 @@ Every choice is an `engine.rng` draw over arrays in a fixed order, never over `p
 operation is one room placed or tried. `gen:step(n)` pauses after n operations, so the budget
 never changes the result.
 
+## Bulk seed checks and the PC vs 360 test
+
+`procgen.seeds` (`seeds.lua`) turns one seed into one layout hash, the same way everywhere:
+`seeds.hash(spec, seed)` returns `hash, attempts` (or `nil, reason`), where `spec` is a table
+of the game's: `templates` (or a function returning them), `abilities`, `rooms`, and
+optionally `check`, `types`, `loops`, `attempts` and `stream` (the `engine.rng` stream the
+game generates levels with, default `"level"`: the map is the one
+`rng.streams(seed):get("level")` gives; `stream = false` passes the seed straight to
+`generate`). `seeds.format` / `seeds.parse` write and read a hash list, and
+`seeds.check(list, spec, log)` generates a list's seeds again and logs the ones that differ.
+
+- `tools/seed_validator.lua` runs it over thousands of seeds on PC: failures, attempts
+  statistics, hashes, and optionally a hash list file.
+- `tests/console/level_hash_check.lua` reads that file on the console and logs mismatches.
+
+The procedure is in [docs/NEW_GAME.md](../../../docs/NEW_GAME.md).
+
 ## Reach inside a room
 
 `procgen.reach.check(template, reach)` returns true, or false and the first pair of exits that

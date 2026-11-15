@@ -47,7 +47,7 @@ A fuller one, with every module: [examples/engine_demo](../examples/engine_demo)
 | `engine.run(config)` | Sets `love.load`, `love.update`, `love.draw`, `love.resize` and the input callbacks. Callbacks the game already defined still run, first. `love.run` is not touched (the console ignores it). |
 | `engine.init(config)`, `engine.update(dt)`, `engine.draw()` | The same three steps, to call from the game's own callbacks instead of `run`. |
 | `engine.time`, `engine.states`, `engine.controls`, `engine.screen` | The Timestep, the state Machine, the Input (if `config.input`) and the Pixel (if `config.pixel`), once `love.load` ran. |
-| `engine.state`, `.timestep`, `.input`, `.camera`, `.pixel`, `.layers`, `.entity`, `.modifiers`, `.rng`, `.save`, `.ui`, `.anim` | The modules. `engine.anim` loads anim8 on first use. |
+| `engine.state`, `.timestep`, `.input`, `.camera`, `.pixel`, `.layers`, `.entity`, `.modifiers`, `.rng`, `.save`, `.ui`, `.anim`, `.debug` | The modules. `engine.anim` loads anim8 on first use; `engine.debug` is loaded on first use too. |
 
 Config: `rate` (Hz, 60), `max_steps` (5), `max_frame` (0.25 s), `input`, `pixel`, `states`
 (`name = table`), `load` (`function(engine)`, runs in `love.load` before the first state is
@@ -663,6 +663,57 @@ end
 ```
 
 The screen is built when it is pushed, not every frame. `examples/engine_demo` has one (C / Y).
+
+## engine.debug
+
+A debug mode for development builds (`engine/debug.lua`, loaded the first time `engine.debug`
+is used). It is generic: everything it shows comes from functions and tables the game hands
+over. **Off by default**: it is on only when `game.lua` has `debug = true`
+([GAME_CONFIG.md](GAME_CONFIG.md)), when the game passes `enabled = true`, or after
+`dbg:setEnabled(true)`. While off, every call below does nothing.
+
+```lua
+local dbg = engine.debug.new({
+  action = "debug",                                    -- an action of the game's input config
+  seed = function() return run.seed end,               -- the run's seed (number or string)
+  on_seed = function(seed, code) start_run(seed) end,  -- the player entered a seed
+  modifiers = registry,                                -- the game's engine.modifiers registry
+  grant = function(id, def) player.mods:add(id) end,
+  hitboxes = engine.debug.boxes(combat_world),         -- or any function(emit), see below
+})
+
+function play:input(input) dbg:input(input) end        -- opens the menu on the action
+function play:draw(alpha)
+  camera:attach(alpha)
+  -- ... the world ...
+  dbg:drawHitboxes()                                   -- in world coordinates
+  camera:detach()
+  dbg:draw()                                           -- "seed 0000C1S" in a corner
+end
+```
+
+| | |
+|---|---|
+| `debug.new(opts)` | `enabled` (default `debug.flag()`), `action` (`"debug"`), `enable_action` (an action that switches the mode on and off even while off), `states` and `input` (default `engine.states`, `engine.controls`), `seed`, `on_seed`, `modifiers`, `grant`, `hitboxes` (a source or an array of them), `show_hitboxes`, `colors`, `rows`. |
+| `debug.flag()` | The `debug` flag of `game.lua`: from `l360.game` on the console, from the file on PC. |
+| `dbg:input(input)` | Once per fixed step. Opens the menu when the action is pressed. |
+| `dbg:open()`, `dbg:close()` | The menu: an `engine.ui` screen pushed over the game with the seed code, "Enter seed" (if `on_seed`), a "Hitboxes" toggle (if there are sources), the modifier list (if `modifiers` and `grant`) and "Close". Back closes it. |
+| `dbg:openSeedEntry()` | Seven columns, one per character of the seed code: up and down change the character, left and right move, accept confirms, back cancels. On accept, `on_seed(number, code)` runs and both screens close. `dbg:submitSeed(text)` does the same from code. |
+| `dbg:grantModifier(id, def)` | What accept on the list does: calls `grant(id, def)`. `modifiers` is a registry (listed by id, shown by name) or an array of ids or `{ id =, name = }`. |
+| `dbg:seedCode()` | The 7-character code of the current seed and its number. |
+| `dbg:draw(x, y)` | Prints the seed code, in game pixels. |
+| `dbg:addHitboxes(source)`, `dbg:drawHitboxes()` | The overlay, drawn only while `dbg.show_hitboxes` is on. Returns how many rectangles it drew. |
+
+**Hitbox sources.** A source is `function(emit)`. It calls `emit(kind, x, y, w, h)` once per
+rectangle (this allocates nothing), or returns an array of `{ x, y, w, h, kind }`, or both.
+`kind` picks the colour: `"hit"`, `"hurt"`, `"body"`, `"solid"`, or any key added through
+`colors`. `engine.debug.boxes(world, all)` is a ready-made source for a combat world
+(`engine/modules/combat`): active hitboxes and enabled hurtboxes (`all`: inactive ones too).
+`engine/debug.lua` does not require the combat module; the source only reads the world it is
+given.
+
+On the console text needs `default_font` in `game.lua`; the menus then work with the
+controller alone (d-pad or stick, A, B).
 
 ## engine.anim
 

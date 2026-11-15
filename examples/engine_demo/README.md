@@ -13,8 +13,8 @@ paused. C / Y opens a pick-1-of-3 screen (`engine.ui`) whose cards add a modifie
 or stick to move between the cards, Enter / A to choose, Escape / B to cancel.
 
 To run it on LÖVE 11.x, put copies (or links) of the repository's `engine/` and `lib/` folders in
-this folder, then `love examples/engine_demo`. The packaging script (objective 9) will do that
-copy. Checks, from the repository root:
+this folder, then `love examples/engine_demo`. For the console, `tools/package.py
+examples/engine_demo ...` adds them to the packaged folder ([docs/NEW_GAME.md](../../docs/NEW_GAME.md)). Checks, from the repository root:
 
 ```sh
 luajit -joff tests/engine/run.lua demo_test                 # on a fake love
