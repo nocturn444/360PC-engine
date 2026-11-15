@@ -1,0 +1,72 @@
+Love360: arreglos del interprete de LuaJIT (vm_ppc.dasc) para el .xex de xsdk.
+Lo aplica toolchain/build_luajit_xsdk.sh sobre LuaJIT a4c064539ea9 (v2.1, 21/10/2026).
+
+1. lj_vm_num2int_check con GPR64 devolvia la palabra alta del double en vez del entero
+   (rldicl CRET1, CRET1 en lugar de CRET2). Lo usan el lexer, el parser y las tablas para pasar
+   numeros a enteros: 3 se volvia 0x40080000, 1000 se volvia 0x408F4000 (prueba en consola del
+   24/10/2026, PR #23).
+2. lj_vm_num2u64/num2i64 con GPR64 armaban mal el resultado de 64 bits (rldimi con SH=0 pisaba
+   la palabra baja con la alta): string.format("%d", 42) daba 0.
+3. MODE32: la consola corre los titulos en modo de 32 bits (MSR[SF]=0). El truco de GPR64 para
+   detectar desbordes ((a<<32)+(b<<32) con addo.) supone modo de 64 bits; en modo de 32 bits
+   OV y CR0 miran solo la palabra baja (que es 0) y nunca hay desborde. Con MODE32 se usan
+   addo./subo. de 32 bits, como en el interprete de PPC32.
+
+diff --git a/src/vm_ppc.dasc b/src/vm_ppc.dasc
+index 723f797..dd2ee64 100644
+--- a/src/vm_ppc.dasc
++++ b/src/vm_ppc.dasc
+@@ -21,6 +21,8 @@
+ |// GPR64   64 bit registers (but possibly 32 bit pointers, e.g. PS3).
+ |//         Affects reg saves, stack layout, carry/overflow/dot flags etc.
+ |// FRAME32 Use 32 bit frame layout, even with GPR64 (Xbox 360).
++|// MODE32  GPR64, but the CPU runs in 32 bit mode (MSR[SF]=0), as titles
++|//         built with xsdk do: OV and CR0 follow the low 32 bits.
+ |// TOC     Need table of contents (64 bit or 32 bit variant, e.g. PS3).
+ |//         Function pointers are really a struct: code, TOC, env (optional).
+ |// TOCENV  Function pointers have an environment pointer, too (not on PS3).
+@@ -3227,7 +3229,7 @@ static void build_subroutines(BuildCtx *ctx)
+   |  xor CRET2, CRET2, CARG4		// lo = sign?-lo:lo = (lo+sign)^sign.
+   |2:
+   |.if GPR64
+-  |  rldicl CRET1, CRET1, 0, 32
++  |  rldicl CRET1, CRET2, 0, 32		// Zero-extended lo.
+   |.else
+   |  li CRET1, 0
+   |.endif
+@@ -3284,7 +3286,7 @@ static void build_subroutines(BuildCtx *ctx)
+   |  xor CRET2, CARG2, CARG4
+   |  xor CRET1, CARG1, CARG4
+   |.if GPR64
+-  |  rldimi CRET2, CRET1, 0, 32
++  |  rldimi CRET2, CRET1, 32, 0		// hi:lo in one register.
+   |  mr CRET1, CRET2
+   |.endif
+   |.if FPU
+@@ -4281,7 +4283,7 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
+     |.endmacro
+ 
+   case BC_ADDVN: case BC_ADDNV: case BC_ADDVV:
+-    |.if GPR64
++    |.if GPR64 and not MODE32
+     |.macro addo32., y, a, b
+     |  // Need to check overflow for (a<<32) + (b<<32).
+     |  rldicr TMP0, a, 32, 31
+@@ -4295,7 +4297,7 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
+     |.endif
+     break;
+   case BC_SUBVN: case BC_SUBNV: case BC_SUBVV:
+-    |.if GPR64
++    |.if GPR64 and not MODE32
+     |.macro subo32., y, a, b
+     |  // Need to check overflow for (a<<32) - (b<<32).
+     |  rldicr TMP0, a, 32, 31
+@@ -5780,7 +5782,7 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
+     if (vk) {
+       |   lwz CARG3, FORL_STEP*8+4(RA)
+       |  bne >9
+-      |.if GPR64
++      |.if GPR64 and not MODE32
+       |  // Need to check overflow for (a<<32) + (b<<32).
+       |  rldicr TMP0, CARG1, 32, 31
+       |  rldicr TMP2, CARG3, 32, 31
