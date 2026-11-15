@@ -1,9 +1,9 @@
--- Love360: prueba de numeros del interprete de LuaJIT (la que encontro los errores de GPR64 en la
--- consola, PR #23). Cada cuenta toma sus valores de argumentos, asi el parser no la resuelve antes
--- (con constantes sueltas, 17+3 se vuelve 20 al compilar y no prueba el interprete).
--- En la PC:     luajit -joff tests/console/xsdk_numeros.lua      (tiene que dar 0 mal)
--- En la consola: copiarlo a <juego>\l360\xsdk_numeros.lua; runtime/main.c lo corre
--- antes del juego si esta, y deja cada linea en el registro y en pantalla ([ok] o [MAL]).
+-- Love360: LuaJIT interpreter number test (the one that found the GPR64 bugs on the
+-- console, PR #23). Each check takes its values from arguments, so the parser does not resolve them first
+-- (with bare constants, 17+3 becomes 20 at compile time and does not test the interpreter).
+-- On the PC:     luajit -joff tests/console/xsdk_numeros.lua      (it must give 0 bad)
+-- On the console: copy it to <game>\l360\xsdk_numeros.lua; runtime/main.c runs it
+-- before the game if present, and logs each line to the log and on screen ([ok] or [MAL]).
 local log = (l360 and l360.log) or print
 local bad, total = 0, 0
 
@@ -15,7 +15,7 @@ local function check(name, got, want)
 end
 
 local function run(o, one, big, neg, half, s, k3, k1000)
-  -- constantes enteras del bytecode (KSHORT/KNUM y las VN)
+  -- integer constants from the bytecode (KSHORT/KNUM and the VNs)
   check("o+3 (o=17)", o + 3, 20)
   check("o-3", o - 3, 14)
   check("o*256+5", o * 256 + 5, 4357)
@@ -28,19 +28,19 @@ local function run(o, one, big, neg, half, s, k3, k1000)
   check("-5-3", -5 - k3, -8)
   check("k3 == 3", k3 == 3, true)
   check("k1000 == 1000", k1000 == 1000, true)
-  -- desbordes de enteros: tienen que pasar a double, no dar la vuelta
+  -- integer overflows: they must become doubles, not wrap around
   check("2147483647+1", big + one, 2147483648)
   check("-2147483648-1", neg - one, -2147483649)
   check("65536*65536", (big + one) / 32768 * 65536, 4294967296)
   check("65536*65536 (enteros)", (o - 17 + 65536) * 65536, 4294967296)
   check("-(-2147483648)", -neg, 2147483648)
   local n = 0
-  for _ = big - 2, big + 1 do n = n + 1 end   -- el indice desborda en la ultima vuelta
+  for _ = big - 2, big + 1 do n = n + 1 end   -- the index overflows on the last iteration
   check("for de 2147483645 a 2147483648 (vueltas)", n, 4)
   local acc = 0
   for i = 1, 1000 do acc = acc + i end
   check("suma 1..1000", acc, 500500)
-  -- numeros a enteros en C (lj_vm_num2int_check): claves de tablas, string.byte/sub, lexer
+  -- numbers to integers in C (lj_vm_num2int_check): table keys, string.byte/sub, lexer
   local t = {}
   t[k3] = "tres"
   check("t[3.0] es t[3]", t[3.0], "tres")
@@ -51,7 +51,7 @@ local function run(o, one, big, neg, half, s, k3, k1000)
   check("sub(2,3)", s:sub(2, 3), "el")
   check("tonumber('1000')", tonumber("1000"), 1000)
   check("tonumber('3') + 1", tonumber("3") + one, 4)
-  -- numeros a 64 bits en C (lj_vm_num2i64/num2u64): string.format
+  -- numbers to 64 bits in C (lj_vm_num2i64/num2u64): string.format
   check("format %d de 42", string.format("%d", o + 25), "42")
   check("format %d de 3e9", string.format("%d", 3e9), "3000000000")
   check("format %x de 255", string.format("%x", o + 238), "ff")

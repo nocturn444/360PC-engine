@@ -1,5 +1,5 @@
--- Adaptador de input independiente del renderer. Lua 5.1 / LuaJIT sin JIT.
--- Un snapshot por frame; los getters nunca consultan USB. Solo puerto 0.
+-- Renderer-independent input adapter. Lua 5.1 / LuaJIT without JIT.
+-- One snapshot per frame; getters never query USB. Port 0 only.
 local M = {}
 local buttons = {
   {'a','a'}, {'b','b'}, {'x','x'}, {'y','y'}, {'back','back'}, {'start','start'},
@@ -15,9 +15,9 @@ local function stick(n)
   n = clamp(tonumber(n) or 0, -32768, 32767)
   return n / (n < 0 and 32768 or 32767)
 end
--- Corte radial sin reescalar: el juego aplica sus propios umbrales.
+-- Radial cutoff without rescaling: the game applies its own thresholds.
 local function pair(x, y, dz)
-  x, y = stick(x), -stick(y) -- XInput: arriba positivo; LOVE: abajo positivo.
+  x, y = stick(x), -stick(y) -- XInput: up is positive; LOVE: down is positive.
   if x*x + y*y <= dz*dz then return 0, 0 end
   return x, y
 end
@@ -31,7 +31,7 @@ function M.new(love, native, cfg)
   local rumble_until, vibration_left, vibration_right = nil, 0, 0
   local api = {}
   local function emit(name, ...)
-    local f = rawget(love, name) -- no invocar el stub __index de love
+    local f = rawget(love, name) -- do not call love's __index stub
     if type(f) == 'function' then f(joy, ...) end
   end
   function joy:isGamepad() return true end
@@ -64,7 +64,7 @@ function M.new(love, native, cfg)
   love.joystick = {
     getJoysticks=function() return joy.connected and {joy} or {} end,
     getJoystickCount=function() return joy.connected and 1 or 0 end,
-    loadGamepadMappings=function() return 0 end, -- mapeo fijo, no SDL en libXenon
+    loadGamepadMappings=function() return 0 end, -- fixed mapping, no SDL in libXenon
   }
   function api:update()
     local pad = native.pad(0)
@@ -95,7 +95,7 @@ function M.new(love, native, cfg)
     values.triggerright = clamp(tonumber(pad.rt) or 0, 0, 255) / 255
     if not joy.connected then
       joy.connected = true
-      -- Conectar con A/Start/ejes sostenidos no debe confirmar ni mover nada.
+      -- Connecting with A/Start/axes held must not confirm or move anything.
       for _, b in ipairs(buttons) do blocked[b[1]] = down(pad[b[2]]) end
       for _, name in ipairs(axes) do blocked_axes[name] = values[name] ~= 0 end
       emit('joystickadded')
@@ -113,7 +113,7 @@ function M.new(love, native, cfg)
       joy.axes[name] = not blocked_axes[name] and values[name] or 0
     end
     joy.buttons = current
-    -- Snapshot completo visible a todos los callbacks; releases antes de presses.
+    -- Full snapshot visible to all callbacks; releases before presses.
     for _, b in ipairs(buttons) do
       if oldbuttons[b[1]] and not joy.buttons[b[1]] then emit('gamepadreleased', b[1]) end
     end

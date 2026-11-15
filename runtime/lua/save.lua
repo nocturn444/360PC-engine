@@ -1,10 +1,10 @@
--- Guardado de partidas (love.filesystem). Lua 5.1 / LuaJIT sin JIT.
--- Cada archivo de guardado vive en la carpeta de guardado del juego (l360.save_read / save_write,
--- game:\<save_dir>\). Tiene dos
--- ranuras (.a y .b) que se escriben por turno. Cada ranura lleva al final una linea de control con
--- un numero de secuencia, el largo y la suma adler32: al leer se usa la ranura valida mas nueva.
--- Si una escritura se corta a la mitad queda la anterior; si las dos estan rotas el archivo se da
--- por inexistente (y se deja una copia .corrupto para mirarla).
+-- Save files (love.filesystem). Lua 5.1 / LuaJIT without JIT.
+-- Each save file lives in the game's save folder (l360.save_read / save_write,
+-- game:\<save_dir>\). It has two
+-- slots (.a and .b) written alternately. Each slot carries a control line at the end with
+-- a sequence number, the length and the adler32 sum: on read the newest valid slot is used.
+-- If a write is cut in half the previous one remains; if both are broken the file is treated
+-- as missing (and a .corrupto copy is left to inspect).
 local M = {}
 
 local PREFIX = 'l360save_'
@@ -24,7 +24,7 @@ local function adler32(s)
 end
 M.adler32 = adler32
 
--- 'slot1/save.dat' -> 'l360save_slot1_save.dat' (todo plano en una carpeta)
+-- 'slot1/save.dat' -> 'l360save_slot1_save.dat' (all flat in one folder)
 local function remote_name(path)
   return PREFIX .. path:gsub('^%./', ''):gsub('[/\\]', '_'):gsub('[^%w_%.%-]', '-')
 end
@@ -35,11 +35,11 @@ local function pack(data, seq, deleted)
 end
 M.pack = pack
 
--- contenido de una ranura -> datos, secuencia, borrado; nil si esta rota
+-- slot contents -> data, sequence, deleted; nil if broken
 local function unpack_slot(raw)
   local at
   local from = 1
-  while true do -- la ultima linea de control (los datos pueden contener el texto)
+  while true do -- the last control line (the data may contain the text)
     local i = raw:find(TRAILER, from, true)
     if not i then break end
     at, from = i, i + 1
@@ -53,14 +53,14 @@ local function unpack_slot(raw)
 end
 M.unpack_slot = unpack_slot
 
--- backend: tabla con get(nombre) -> datos o nil y put(nombre, datos) -> true si salio bien
+-- backend: table with get(name) -> data or nil and put(name, data) -> true on success
 -- backend.has(name) (optional) -> false when that file is surely not there: then get is not
 -- called (on the console, opening a file that does not exist can take most of a second).
--- clock (opcional, segundos): con el, cada escritura anota cuanto tardo armar la ranura (suma de
--- control) y cuanto entregarla al backend (tarea 12: medir los tirones del guardado).
+-- clock (optional, seconds): with it, each write records how long it took to build the slot (sum
+-- included) and how long to hand it to the backend (task 12: measure save hitches).
 function M.new(backend, log, clock)
   log = log or function() end
-  local files = {}  -- ruta -> { data = string o false, seq = n }
+  local files = {}  -- path -> { data = string or false, seq = n }
   local api = {}
 
   local function load(path)

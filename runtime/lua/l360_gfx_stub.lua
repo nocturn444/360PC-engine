@@ -1,7 +1,7 @@
--- l360.gfx sin dibujar (runtime/main.c lo corre antes de boot.lua si la GPU no arranco; va en
--- game:\l360\ con los otros .lua). La misma API que runtime/l360_gfx.c, sin dibujar nada.
--- Cuenta llamadas para que boot.lua (y tests/pc/boot_pc.lua)
--- llegue al bucle principal.
+-- l360.gfx without drawing (runtime/main.c runs it before boot.lua if the GPU did not start; it goes in
+-- game:\l360\ with the other .lua files). Same API as runtime/l360_gfx.c, drawing nothing.
+-- Counts calls so that boot.lua (and tests/pc/boot_pc.lua)
+-- reaches the main loop.
 local st = { draws = 0, sends = 0, skipped = 0, dropped = 0, frames = 0, missing_images = 0,
   texture_bytes = 0, image_ms = 0, gpu_wait_ms = 0 }
 local function nop() end
@@ -20,7 +20,7 @@ local function texture(w, h, dpi)
   dpi = tonumber(dpi) or 1
   return setmetatable({ w = w / dpi, h = h / dpi, pw = w, ph = h }, Tex)
 end
--- Tamano de un PNG: ancho y alto big-endian en los bytes 17 a 24 (cabecera IHDR)
+-- Size of a PNG: big-endian width and height in bytes 17 to 24 (IHDR header)
 local function png_size(data)
   if type(data) ~= "string" or #data < 24 or data:sub(2, 4) ~= "PNG" then return nil end
   local function u32(o) local a, b, c, d = data:byte(o, o + 3) return ((a * 256 + b) * 256 + c) * 256 + d end
@@ -37,7 +37,7 @@ gfx.newImage = function(path, data, dpi)
 end
 gfx.newCanvas = function(w, h) w, h = tonumber(w) or 1280, tonumber(h) or 720 return texture(w, h, 1) end
 gfx.newQuad = function() return setmetatable({}, { __index = function() return nop end }) end
--- Segundo resultado: si el shader esta traducido. Sin GPU no hay ninguno.
+-- Second result: whether the shader is translated. Without a GPU there is none.
 gfx.newShader = function() return setmetatable({ send = send }, { __index = function() return nop end }), false end
 gfx.newFont = function(path, ttf, size)
   size = tonumber(size) or 12

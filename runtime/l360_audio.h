@@ -4,16 +4,16 @@
 #include <stdint.h>
 #include "lua.h"
 
-/* Sonido sobre xsdk (tarea 09): el mezclador de runtime/source/l360_audio.c con salida por
- * xsdk_audio_* desde un hilo propio. La interfaz para Lua (tabla l360.audio) es la de docs/audio.md. */
+/* Sound over xsdk (task 09): the mixer in runtime/source/l360_audio.c with output through
+ * xsdk_audio_* from its own thread. The Lua interface (l360.audio table) is the one in docs/audio.md. */
 
-int  l360_audio_init(void);      /* xsdk_audio_open + arranca el feeder; 0 si salio bien, si no el NTSTATUS */
-void l360_audio_close(void);     /* al salir: xsdk_audio_close y espera al feeder (corto); se puede repetir */
-void l360_audio_update(void);    /* libera buffers pendientes; una vez por frame */
-void l360_audio_register(lua_State *L); /* deja la tabla l360.audio en la pila */
+int  l360_audio_init(void);      /* xsdk_audio_open + starts the feeder; 0 on success, otherwise the NTSTATUS */
+void l360_audio_close(void);     /* on exit: xsdk_audio_close and wait for the feeder (brief); may be called again */
+void l360_audio_update(void);    /* frees pending buffers; once per frame */
+void l360_audio_register(lua_State *L); /* leaves the l360.audio table on the stack */
 
-/* Decodifica un bloque IMA ADPCM mono (WAV formato 0x11) de `bytes` bytes en 1 + 2 * (bytes - 4)
- * muestras; devuelve cuantas escribio. La usa el mezclador; publica para la prueba contra ffmpeg. */
+/* Decodes one mono IMA ADPCM block (WAV format 0x11) of `bytes` bytes into 1 + 2 * (bytes - 4)
+ * samples; returns how many were written. Used by the mixer; public for the test against ffmpeg. */
 uint32_t l360_adpcm_decode_mono(const uint8_t *blk, uint32_t bytes, int16_t *out);
 
 #endif

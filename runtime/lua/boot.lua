@@ -280,7 +280,7 @@ local function fs_items(path)
 end
 
 ---------------------------------------------------------------------------
--- Audio: love.sound y love.audio sobre l360.audio
+-- Audio: love.sound and love.audio over l360.audio
 ---------------------------------------------------------------------------
 local audio_driver = l360.audio
 local sound_cache, sound_missing = {}, {}
@@ -297,8 +297,8 @@ local function u32(s, p)
   return a + b * 256 + c * 65536 + d * 16777216
 end
 
--- Devuelve desde (bytes, base 0 como newbuffer), bytes, canales, frecuencia y
--- frames de un WAV PCM 16 bits o IMA ADPCM mono; en ADPCM, ademas block_align.
+-- Returns from (a byte offset, 0-based like newbuffer), bytes, channels, rate and
+-- frames of a 16-bit PCM or mono IMA ADPCM WAV; in ADPCM, also block_align.
 local function parse_wav(data)
   if type(data) ~= "string" or #data < 12 or data:sub(1, 4) ~= "RIFF"
       or data:sub(9, 12) ~= "WAVE" then
@@ -330,7 +330,7 @@ local function parse_wav(data)
   if not fmt then return nil, "no fmt chunk" end
   if not data_pos or not data_size or data_size < 2 then return nil, "no data chunk" end
   if fmt.format == 0x11 then
-    -- IMA ADPCM: bloques de block_align bytes con 1 + 2 * (block_align - 4) frames (mono)
+    -- IMA ADPCM: blocks of block_align bytes with 1 + 2 * (block_align - 4) frames (mono)
     if fmt.channels ~= 1 then return nil, "ADPCM must be mono" end
     if fmt.bits ~= 4 then return nil, "ADPCM must be 4-bit" end
     local ba = fmt.block_align or 0
@@ -368,7 +368,7 @@ function SoundMethods:getSampleCount() return self._frames or 0 end
 function SoundMethods:getBitDepth() return 16 end
 function SoundMethods:release() end
 
--- Buffer ADPCM entero (efectos largos): newstream con su tamano final y un solo append
+-- Whole ADPCM buffer (long effects): newstream with its final size and a single append
 local function new_adpcm_buffer(data, rate, ba, frames, from, bytes)
   local b = audio_driver.newstream(1, rate, ba, frames)
   b:append(data, from, bytes)
@@ -406,9 +406,9 @@ local function norm_path(path)
   return p
 end
 
--- El juego sigue pidiendo .ogg porque asi esta en su lista. La herramienta de
--- PC deja .wav con el mismo nombre base; probamos primero el .wav para no pedir
--- por TFTP un .ogg que no existe. Asi no hace falta tocar el codigo del juego.
+-- The game keeps asking for .ogg because that is what its list holds. The PC
+-- tool leaves .wav with the same base name; we try the .wav first so as not to request
+-- over TFTP an .ogg that does not exist. So the game's code needs no changes.
 local function read_sound(path)
   if path:match("%.ogg$") then
     local wav = l360.read((path:gsub("%.ogg$", ".wav")))
@@ -450,15 +450,15 @@ local function new_sound_data(source)
 end
 
 ---------------------------------------------------------------------------
--- Musica en segundo plano: IMA ADPCM partido en trozos
--- musicN.idx dice el tamano total; los trozos musicN.p000.wav, p001... se bajan con
--- l360.fetch_* en el tiempo libre de cada frame, en orden "trozo 0 de todas las pistas,
--- trozo 1 de todas...", y se agregan al buffer con append. Si el juego pide tocar una pista
--- antes de que esten los trozos 0 de todas, el pedido espera y arrancan todas juntas.
+-- Background music: IMA ADPCM split into chunks
+-- musicN.idx gives the total size; the chunks musicN.p000.wav, p001... are fetched with
+-- l360.fetch_* in the spare time of each frame, in the order "chunk 0 of every track,
+-- chunk 1 of every track...", and appended to the buffer with append. If the game asks to play a track
+-- before all the chunk 0s are in, the request waits and all of them start together.
 ---------------------------------------------------------------------------
-local streams = {}            -- pistas en el orden en que se crearon
-local stream_cache = {}       -- ruta -> SoundData de la pista
-local pending_plays = {}      -- Sources que esperan los trozos 0
+local streams = {}            -- tracks in the order they were created
+local stream_cache = {}       -- path -> SoundData of the track
+local pending_plays = {}      -- Sources waiting for the chunk 0s
 local streams_started = false
 local fetch_id, fetch_track, fetch_part, fetch_tries = nil, nil, nil, 0
 local start_voice
@@ -498,7 +498,7 @@ local function new_stream_data(path)
   return sd
 end
 
--- Listas para arrancar: todas las pistas creadas tienen su trozo 0 (o fallaron)
+-- Ready to start: every created track has its chunk 0 (or it failed)
 local function streams_ready()
   for i = 1, #streams do
     local t = streams[i]
@@ -537,8 +537,8 @@ local function stream_fail(t, why)
   log("  [music] " .. t.base .. ": stopped loading at chunk " .. t.next .. " (" .. tostring(why) .. ")")
 end
 
--- Baja trozos hasta el instante `deadline` (segundos de l360.time). Una vez por frame,
--- antes de l360.wait_frame: usa el tiempo que sobra del frame y no se pasa.
+-- Fetches chunks until the moment `deadline` (l360.time seconds). Once per frame,
+-- before l360.wait_frame: uses the time left in the frame and does not go past it.
 local function streams_step(deadline)
   if #streams == 0 or not l360.fetch_start then return end
   while true do
@@ -631,7 +631,7 @@ function SourceMethods:play()
   end
   local d = self._data
   if d and d._stream and not streams_started and not streams_ready() then
-    -- musica: esperar los trozos 0 de todas las pistas y arrancar todas juntas
+    -- music: wait for every track's chunk 0 and start them all together
     if self._pending == nil then pending_plays[#pending_plays + 1] = self end
     self._pending = "play"
     active_sources[self] = true
@@ -641,7 +641,7 @@ function SourceMethods:play()
 end
 
 function SourceMethods:stop()
-  if self._pending then self._pending = "stop" end   -- release_pending lo saltea
+  if self._pending then self._pending = "stop" end   -- release_pending skips it
   if self._voice and audio_driver then audio_driver.stop(self._voice) end
   self._voice = nil
   self._start_frame = 0
@@ -682,7 +682,7 @@ function SourceMethods:getVolume() return self._volume end
 
 function SourceMethods:setPitch(v)
   local p = tonumber(v) or 1
-  if p <= 0 then p = 1 end -- l360.audio cuenta 0 o negativo como 1
+  if p <= 0 then p = 1 end -- l360.audio counts 0 or negative as 1
   self._pitch = math.min(16, p)
   if self._voice and audio_driver then audio_driver.set(self._voice, nil, self._pitch, nil) end
 end
@@ -766,7 +766,7 @@ Audio.newSource = function(source, kind)
   local path
   if type(source) == "string" and source:sub(1, 4) ~= "RIFF" then path = norm_path(source) end
   if path and kind == "stream" then
-    local sd = new_stream_data(path)        -- con .idx: musica en trozos, sin bloquear
+    local sd = new_stream_data(path)        -- with .idx: chunked music, non-blocking
     if sd then return new_source(sd, path, kind) end
   end
   return new_source(source, path, kind)

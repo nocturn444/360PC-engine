@@ -1,24 +1,24 @@
 #ifndef L360_GFX_H
 #define L360_GFX_H
-/* l360.gfx sobre la GPU de xsdk (tarea 07). La misma API para Lua que runtime/source/l360_gfx.h;
- * cambia el arranque: la GPU y la pantalla ya las abrio main.c (pantalla de texto). */
+/* l360.gfx on the xsdk GPU (task 07). Same Lua API as runtime/source/l360_gfx.h;
+ * startup differs: the GPU and screen were already opened by main.c (text screen). */
 #include <stdint.h>
 #include "lua.h"
 typedef struct {
     long draws, sends, skipped, dropped, frames, missing_images;
     long texture_bytes;
     unsigned long image_ms, gpu_wait_ms;
-    /* cuando empezo y termino el ultimo sync y el ultimo present (ms de CLOCK_MONOTONIC), para que
-     * main.c parta en pedazos los frames lentos */
+    /* when the last sync and last present started and ended (CLOCK_MONOTONIC ms), so that
+     * main.c can split slow frames into pieces */
     double sync_at, sync_end_at, present_at, present_end_at;
 } l360_gfx_stats_t;
 extern l360_gfx_stats_t l360_gfx_stats;
-/* Con la GPU y xsdk_present ya abiertos (w x h): carga los shaders de game:\shaders\ y reserva los
- * vertices. 0 si anduvo; si no, el motivo ya fue al registro y main.c sigue con la pantalla de texto. */
+/* With the GPU and xsdk_present already open (w x h): loads the shaders from game:\shaders\ and reserves the
+ * vertices. 0 on success; otherwise the reason was already logged and main.c continues with the text screen. */
 int  l360_gfx_init(uint32_t w, uint32_t h, void (*log)(const char *));
-void l360_gfx_register(lua_State *L);          /* deja en la pila la tabla de love.graphics */
+void l360_gfx_register(lua_State *L);          /* leaves the love.graphics table on the stack */
 void l360_gfx_set_missing_cb(void (*cb)(const char *));
-/* Despues de que main.c dibuja la pantalla de texto (cambia target, shaders, stream 0 y slot 0) */
+/* After main.c draws the text screen (changes target, shaders, stream 0 and slot 0) */
 void l360_gfx_forget_state(void);
 int  l360_gfx_width(void);
 int  l360_gfx_height(void);

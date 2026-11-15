@@ -1,34 +1,34 @@
 /*
- * Love360 sobre xsdk - sonido (tarea 09, fase 3 de docs/tareas/05_port_xsdk.md).
+ * Love360 on xsdk - sound (task 09, phase 3 of docs/tareas/05_port_xsdk.md).
  *
- * Copia de runtime/source/l360_audio.c (el de libXenon) con otra salida: la misma API l360.audio
- * (docs/audio.md), el mismo mezclador, el mismo ADPCM y el mismo reparto de memoria entre hilos.
+ * Copy of runtime/source/l360_audio.c (the libXenon one) with a different output: the same l360.audio API
+ * (docs/audio.md), the same mixer, the same ADPCM and the same memory sharing between threads.
  *
- * Salida: el driver de audio del kernel por xsdk (include/xsdk/audio.h). Un hilo propio, el
- * "feeder", en el hilo de hardware AUDIO_HW_THREAD (nucleo 1, lejos del hilo 0 que corre Lua y
- * dibuja), espera en xsdk_audio_next_frame a que el kernel se lleve un frame, mezcla el siguiente
- * y lo encola con xsdk_audio_queue_frame. Un frame de xsdk son 256 muestras por canal a 48 kHz,
- * 6 canales en float big-endian, un canal despues del otro: el mezclador hace bloques de 256
- * frames (CHUNK) en enteros como antes y al final escribe izquierdo y derecho como float
- * (muestra de 16 bits / 32768) y silencio en los otros 4. xsdk deja 8 frames en cola (43 ms).
+ * Output: the kernel audio driver through xsdk (include/xsdk/audio.h). A dedicated thread, the
+ * "feeder", on hardware thread AUDIO_HW_THREAD (core 1, away from thread 0 which runs Lua and
+ * draws), waits in xsdk_audio_next_frame for the kernel to take a frame, mixes the next one
+ * and queues it with xsdk_audio_queue_frame. An xsdk frame is 256 samples per channel at 48 kHz,
+ * 6 channels in big-endian float, one channel after another: the mixer makes blocks of 256
+ * frames (CHUNK) in integers as before and at the end writes left and right as float
+ * (16-bit sample / 32768) and silence on the other 4. xsdk leaves 8 frames queued (43 ms).
  *
- * Reparto de memoria entre los dos hilos, sin locks (igual que en libXenon):
- *  - buffers (abuf_t): PCM nativo (big-endian) o IMA ADPCM mono tal como viene del WAV. Los
- *    crea y libera solo el hilo principal. Un buffer ADPCM se crea vacio con su tamano final
- *    (newstream) y crece con append: el hilo principal copia los bloques, lwsync, y recien
- *    despues publica `avail`. El hilo de audio lee `avail`, lwsync, y despues los bloques.
- *    Si Lua recolecta uno que todavia suena, queda en `pending` y se libera en
- *    l360_audio_update cuando ninguna voz lo usa.
- *  - voces (voice_t): `state` pasa de 0 a 1 solo en el hilo principal (play) y de 1 a 0 solo
- *    en el hilo de audio (termino o stop_req). Mientras state es 0, todos los campos son del
- *    hilo principal; mientras es 1, pos y frac son del hilo de audio y el resto del principal.
- *    Los campos son palabras de 32 bits alineadas (escrituras atomicas en PPC) y el orden se
- *    asegura con lwsync.
- *  - ADPCM: el hilo de audio decodifica de a un bloque entero en `dec` de la voz (lo reserva
- *    el hilo principal en play, con state 0). Si la voz llega a lo que todavia no se cargo,
- *    sigue avanzando en silencio y suma a `starved`.
- *  - El hilo de audio no llama a malloc, printf ni Lua (docs/PITFALLS.md de xsdk: nada de
- *    mutex que se pueda liberar mientras otro hilo lo espera).
+ * Memory sharing between the two threads, without locks (same as in libXenon):
+ *  - buffers (abuf_t): native PCM (big-endian) or mono IMA ADPCM as it comes from the WAV. Only
+ *    the main thread creates and frees them. An ADPCM buffer is created empty with its final size
+ *    (newstream) and grows with append: the main thread copies the blocks, lwsync, and only
+ *    afterwards publishes `avail`. The audio thread reads `avail`, lwsync, and then the blocks.
+ *    If Lua collects one that is still playing, it stays in `pending` and is freed in
+ *    l360_audio_update when no voice uses it.
+ *  - voices (voice_t): `state` goes from 0 to 1 only in the main thread (play) and from 1 to 0 only
+ *    in the audio thread (finished or stop_req). While state is 0, all fields belong to the
+ *    main thread; while it is 1, pos and frac belong to the audio thread and the rest to the main one.
+ *    The fields are aligned 32-bit words (atomic writes on PPC) and the order is
+ *    ensured with lwsync.
+ *  - ADPCM: the audio thread decodes one whole block at a time into the voice's `dec` (reserved
+ *    by the main thread in play, with state 0). If the voice reaches what has not been loaded yet,
+ *    it keeps advancing in silence and adds to `starved`.
+ *  - The audio thread does not call malloc, printf or Lua (xsdk docs/PITFALLS.md: no
+ *    mutex that can be freed while another thread waits for it).
  */
 #include <stdint.h>
 #include <stdlib.h>
@@ -45,14 +45,14 @@
 #include "l360_audio.h"
 
 #define OUT_RATE     XSDK_AUDIO_RATE_HZ
-#define CHUNK        XSDK_AUDIO_FRAME_SAMPLES  /* frames por bloque = un frame de xsdk (5,3 ms) */
-#define MAX_VOICES   32                     /* potencia de 2: el id lleva la ranura en 5 bits */
+#define CHUNK        XSDK_AUDIO_FRAME_SAMPLES  /* frames per block = one xsdk frame (5.3 ms) */
+#define MAX_VOICES   32                     /* power of 2: the id carries the slot in 5 bits */
 #define VOICE_BITS   5
-#define AUDIO_HW_THREAD 2                   /* nucleo 1; el kernel llama a xsdk en el hilo 4 */
+#define AUDIO_HW_THREAD 2                   /* core 1; the kernel calls xsdk on thread 4 */
 #define FEEDER_STACK (64 * 1024)
-#define FEED_WAIT_MS 100                    /* si no se libera un lugar en este tiempo, otra vuelta */
-#define CLOSE_WAIT_MS 200                   /* al salir: lo que se espera al feeder, no mas */
-#define GAIN_ONE     1024                   /* volumen en Q10 */
+#define FEED_WAIT_MS 100                    /* if a slot is not freed within this time, another round */
+#define CLOSE_WAIT_MS 200                   /* on exit: how long the feeder is waited for, no more */
+#define GAIN_ONE     1024                   /* volume in Q10 */
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -61,38 +61,38 @@
 #ifdef __powerpc__
 #define lwsync() __asm__ volatile("lwsync" ::: "memory")
 #else
-#define lwsync() __sync_synchronize()       /* prueba en la PC (pruebas/audio_xsdk_pc) */
+#define lwsync() __sync_synchronize()       /* test on the PC (pruebas/audio_xsdk_pc) */
 #endif
 
 typedef struct abuf {
-    int16_t *pcm;               /* PCM intercalado, orden de bytes nativo; NULL si es ADPCM */
-    uint8_t *adpcm;             /* ADPCM: bloques como en el chunk data del WAV; NULL si es PCM */
-    uint32_t frames;            /* total; en ADPCM, el final aunque todavia no este cargado */
-    volatile uint32_t avail;    /* frames que ya se pueden leer (PCM: todos) */
-    uint32_t block_align;       /* ADPCM: bytes por bloque */
-    uint32_t spb;               /* ADPCM: frames por bloque */
-    uint32_t blocks, loaded;    /* ADPCM: bloques en total y ya cargados (hilo principal) */
+    int16_t *pcm;               /* interleaved PCM, native byte order; NULL if ADPCM */
+    uint8_t *adpcm;             /* ADPCM: blocks as in the WAV data chunk; NULL if PCM */
+    uint32_t frames;            /* total; in ADPCM, the end even if not loaded yet */
+    volatile uint32_t avail;    /* frames that can already be read (PCM: all) */
+    uint32_t block_align;       /* ADPCM: bytes per block */
+    uint32_t spb;               /* ADPCM: frames per block */
+    uint32_t blocks, loaded;    /* ADPCM: total blocks and already loaded ones (main thread) */
     int channels, rate;
-    struct abuf *next;          /* en `pending` despues de recolectado */
+    struct abuf *next;          /* in `pending` after being collected */
 } abuf_t;
 
 typedef struct {
-    volatile int state;         /* 0 libre, 1 asignada (ver arriba) */
-    volatile int stop_req;      /* principal: pide terminar */
-    volatile int paused;        /* principal */
-    volatile int loop;          /* principal */
-    volatile int gain;          /* principal, Q10 (0..GAIN_ONE) */
-    volatile uint32_t step;     /* principal: frames de origen por frame de salida, 16.16 */
-    volatile uint32_t seek_frame, seek_seq;  /* principal: seek_frame, lwsync, seek_seq++ */
+    volatile int state;         /* 0 free, 1 assigned (see above) */
+    volatile int stop_req;      /* main: requests termination */
+    volatile int paused;        /* main */
+    volatile int loop;          /* main */
+    volatile int gain;          /* main, Q10 (0..GAIN_ONE) */
+    volatile uint32_t step;     /* main: source frames per output frame, 16.16 */
+    volatile uint32_t seek_frame, seek_seq;  /* main: seek_frame, lwsync, seek_seq++ */
     uint32_t seek_done;         /* audio */
-    volatile uint32_t pos;      /* audio (principal solo con state 0) */
+    volatile uint32_t pos;      /* audio (main only with state 0) */
     uint32_t frac;              /* audio */
-    abuf_t *buf;                /* principal, se cambia solo con state 0 */
-    uint32_t gen;               /* principal: generacion, invalida ids viejos */
-    int16_t *dec;               /* ADPCM: bloque decodificado; principal lo reserva con state 0 */
-    uint32_t dec_cap;           /* principal: muestras que entran en dec */
-    uint32_t dec_base;          /* audio: primer frame del bloque que esta en dec */
-    int dec_ok;                 /* audio (principal lo pone en 0 con state 0) */
+    abuf_t *buf;                /* main, changed only with state 0 */
+    uint32_t gen;               /* main: generation, invalidates old ids */
+    int16_t *dec;               /* ADPCM: decoded block; main reserves it with state 0 */
+    uint32_t dec_cap;           /* main: samples that fit in dec */
+    uint32_t dec_base;          /* audio: first frame of the block in dec */
+    int dec_ok;                 /* audio (main sets it to 0 with state 0) */
 } voice_t;
 
 static voice_t voices[MAX_VOICES];
@@ -102,19 +102,19 @@ static volatile int quit, running, opened;
 static HANDLE feeder;
 static int next_slot;
 
-/* estadisticas: las escribe el hilo de audio */
+/* stats: written by the audio thread */
 static volatile uint32_t st_chunks, st_mix_us_max, st_active, st_starved;
 
 static int32_t acc[CHUNK * 2];
 
-/* ---------- hilo de audio ---------- */
+/* ---------- audio thread ---------- */
 
 static inline int clamp16(int32_t v)
 {
     return v > 32767 ? 32767 : v < -32768 ? -32768 : v;
 }
 
-/* ---------- IMA ADPCM (el estandar de IMA, igual que el decodificador de ffmpeg) ---------- */
+/* ---------- IMA ADPCM (the IMA standard, same as the ffmpeg decoder) ---------- */
 
 static const int16_t ima_step[89] = {
     7, 8, 9, 10, 11, 12, 13, 14, 16, 17, 19, 21, 23, 25, 28, 31, 34, 37, 41, 45,
@@ -137,9 +137,9 @@ static inline int ima_nibble(int nib, int *pred, int *idx)
     return p;
 }
 
-/* Decodifica un bloque IMA ADPCM mono de un WAV (formato 0x11): 4 bytes de encabezado
- * (predictor de 16 bits little-endian, indice, reservado) y despues dos muestras por byte,
- * primero el nibble bajo. Escribe 1 + 2 * (bytes - 4) muestras. Devuelve cuantas. */
+/* Decodes a mono IMA ADPCM block from a WAV (format 0x11): 4 header bytes
+ * (16-bit little-endian predictor, index, reserved) and then two samples per byte,
+ * low nibble first. Writes 1 + 2 * (bytes - 4) samples. Returns how many. */
 uint32_t l360_adpcm_decode_mono(const uint8_t *blk, uint32_t bytes, int16_t *outp)
 {
     if (bytes < 4) return 0;
@@ -160,11 +160,11 @@ static inline int adpcm_head(const abuf_t *b, uint32_t frame)
     return (int16_t)(p[0] | (p[1] << 8));
 }
 
-/* Como el lazo PCM de mix_voice, pero leyendo de bloques ADPCM decodificados. */
+/* Like the PCM loop of mix_voice, but reading from decoded ADPCM blocks. */
 static int mix_adpcm(voice_t *v, abuf_t *b, int g)
 {
     uint32_t n = b->frames, avail = b->avail;
-    lwsync();                               /* leer los bloques despues de ver avail */
+    lwsync();                               /* read the blocks after seeing avail */
     uint32_t step = v->step, pos = v->pos, frac = v->frac, spb = b->spb, base = v->dec_base;
     int loop = v->loop, done = 0, ok = v->dec_ok, starved = 0;
     const int16_t *d = v->dec;
@@ -177,7 +177,7 @@ static int mix_adpcm(voice_t *v, abuf_t *b, int g)
         }
         int s0, s1;
         if (pos >= avail) {
-            s0 = s1 = 0;                    /* todavia no se cargo: silencio, pero avanza */
+            s0 = s1 = 0;                    /* not loaded yet: silence, but it still advances */
             starved = 1;
         } else {
             if (!ok || pos - base >= spb) {
@@ -189,7 +189,7 @@ static int mix_adpcm(voice_t *v, abuf_t *b, int g)
             uint32_t nx = pos + 1 < n ? pos + 1 : (loop ? 0 : pos);
             if (nx >= avail) s1 = s0;
             else if (nx - base < spb) s1 = d[nx - base];
-            else s1 = adpcm_head(b, nx);    /* primera muestra del bloque siguiente */
+            else s1 = adpcm_head(b, nx);    /* first sample of the next block */
         }
         int f = frac >> 2;
         int l = s0 + (((s1 - s0) * f) >> 14);
@@ -207,7 +207,7 @@ static int mix_adpcm(voice_t *v, abuf_t *b, int g)
     return done;
 }
 
-/* Mezcla una voz en acc. Devuelve 1 si la voz termino. */
+/* Mixes a voice into acc. Returns 1 if the voice finished. */
 static int mix_voice(voice_t *v, int master)
 {
     abuf_t *b = v->buf;
@@ -235,7 +235,7 @@ static int mix_voice(voice_t *v, int master)
             pos %= n;
         }
         uint32_t nx = pos + 1 < n ? pos + 1 : (loop ? 0 : pos);
-        int f = frac >> 2;                  /* 14 bits: (s1 - s0) * f entra en 32 bits */
+        int f = frac >> 2;                  /* 14 bits: (s1 - s0) * f fits in 32 bits */
         int l, r;
         if (b->channels == 1) {
             int s0 = p[pos], s1 = p[nx];
@@ -245,7 +245,7 @@ static int mix_voice(voice_t *v, int master)
             l = l0 + (((l1 - l0) * f) >> 14);
             r = r0 + (((r1 - r0) * f) >> 14);
         }
-        a[2 * i] += l * g;                  /* 2^15 * 2^10 * 32 voces < 2^31 */
+        a[2 * i] += l * g;                  /* 2^15 * 2^10 * 32 voices < 2^31 */
         a[2 * i + 1] += r * g;
         frac += step;
         pos += frac >> 16;
@@ -263,9 +263,9 @@ static void mix_chunk(void)
     for (i = 0; i < MAX_VOICES; i++) {
         voice_t *v = &voices[i];
         if (!v->state) continue;
-        lwsync();                           /* ver los campos que escribio play() */
+        lwsync();                           /* see the fields written by play() */
         if (v->stop_req || mix_voice(v, master)) {
-            lwsync();                       /* terminar de leer el buffer antes de soltarlo */
+            lwsync();                       /* finish reading the buffer before releasing it */
             v->state = 0;
             continue;
         }
@@ -274,9 +274,9 @@ static void mix_chunk(void)
     st_active = active;
 }
 
-/* El bloque mezclado al frame de xsdk: izquierdo y derecho como float (la muestra de 16 bits que
- * escribia libXenon, / 32768) y silencio en centro, LFE y traseros. Se escriben los 6 canales
- * siempre: xsdk reusa los lugares de la cola. */
+/* The mixed block to the xsdk frame: left and right as float (the 16-bit sample that
+ * libXenon wrote, / 32768) and silence on center, LFE and rears. The 6 channels are always
+ * written: xsdk reuses the queue slots. */
 static void write_frame(float *frame)
 {
     volatile float *o = frame;
@@ -298,8 +298,8 @@ static uint64_t now_us(void)
     return (uint64_t)t.tv_sec * 1000000u + (uint64_t)t.tv_nsec / 1000u;
 }
 
-/* El feeder: cada vez que el kernel se lleva un frame, xsdk lo despierta con un lugar libre. Termina
- * cuando l360_audio_close cierra el cliente (next_frame devuelve STATUS_INVALID_HANDLE). */
+/* The feeder: each time the kernel takes a frame, xsdk wakes it with a free slot. It ends
+ * when l360_audio_close closes the client (next_frame returns STATUS_INVALID_HANDLE). */
 static uint32_t feed(void *context)
 {
     (void)context;
@@ -322,7 +322,7 @@ static uint32_t feed(void *context)
     return 0;
 }
 
-/* ---------- control desde el hilo principal ---------- */
+/* ---------- control from the main thread ---------- */
 
 int l360_audio_init(void)
 {
@@ -344,8 +344,8 @@ int l360_audio_init(void)
     return 0;
 }
 
-/* Al salir: cierra el cliente (despierta al feeder) y lo espera un rato corto. No libera las voces:
- * el proceso termina enseguida. */
+/* On exit: closes the client (wakes the feeder) and waits for it briefly. Does not free the voices:
+ * the process exits right away. */
 void l360_audio_close(void)
 {
     if (!opened) return;
@@ -354,7 +354,7 @@ void l360_audio_close(void)
     xsdk_audio_close();
     opened = 0;
     if (feeder) {
-        const int64_t timeout = -(int64_t)CLOSE_WAIT_MS * 10000;   /* relativo, en 100 ns */
+        const int64_t timeout = -(int64_t)CLOSE_WAIT_MS * 10000;   /* relative, in 100 ns */
         (void)NtWaitForSingleObjectEx(feeder, USER_MODE, 0, &timeout);
         (void)NtClose(feeder);
         feeder = 0;
@@ -410,12 +410,12 @@ static uint32_t buf_bytes(const abuf_t *b)
 
 static int to_gain(double vol)
 {
-    if (!(vol > 0)) return 0;               /* tambien NaN */
+    if (!(vol > 0)) return 0;               /* also NaN */
     if (vol >= 1) return GAIN_ONE;
     return (int)(vol * GAIN_ONE + 0.5);
 }
 
-/* double de Lua -> uint32_t sin comportamiento indefinido: NaN y negativos dan 0, lo enorme satura */
+/* Lua double -> uint32_t without undefined behaviour: NaN and negatives give 0, huge values saturate */
 static uint32_t to_u32(double d)
 {
     if (!(d > 0)) return 0;
@@ -430,11 +430,11 @@ static uint32_t to_step(const abuf_t *b, double pitch)
     return s < 1 ? 1 : (uint32_t)s;
 }
 
-/* id = gen << VOICE_BITS | ranura; NULL si el id es viejo */
+/* id = gen << VOICE_BITS | slot; NULL if the id is old */
 static voice_t *voice_of(lua_State *L, int idx)
 {
     lua_Number id = luaL_checknumber(L, idx);
-    if (!(id >= 0 && id < 4294967296.0)) return NULL;  /* tambien NaN e infinito */
+    if (!(id >= 0 && id < 4294967296.0)) return NULL;  /* also NaN and infinity */
     uint32_t u = (uint32_t)id;
     voice_t *v = &voices[u & (MAX_VOICES - 1)];
     return v->gen == (u >> VOICE_BITS) ? v : NULL;
@@ -445,7 +445,7 @@ static int voice_playing(const voice_t *v)
     return v && v->state && !v->stop_req;
 }
 
-/* Asigna una voz y la pone a sonar. Devuelve el id o -1 si no hay voces libres. */
+/* Allocates a voice and starts it playing. Returns the id or -1 if there are no free voices. */
 static double voice_start(abuf_t *b, double vol, double pitch, int loop, uint32_t start)
 {
     int k;
@@ -453,7 +453,7 @@ static double voice_start(abuf_t *b, double vol, double pitch, int loop, uint32_
         int i = (next_slot + k) & (MAX_VOICES - 1);
         voice_t *v = &voices[i];
         if (v->state) continue;
-        if (b->adpcm && v->dec_cap < b->spb) {      /* con state 0 la ranura es del hilo principal */
+        if (b->adpcm && v->dec_cap < b->spb) {      /* with state 0 the slot belongs to the main thread */
             int16_t *d = realloc(v->dec, (size_t)b->spb * sizeof(int16_t));
             if (!d) return -1;
             v->dec = d;
@@ -490,7 +490,7 @@ static abuf_t *check_buf(lua_State *L, int idx)
     return *ud;
 }
 
-/* newbuffer(pcm, canales, frecuencia [, desde [, bytes]]): PCM de 16 bits little-endian */
+/* newbuffer(pcm, channels, rate [, from [, bytes]]): 16-bit little-endian PCM */
 static int l_newbuffer(lua_State *L)
 {
     size_t len;
@@ -500,7 +500,7 @@ static int l_newbuffer(lua_State *L)
     lua_Number fromn = luaL_optnumber(L, 4, 0);
     luaL_argcheck(L, ch == 1 || ch == 2, 2, "channels must be 1 or 2");
     luaL_argcheck(L, rate >= 4000 && rate <= 96000, 3, "sample rate out of range");
-    luaL_argcheck(L, fromn >= 0 && fromn <= len, 4, "offset out of range");  /* tambien NaN */
+    luaL_argcheck(L, fromn >= 0 && fromn <= len, 4, "offset out of range");  /* also NaN */
     size_t from = (size_t)fromn;
     size_t bytes = to_u32(luaL_optnumber(L, 5, (lua_Number)(len - from)));
     if (bytes > len - from) bytes = len - from;
@@ -519,8 +519,8 @@ static int l_newbuffer(lua_State *L)
     return 1;
 }
 
-/* newstream(canales, frecuencia, block_align, frames_totales): buffer IMA ADPCM vacio que crece
- * con append. Por ahora solo mono. Reserva de una vez el tamano final (comprimido). */
+/* newstream(channels, rate, block_align, total_frames): empty IMA ADPCM buffer that grows
+ * with append. Only mono for now. Reserves the final size (compressed) all at once. */
 static int l_newstream(lua_State *L)
 {
     int ch = luaL_checkint(L, 1);
@@ -561,8 +561,8 @@ static uint32_t buf_avail(const abuf_t *b)
     return f < b->frames ? (uint32_t)f : b->frames;
 }
 
-/* buf:append(datos [, desde [, bytes]]): agrega bloques ADPCM enteros (lo de adentro del chunk
- * data). Solo el ultimo bloque del buffer puede venir incompleto. Devuelve los frames cargados. */
+/* buf:append(data [, from [, bytes]]): appends whole ADPCM blocks (the contents of the data
+ * chunk). Only the last block of the buffer may come incomplete. Returns the loaded frames. */
 static int l_buf_append(lua_State *L)
 {
     abuf_t *b = check_buf(L, 1);
@@ -570,7 +570,7 @@ static int l_buf_append(lua_State *L)
     const char *s = luaL_checklstring(L, 2, &len);
     lua_Number fromn = luaL_optnumber(L, 3, 0);
     if (!b->adpcm) return luaL_error(L, "append: the buffer is not ADPCM");
-    luaL_argcheck(L, fromn >= 0 && fromn <= len, 3, "offset out of range");  /* tambien NaN */
+    luaL_argcheck(L, fromn >= 0 && fromn <= len, 3, "offset out of range");  /* also NaN */
     size_t from = (size_t)fromn;
     size_t bytes = to_u32(luaL_optnumber(L, 4, (lua_Number)(len - from)));
     if (bytes > len - from) bytes = len - from;
@@ -583,9 +583,9 @@ static int l_buf_append(lua_State *L)
         return luaL_error(L, "append: incomplete ADPCM block that is not the last one");
     if (rest && rest < 4)
         return luaL_error(L, "append: ADPCM block without a header");
-    memcpy(b->adpcm + (size_t)b->loaded * ba, s + from, bytes);   /* lo que falta del ultimo queda en 0 */
+    memcpy(b->adpcm + (size_t)b->loaded * ba, s + from, bytes);   /* what is missing from the last one stays 0 */
     b->loaded += whole + (rest ? 1 : 0);
-    lwsync();                               /* los bloques antes que avail */
+    lwsync();                               /* the blocks before avail */
     b->avail = buf_avail(b);
     lua_pushnumber(L, b->avail);
     return 1;
@@ -615,13 +615,13 @@ static int l_buf_duration(lua_State *L)
     return 1;
 }
 
-/* ---------- Lua: voces ---------- */
+/* ---------- Lua: voices ---------- */
 
-/* play(buffer [, volumen [, pitch [, loop [, desde_frame]]]]) -> id o nil */
+/* play(buffer [, volume [, pitch [, loop [, from_frame]]]]) -> id or nil */
 static int l_play(lua_State *L)
 {
     abuf_t *b = check_buf(L, 1);
-    if (!running) { lua_pushnil(L); return 1; }     /* sin hilo nadie mezcla ni suelta la voz */
+    if (!running) { lua_pushnil(L); return 1; }     /* without a thread nothing mixes or releases the voice */
     double id = voice_start(b, luaL_optnumber(L, 2, 1), luaL_optnumber(L, 3, 1),
                             lua_toboolean(L, 4), to_u32(luaL_optnumber(L, 5, 0)));
     if (id < 0) lua_pushnil(L); else lua_pushnumber(L, id);
@@ -642,11 +642,11 @@ static int l_pause(lua_State *L)
     return 0;
 }
 
-/* set(id, volumen, pitch, loop): nil deja el valor como estaba */
+/* set(id, volume, pitch, loop): nil leaves the value as it was */
 static int l_set(lua_State *L)
 {
     voice_t *v = voice_of(L, 1);
-    if (!voice_playing(v)) return 0;        /* con state 0 el buffer puede estar liberado */
+    if (!voice_playing(v)) return 0;        /* with state 0 the buffer may be freed */
     if (!lua_isnoneornil(L, 2)) v->gain = to_gain(lua_tonumber(L, 2));
     if (!lua_isnoneornil(L, 3)) v->step = to_step(v->buf, lua_tonumber(L, 3));
     if (!lua_isnoneornil(L, 4)) v->loop = lua_toboolean(L, 4);
@@ -687,7 +687,7 @@ static int l_master(lua_State *L)
     return 1;
 }
 
-/* beep([frecuencia [, ms [, volumen]]]) -> id o nil: seno en un buffer propio, para probar */
+/* beep([frequency [, ms [, volume]]]) -> id or nil: sine in its own buffer, for testing */
 static int l_beep(lua_State *L)
 {
     double freq = luaL_optnumber(L, 1, 880);
@@ -695,7 +695,7 @@ static int l_beep(lua_State *L)
     double vol = luaL_optnumber(L, 3, 0.5);
     if (ms < 10) ms = 10;
     if (ms > 5000) ms = 5000;
-    uint32_t i, n = (uint32_t)OUT_RATE * ms / 1000, fade = OUT_RATE / 200;  /* 5 ms sin clic */
+    uint32_t i, n = (uint32_t)OUT_RATE * ms / 1000, fade = OUT_RATE / 200;  /* 5 ms without a click */
     abuf_t *b = buf_alloc(n, 1, OUT_RATE);
     if (!b) { lua_pushnil(L); return 1; }
     for (i = 0; i < n; i++) {
@@ -703,7 +703,7 @@ static int l_beep(lua_State *L)
         b->pcm[i] = (int16_t)(sin(2 * M_PI * freq * i / OUT_RATE) * env * 30000);
     }
     double id = voice_start(b, vol, 1, 0, 0);
-    buf_release(b);                         /* se libera solo cuando termine de sonar */
+    buf_release(b);                         /* freed only when it finishes playing */
     if (id < 0) lua_pushnil(L); else lua_pushnumber(L, id);
     return 1;
 }
@@ -719,8 +719,8 @@ static int l_stats(lua_State *L)
     for (b = pending; b; b = b->next) { npend++; kb += buf_bytes(b) / 1024; }
     lua_newtable(L);
 #define F(k, x) lua_pushnumber(L, (double)(x)); lua_setfield(L, -2, k);
-    /* underruns = silent de xsdk: frames que el kernel toco en silencio porque no habia uno en
-     * cola (cortes que se oyen). queued_bytes ya no existe: fewest_queued dice cuanto falto. */
+    /* underruns = xsdk silent: frames the kernel played in silence because there was none
+     * queued (audible cutouts). queued_bytes no longer exists: fewest_queued says how much was missing. */
     F("voices", used) F("mixed", st_active) F("chunks", st_chunks) F("underruns", xs.silent)
     F("mix_us_max", st_mix_us_max) F("pending_buffers", npend) F("pending_kb", kb) F("starved", st_starved)
     F("played", xs.played) F("silent", xs.silent) F("fewest_queued", xs.fewest_queued)
