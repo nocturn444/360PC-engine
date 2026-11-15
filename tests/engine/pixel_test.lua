@@ -1,0 +1,78 @@
+local T = ...
+local F = require("fake_love")
+local Pixel = require("engine.pixel")
+
+-- the scaling maths
+local function fit(gw, gh, sw, sh, integer)
+  local s, ox, oy = Pixel.fit(gw, gh, sw, sh, integer)
+  return s .. " " .. ox .. " " .. oy
+end
+T.check(fit(320, 180, 1280, 720) == "4 0 0", "320x180 on the console's 1280x720: x4, no bars")
+T.check(fit(320, 180, 1920, 1080) == "6 0 0", "1080p: x6")
+T.check(fit(320, 180, 1366, 768) == "4 43 24", "1366x768: x4, centred")
+T.check(fit(320, 240, 1280, 720) == "3 160 0", "4:3 on 16:9: x3 with side bars")
+T.check(fit(320, 180, 800, 600) == "2 80 120", "800x600: x2, bars above and below")
+T.check(fit(320, 180, 1366, 768, false) == "4.2666666666667 0 0", "without integer scaling: fills the height")
+T.check(fit(320, 180, 160, 90) == "0.5 0 0", "a screen smaller than the game: scaled down")
+
+-- canvas mode (PC)
+F.install({ width = 1366, height = 768 })
+local p = Pixel.new({ width = 320, height = 180, bars = { 0.1, 0.1, 0.1 } })
+T.check(p.mode == "canvas" and p.canvas.w == 320 and p.canvas.h == 180 and p.canvas.filter == "nearest",
+  "auto on PC: a canvas of the game's size, nearest")
+T.check(F.find("setDefaultFilter")[1][2] == "nearest", "nearest is the default filter")
+T.check(p.scale == 4 and p.ox == 43 and p.oy == 24, "fitted to the window")
+F.reset_calls()
+love.graphics.setColor(0.5, 0.6, 0.7, 1)
+p:start()
+love.graphics.rectangle("fill", 10, 20, 5, 5)
+p:finish()
+local rects, draws = F.find("rectangle"), F.find("draw")
+T.check(rects[1].canvas == p.canvas and rects[1].tx == 0 and rects[1].sx == 1, "the game draws on the canvas, unscaled")
+T.check(#draws == 1 and draws[1][2] == p.canvas and draws[1][3] == 43 and draws[1][4] == 24 and draws[1][6] == 4
+  and draws[1].canvas == nil, "the canvas is drawn on the screen, scaled and centred")
+T.check(#rects == 6, "four bars and the backing of the canvas")
+T.check(rects[2][3] == 0 and rects[2][4] == 0 and rects[2][5] == 1366 and rects[2][6] == 24, "top bar")
+T.check(rects[3][4] == 744 and rects[3][6] == 24, "bottom bar")
+T.check(rects[4][3] == 0 and rects[4][4] == 24 and rects[4][5] == 43 and rects[4][6] == 720, "left bar")
+T.check(rects[5][3] == 1323 and rects[5][5] == 43, "right bar")
+local r, g, b = love.graphics.getColor()
+T.check(r == 0.5 and g == 0.6 and b == 0.7 and F.stack_depth() == 0, "colour and transform are left as they were")
+
+-- coordinates
+local gx, gy, inside = p:toGame(43, 24)
+T.check(gx == 0 and gy == 0 and inside, "the game's top left")
+gx, gy, inside = p:toGame(43 + 4 * 100 + 2, 24 + 4 * 50)
+T.check(gx == 100.5 and gy == 50 and inside, "screen to game")
+gx, gy, inside = p:toGame(10, 400)
+T.check(not inside, "a point on a bar is outside")
+local sx, sy = p:toScreen(100, 50)
+T.check(sx == 443 and sy == 224, "game to screen")
+F.mouse_x, F.mouse_y = 683, 384
+gx, gy, inside = p:getMouse()
+T.check(gx == 160 and gy == 90 and inside, "the mouse in game pixels")
+p:resize(1920, 1080)
+T.check(p.scale == 6 and p.ox == 0 and p.oy == 0, "resize")
+
+-- direct mode (the console: no small canvases)
+F.install({ width = 1280, height = 720, os = "Xbox 360" })
+p = Pixel.new({ width = 320, height = 180 })
+T.check(p.mode == "direct" and p.canvas == nil and #F.find("newCanvas") == 0, "auto on the console: no canvas")
+F.reset_calls()
+p:start()
+love.graphics.rectangle("fill", 10, 20, 5, 5)
+p:finish()
+rects = F.find("rectangle")
+T.check(#rects == 2 and #F.find("draw") == 0 and #F.find("setCanvas") == 0, "the background and the game's rectangle, no bars at x4")
+T.check(rects[2].sx == 4 and rects[2].tx == 0 and rects[2].canvas == nil, "drawn on the screen at x4")
+T.check(F.stack_depth() == 0, "transform restored")
+
+F.install({ width = 800, height = 600 })
+p = Pixel.new({ width = 320, height = 180, mode = "direct", background = { 0.2, 0.2, 0.2 } })
+F.reset_calls()
+p:start(); love.graphics.rectangle("fill", 0, 0, 1, 1); p:finish()
+rects = F.find("rectangle")
+T.check(rects[1].color[1] == 0.2 and rects[2].tx == 80 and rects[2].ty == 120 and rects[2].sx == 2, "direct mode with bars: offset and scale")
+T.check(#rects == 6 and rects[3][6] == 120 and rects[4][4] == 480 and rects[5][5] == 80 and rects[6][3] == 720,
+  "bars on the four sides, drawn after the game")
+T.check(not pcall(Pixel.new, { width = 320, height = 180, mode = "big" }), "an unknown mode is an error")

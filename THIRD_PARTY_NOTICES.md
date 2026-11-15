@@ -13,8 +13,9 @@ The license texts below are **copied in full from their sources**, without abrid
 | 4 | LuaJIT `COPYRIGHT`, commit `a4c064539ea931274d407e1249b4bb575424a0f4` (`toolchain/build_luajit_xsdk.sh`) |
 | 5 | End of `runtime/third_party/stb/stb_image.h` (v2.30) and `stb_truetype.h` (v1.26) |
 | 6 | Header of LÖVE's `src/modules/graphics/ParticleSystem.cpp`, tag `11.5` (https://github.com/love2d/love) |
+| 7 | anim8 `MIT-LICENSE.txt`, tag `v2.3.1`, commit `c1c12ec45fde28ffd2d6967675adcb3c3e501fa7` (https://github.com/kikito/anim8), copied to `lib/anim8/` |
 
-Update these full texts when updating xsdk, LuaJIT, stb or the code adapted from LÖVE. Third-party Lua libraries in `lib/`
+Update these full texts when updating xsdk, LuaJIT, stb, the code adapted from LÖVE or a library in `lib/`. Other third-party Lua libraries in `lib/`
 will be added here as they are copied in (objective 8).
 
 ## 1. 360PC-Engine (MIT)
@@ -298,4 +299,32 @@ runtime.
  *    misrepresented as being the original software.
  * 3. This notice may not be removed or altered from any source distribution.
  **/
+```
+
+## 7. anim8 v2.3.1 (MIT)
+
+`lib/anim8/anim8.lua`, unchanged from tag `v2.3.1` (commit
+`c1c12ec45fde28ffd2d6967675adcb3c3e501fa7`). Only in games that use animations (`engine.anim`).
+
+```
+Copyright (c) 2011 Enrique García Cota
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the
+"Software"), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish,
+distribute, sublicense, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to
+the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ```

@@ -6,6 +6,8 @@
 -- metadata (shaders/*.meta.lua) is generated first with tools/shaders/build_shaders.py --hlsl-only
 -- (needs python3), as the shader build would leave it in the console folder.
 -- Usage, from the repository root: luajit -joff tests/pc/boot_pc.lua [game folder]
+-- With a game folder, only the generic checks run; engine/ and lib/ are also read from the
+-- repository if the game folder does not have them (examples/engine_demo).
 local root = arg[1] or 'tests/fixtures/minimal_game'
 local own_game = arg[1] == nil
 local FRAMES = tonumber(os.getenv('L360_FRAMES')) or 90
@@ -41,7 +43,10 @@ local function game_file(path)
   if own_game and path == 'test_font.ttf' then return 'not a real TTF: the stub only measures' end
   local own = path:match('^l360/(.*)$')
   if own then return read_file('runtime/lua/' .. own) or read_file('tests/console/' .. own) end
-  return read_file(root .. '/' .. path)
+  local d = read_file(root .. '/' .. path)
+  -- The base's engine/ and lib/, which the packaging puts in the game folder
+  if not d and (path:match('^engine/') or path:match('^lib/')) then d = read_file(path) end
+  return d
 end
 
 local checks = 0

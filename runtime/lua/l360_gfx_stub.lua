@@ -364,12 +364,13 @@ gfx.getLineWidth = function() return line_width end
 local point_size = 1
 gfx.setPointSize = function(s) point_size = tonumber(s) or 1 end
 gfx.getPointSize = function() return point_size end
+-- (== true: an Image answers a function for any name it does not have)
 gfx.draw = function(what)
-  if type(what) == "table" and what.is_batch then
+  if type(what) == "table" and what.is_batch == true then
     if what.count > 0 then submit(6 * what.count) end
     return
   end
-  if type(what) == "table" and what.is_particles then
+  if type(what) == "table" and what.is_particles == true then
     st.particles = st.particles + #what.life
     if #what.life > 0 then submit(6 * #what.life) end
     return
