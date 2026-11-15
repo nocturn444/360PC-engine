@@ -7,7 +7,6 @@ local st = { draws = 0, sends = 0, skipped = 0, dropped = 0, frames = 0, missing
 local function nop() end
 local function draw() st.draws = st.draws + 1 end
 local function skip() st.skipped = st.skipped + 1 end
-local function send() st.sends = st.sends + 1 end
 local color, line_width = {1, 1, 1, 1}, 1
 local Tex = { __index = {
   getWidth = function(s) return s.w end, getHeight = function(s) return s.h end,
@@ -37,8 +36,25 @@ gfx.newImage = function(path, data, dpi)
 end
 gfx.newCanvas = function(w, h) w, h = tonumber(w) or 1280, tonumber(h) or 720 return texture(w, h, 1) end
 gfx.newQuad = function() return setmetatable({}, { __index = function() return nop end }) end
--- Second result: whether the shader is translated. Without a GPU there is none.
-gfx.newShader = function() return setmetatable({ send = send }, { __index = function() return nop end }), false end
+-- newShader(name, meta), like l360_gfx.c: meta is the table of shaders/<name>.meta.lua, or nil if
+-- the shader was not built. Second result: whether the shader's own program is in use (never
+-- without a GPU, but the uniforms are still checked against the metadata).
+local missing_uniforms = {}
+gfx.newShader = function(name, meta)
+  local uniforms = type(meta) == "table" and meta.uniforms or nil
+  local sh = {}
+  sh.send = function(_, uniform)
+    st.sends = st.sends + 1
+    local key = tostring(name) .. ": uniform " .. tostring(uniform)
+    if uniforms and not uniforms[uniform] and not missing_uniforms[key] then
+      missing_uniforms[key] = true
+      l360.log("  [missing] shader " .. key)
+    end
+  end
+  sh.sendColor = sh.send
+  sh.hasUniform = function(_, uniform) return uniforms ~= nil and uniforms[uniform] ~= nil end
+  return setmetatable(sh, { __index = function() return nop end }), false
+end
 gfx.newFont = function(path, ttf, size)
   size = tonumber(size) or 12
   return setmetatable({ size = size }, { __index = function(_, k)

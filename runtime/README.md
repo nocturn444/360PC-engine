@@ -11,10 +11,10 @@ Started as a copy of Love360 (`nocturn444/love360-xbox360`, commit `e46bc8f`). S
 it is generic: the `.xex` runs the LÖVE game in its own folder (`game.lua`, `conf.lua`,
 `main.lua`), and the Title ID and name are given per game at build time
 (`-DGAME_TITLE_ID`, `-DGAME_NAME`; see [../BUILDING.md](../BUILDING.md) and
-[../docs/GAME_CONFIG.md](../docs/GAME_CONFIG.md)). Still to do:
+[../docs/GAME_CONFIG.md](../docs/GAME_CONFIG.md)). Since objective 3 shaders are generic too: each game
+declares its own in `game.lua`, and they are compiled on PC and registered at run time from
+their metadata ([../docs/SHADERS.md](../docs/SHADERS.md)). Still to do:
 
-- `newShader(name)` maps names to fixed programs with hand-written constant tables, made for
-  Balatro's shaders (objective 3).
 - `print`, `printf`, `line`, `circle`, `ellipse` and `points` draw nothing; no SpriteBatch
   (objective 4). There is no built-in font: `newFont(size)` needs `default_font` in `game.lua`.
 - No keyboard/pad action mapping yet (objective 4); the pad reaches the game as a LÖVE gamepad.
@@ -26,7 +26,9 @@ Source comments are still partly in Spanish; they are translated to English as e
 ## Modules
 
 - `main.c`: startup, LuaJIT, the log and the text screen, the frame loop and hitch measurement.
-- `l360_gfx.c`: `l360.gfx` on xsdk's GPU API (textures, canvases, shaders, batching).
+- `l360_gfx.c`: `l360.gfx` on xsdk's GPU API (textures, canvases, the shader registry, batching).
+- `shaders/`: the engine's own HLSL shaders (default and LÖVE-default stages), compiled with
+  every game's shaders by `tools/shaders/build_shaders.py`.
 - `l360_sys.c`: controller, files, saves (on their own thread) and exit (Back held 3 s).
 - `l360_audio.c`: `l360.audio`, the mixer and IMA ADPCM music on hardware thread 2.
 - `lua/boot.lua`: the LÖVE API in Lua and the boot (game.lua, conf.lua, main.lua, frame loop).
@@ -42,7 +44,8 @@ Source comments are still partly in Spanish; they are translated to English as e
 <folder>\game.lua               the game's config (docs/GAME_CONFIG.md)
 <folder>\conf.lua, main.lua     the game, with its other .lua files and assets
 <folder>\l360\                  runtime/lua/*.lua (reserved name)
-<folder>\shaders\               compiled shaders (.psu/.vsu) (reserved name)
+<folder>\shaders\               output of tools/shaders/build_shaders.py: the engine's and the
+                                game's .psu/.vsu and <name>.meta.lua (reserved name)
 <folder>\save\                  saves (save_dir in game.lua), created on first use
 <folder>\default.log            the log
 ```

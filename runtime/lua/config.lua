@@ -10,6 +10,7 @@ M.DEFAULT_SAVE_DIR = 'save'
 -- Folders of the console layout that the save folder cannot use (compared in lower case).
 M.RESERVED_DIRS = { l360 = true, shaders = true }
 M.AURORA_KEYS = { icon = true, cover = true, background = true, banner = true }
+M.SHADER_KEYS = { glsl = true, pixel = true, vertex = true }
 
 local function fail(msg) error({ config_error = msg }, 0) end
 
@@ -77,9 +78,28 @@ local function validate(t)
     end
   end
 
-  -- shaders: reserved for the shader build (objective 3); passed through as it is.
-  if t.shaders ~= nil and type(t.shaders) ~= 'table' then fail('shaders must be a table') end
-  cfg.shaders = t.shaders or {}
+  -- shaders: name -> the GLSL it is built from (docs/SHADERS.md). "path" is { glsl = "path" }.
+  cfg.shaders = {}
+  if t.shaders ~= nil then
+    if type(t.shaders) ~= 'table' then fail('shaders must be a table') end
+    for name, decl in pairs(t.shaders) do
+      if type(name) ~= 'string' or not name:match('^%a[%w_]*$') or #name > 24 or name:lower():sub(1, 5) == 'l360_' then
+        fail('shader names must be 1 to 24 letters, digits or _, starting with a letter and not with l360_: '
+          .. tostring(name))
+      end
+      local what = 'shaders.' .. name
+      if type(decl) == 'string' then decl = { glsl = decl } end
+      if type(decl) ~= 'table' then fail(what .. ' must be a path or a table') end
+      local d = {}
+      for k, v in pairs(decl) do
+        if not M.SHADER_KEYS[k] then fail('unknown field: ' .. what .. '.' .. tostring(k)) end
+        d[k] = check_path(v, what .. '.' .. k)
+      end
+      if d.glsl and (d.pixel or d.vertex) then fail(what .. ': give glsl, or pixel and/or vertex') end
+      if not (d.glsl or d.pixel or d.vertex) then fail(what .. ' needs glsl, pixel or vertex') end
+      cfg.shaders[name] = d
+    end
+  end
 
   if t.default_font ~= nil then cfg.default_font = check_path(t.default_font, 'default_font') end
   return cfg

@@ -1,7 +1,8 @@
 # Building 360PC-Engine
 
 This page covers the console runtime (`.xex`). On PC, games run on the official LÖVE 11.x and
-need no build step. Packaging, shaders and the installer get their own sections as their
+need no build step. Shaders are built separately, on the developer's PC:
+[docs/SHADERS.md](docs/SHADERS.md). Packaging and the installer get their own sections as their
 objectives land (see [docs/ROADMAP.md](docs/ROADMAP.md)).
 
 ## Layout
@@ -13,7 +14,8 @@ objectives land (see [docs/ROADMAP.md](docs/ROADMAP.md)).
 | `toolchain/` | Script and patch to build LuaJIT for xsdk. |
 | `tests/console/` | Checks that run on the console (and on PC). |
 | `tests/pc/`, `tests/fixtures/` | PC checks of the Lua layer and the games they use. |
-| `tools/` | Build and packaging tools (`read_game_config.lua`). |
+| `tools/` | Build and packaging tools (`read_game_config.lua`, `shaders/`). |
+| `runtime/shaders/` | The engine's own HLSL shaders, compiled by the shader build. |
 
 ## Requirements
 
@@ -65,6 +67,7 @@ and hitches).
 
 - The boot, on PC: `luajit -joff tests/pc/boot_pc.lua` runs `runtime/lua/boot.lua` against
   `tests/fixtures/minimal_game` with a fake `l360` table and must end with a line starting with `OK:`.
+- The shader build, on PC: `python3 -m unittest discover -s tests/shaders` must end with `OK`.
 - LuaJIT numbers, on PC: `luajit -joff tests/console/number_check.lua` must end with
   `== numbers: 0 of 36 wrong ==`.
 - LuaJIT numbers, on the console: copy `tests/console/number_check.lua` to

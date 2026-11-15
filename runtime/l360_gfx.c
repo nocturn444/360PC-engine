@@ -1,21 +1,20 @@
 /*
- * Love360 - love.graphics sobre la GPU de xsdk (tarea 07), para la logica de Balatro.
+ * 360PC-Engine - love.graphics on xsdk's GPU (from Love360).
  *
  * Copia de runtime/source/l360_gfx.c (libXenon) con otra capa de abajo: la transformacion de
  * vertices, los lotes, la tabla de programas y registros de shader y los tipos de Lua son los
  * mismos. Cambia como se habla con la GPU (xsdk_gpu_*, xsdk_present_*, xsdk_texture_*).
  *
  * Como LOVE 11: cada dibujo se transforma en la CPU con la pila de transformaciones
- * (asi el shader recibe posiciones en pixeles de pantalla, que es lo que espera
- * Balatro) y se manda como un par de triangulos con sus constantes.
+ * (asi el shader recibe posiciones en pixeles de pantalla) y se manda como un par de triangulos con sus constantes.
  *
  * Pasos 2a a 2d: pantalla, figuras de color, imagenes, texto, canvas (resolve a su textura) y los
- * shaders del juego (dissolve, background, CRT y los efectos de carta).
+ * shaders del juego (docs/SHADERS.md).
  *
  * Tipos (userdata con metatabla):
  *   Image / Canvas  textura de xsdk + tamano en unidades de LOVE (dpiscale aplicado)
  *   Quad            recorte de una textura
- *   Shader          programa traducido (dissolve, background, CRT) o el de defecto
+ *   Shader          a registered program (the game's shader) or the default one, and its uniform values
  */
 #include <stdarg.h>
 #include <stdint.h>
@@ -40,20 +39,19 @@
  * texto se cuentan como "skipped" y solo se ven las figuras de color. */
 #define L360_TEXTURAS 1
 
-/* 1 desde el paso 2d: cada dibujo usa el programa que pidio el juego (dissolve, background, CRT,
- * efectos de carta). Con 0 todo se dibuja con default.psu/.vsu (paso 2b: probar solo texturas);
+/* 1 desde el paso 2d: cada dibujo usa el programa que pidio el juego.
+ * Con 0 todo se dibuja con l360_default.psu/.vsu (paso 2b: probar solo texturas);
  * newShader responde igual en los dos casos, para que Lua haga lo mismo. */
 #define L360_SHADERS 1
 
 /* Interruptores de prueba sin recompilar: palabras en game:\l360_gfx.txt (una o varias):
  *   no_canvas      setCanvas no hace nada y dibujar un canvas tampoco: todo va directo a la pantalla
- *   canvas_default  el canvas se dibuja con default.psu en lugar del shader que pida el juego (CRT)
- *   no_shaders     todo con default.psu/.vsu (como L360_SHADERS 0)
+ *   no_shaders     todo con l360_default.psu/.vsu (como L360_SHADERS 0)
  *   no_literals   no carga los literales de los shaders de XNA (como antes de arreglarlo)
  *   no_batching       un draw por cada submit, sin juntar los que comparten estado
- * Los shaders de xost (compilar_xost.py) y los de XNA van juntos en game:\shaders\: cada .psu/.vsu
+ * Los shaders de xost (tools/shaders/build_shaders.py) y los de XNA van juntos en game:\shaders\: cada .psu/.vsu
  * se reconoce por su cabecera (L3X1 = xost). El interruptor shaders_xost ya no hace falta. */
-static int opt_no_canvas, opt_canvas_default, opt_no_shaders, opt_no_batching;
+static int opt_no_canvas, opt_no_shaders, opt_no_batching;
 /* para el registro cada 300 frames */
 static long st_canvas_resolves, st_screen_resolves, st_last_draws, st_last_submits;
 
@@ -159,71 +157,44 @@ static int default_linear = 1;
 
 /* ---------- shaders ---------- */
 
-/* Shaders traducidos con glsl2hlsl.py (y sus vertices). El nombre es el del .fs de Balatro. */
-#define N_GEN 16
-static const char *gen_names[N_GEN] = {
-    "booster", "debuff", "foil", "holo", "hologram", "negative", "negative_shine", "played",
-    "polychrome", "voucher", "flame", "splash", "flash", "gold_seal", "vortex", "skew"};
-enum { PROG_DEFAULT, PROG_DISSOLVE, PROG_BACKGROUND, PROG_CRT, PROG_GEN, PROG_COUNT = PROG_GEN + N_GEN };
-
-/* name "" = el uniform que se llama como el shader (foil, holo, ...) */
-typedef struct { const char *name; int vs; int reg; int comp; int n; } umap_t;
-
-static const umap_t map_edition[] = {
-    {"dissolve", 0, 0, 0, 1}, {"time", 0, 0, 1, 1}, {"shadow", 0, 0, 2, 1},
-    {"texture_details", 0, 1, 0, 4}, {"image_details", 0, 2, 0, 2},
-    {"burn_colour_1", 0, 3, 0, 4}, {"burn_colour_2", 0, 4, 0, 4}, {"", 0, 5, 0, 2},
-    {"mouse_screen_pos", 1, 5, 0, 2}, {"hovering", 1, 5, 2, 1}, {"screen_scale", 1, 5, 3, 1},
-    {NULL, 0, 0, 0, 0}};
-static const umap_t map_flame[] = {
-    {"time", 0, 0, 0, 1}, {"amount", 0, 0, 1, 1}, {"id", 0, 0, 2, 1},
-    {"texture_details", 0, 1, 0, 4}, {"image_details", 0, 2, 0, 2},
-    {"colour_1", 0, 3, 0, 4}, {"colour_2", 0, 4, 0, 4},
-    {NULL, 0, 0, 0, 0}};
-static const umap_t map_splash[] = {
-    {"time", 0, 0, 0, 1}, {"vort_speed", 0, 0, 1, 1}, {"mid_flash", 0, 0, 2, 1}, {"vort_offset", 0, 0, 3, 1},
-    {"colour_1", 0, 1, 0, 4}, {"colour_2", 0, 2, 0, 4},
-    {NULL, 0, 0, 0, 0}};
-static const umap_t map_flash[] = {
-    {"time", 0, 0, 0, 1}, {"mid_flash", 0, 0, 1, 1}, {NULL, 0, 0, 0, 0}};
-static const umap_t map_gold_seal[] = {
-    {"gold_seal", 0, 0, 0, 4}, {NULL, 0, 0, 0, 0}};
-static const umap_t map_vortex[] = {
-    {"vortex_amt", 1, 5, 0, 1}, {NULL, 0, 0, 0, 0}};
-static const umap_t map_skew[] = {
-    {"mouse_screen_pos", 1, 5, 0, 2}, {"hovering", 1, 5, 2, 1}, {"screen_scale", 1, 5, 3, 1},
-    {NULL, 0, 0, 0, 0}};
-
-static const umap_t map_dissolve[] = {
-    {"dissolve", 0, 0, 0, 1}, {"time", 0, 0, 1, 1}, {"shadow", 0, 0, 2, 1},
-    {"texture_details", 0, 1, 0, 4}, {"image_details", 0, 2, 0, 2},
-    {"burn_colour_1", 0, 3, 0, 4}, {"burn_colour_2", 0, 4, 0, 4},
-    {"mouse_screen_pos", 1, 5, 0, 2}, {"hovering", 1, 5, 2, 1}, {"screen_scale", 1, 5, 3, 1},
-    {NULL, 0, 0, 0, 0}};
-static const umap_t map_background[] = {
-    {"time", 0, 0, 0, 1}, {"spin_time", 0, 0, 1, 1}, {"contrast", 0, 0, 2, 1}, {"spin_amount", 0, 0, 3, 1},
-    {"colour_1", 0, 1, 0, 4}, {"colour_2", 0, 2, 0, 4}, {"colour_3", 0, 3, 0, 4},
-    {NULL, 0, 0, 0, 0}};
-static const umap_t map_crt[] = {
-    {"time", 0, 0, 0, 1}, {"feather_fac", 0, 0, 1, 1}, {"noise_fac", 0, 0, 2, 1}, {"bloom_fac", 0, 0, 3, 1},
-    {"distortion_fac", 0, 1, 0, 2}, {"scale_fac", 0, 1, 2, 2},
-    {"crt_intensity", 0, 2, 0, 1}, {"glitch_intensity", 0, 2, 1, 1}, {"scanlines", 0, 2, 2, 1},
-    {"mouse_screen_pos", 1, 5, 0, 2}, {"hovering", 1, 5, 2, 1}, {"screen_scale", 1, 5, 3, 1},
-    {NULL, 0, 0, 0, 0}};
+/* Programs: a pixel shader and the vertex shader linked to it, plus where each uniform goes.
+ * progs[0] is the default one (texture times colour). The others are the game's: newShader(name,
+ * meta) registers them from the table of shaders/<name>.meta.lua, which tools/shaders writes when
+ * it compiles the game's GLSL (docs/SHADERS.md). No C changes per game. Registers, the same as in
+ * tools/shaders/glsl2hlsl.py:
+ *   pixel:  c6 = love_ScreenSize, c7 = 0, c8... = uniforms; s0 = the texture drawn, s1-s3 = Images
+ *   vertex: c0-c3 = projection, c4 = love_ScreenSize, c5... = uniforms */
+enum {
+    PS_SCREEN_REG = 6, PS_BASE = 8, PS_MAX = 32,
+    VS_BASE = 5, VS_MAX = 16,
+    SAMPLER_MAX = 3, PROG_MAX = 64, UNI_MAX = 96,
+};
+#define DEFAULT_PS "l360_default.psu"
+#define DEFAULT_VS "l360_default.vsu"
 
 typedef struct {
-    XsdkShader *ps, *ps_alt, *vs, *vs_alt;  /* ps_alt: dissolve con quemado; vs_alt: su .vsu enlazado a el */
-    const umap_t *map;
-    int ps_screen_reg;                      /* registro PS con love_ScreenSize, -1 = ninguno */
-    int ps_regs;                            /* cuantos registros PS subir */
-} prog_t;
-static prog_t progs[PROG_COUNT];
-
-typedef struct {
-    int prog;
-    float ps[8][4];
-    float vs[8][4];
     char name[32];
+    int comps, rows, count;      /* floats per register, registers per element, elements */
+    int ps, vs;                  /* first register as an index into shader_ud.ps / .vs; -1 = not in that stage */
+    int sampler;                 /* 1-3: an Image uniform in that slot; 0 = not an Image */
+} uni_t;
+
+typedef struct {
+    char name[32];
+    XsdkShader *ps, *vs;         /* NULL in a game program: it did not load (drawn with the default) */
+    uni_t *uni;
+    int nuni;
+    int ps_regs, vs_regs;        /* registers to upload from PS_BASE / VS_BASE */
+    int samplers;                /* highest Image slot in use */
+} prog_t;
+static prog_t progs[PROG_MAX];
+static int nprogs = 1;
+
+typedef struct {
+    int prog;                    /* index into progs; 0 = default */
+    float ps[PS_MAX][4];
+    float vs[VS_MAX][4];
+    surf_t *tex[SAMPLER_MAX + 1];   /* [1..3]: what was sent to each Image uniform */
 } shader_ud;
 
 static shader_ud *cur_shader;
@@ -262,7 +233,7 @@ static int shaders_loaded, shaders_missing, shaders_bad, shaders_lits, shaders_x
  * microcodigo, van en la tabla de definiciones del contenedor (palabra 5 de la cabecera) y hay que
  * cargarlos en las constantes cada vez que se pone el shader. libXenon lo hace en
  * Xe_pUploadShaderConstants; xsdk_shader_load no (solo conoce las de xost, que tienen
- * xsdk_built_shader_set_literals). Sin esto, dissolve, el CRT y los efectos leen basura. */
+ * xsdk_built_shader_set_literals). Sin esto los shaders leen basura. */
 #define LIT_MAX 64               /* los de xost vienen de a un registro: se juntan los seguidos */
 typedef struct { uint32_t first, count; const float *v; } lit_t;   /* count en grupos de 4 floats */
 typedef struct {
@@ -396,7 +367,7 @@ static void apply_literals(const XsdkShader *x)
             xsdk_gpu_set_loop_constants(l, &s->loops[l], 1);
 }
 
-/* Los de xost (herramientas/pc/compilar_xost.py): "L3X1", cantidad de literales y por literal el
+/* Los de xost (tools/shaders/build_shaders.py): "L3X1", cantidad de literales y por literal el
  * registro y 4 floats, despues el contenedor de xost. xost pone cada literal en un registro que el
  * shader no usa (los register(cN) del HLSL quedan donde dicen, como en D3D9), asi que van con
  * apply_literals igual que los de XNA; nunca en c252-c255. Devuelve el tamano de la cabecera o 0. */
@@ -445,7 +416,7 @@ static uint32_t parse_xost(shader_t *s, const uint8_t *c, uint32_t n, const char
     return hdr;
 }
 
-/* game:\shaders\<name>: el de XNA (10_compilar_todo.bat) o el de xost (compilar_xost.py, empieza con
+/* game:\shaders\<name>: el de XNA (10_compilar_todo.bat) o el de xost (build_shaders.py, empieza con
  * L3X1), el que haya dejado el instalador. El contenedor queda en memoria: xsdk lee de el las tablas
  * del shader mientras exista. */
 static XsdkShader *load_shader(const char *name, int vertex)
@@ -510,8 +481,8 @@ static XsdkShader *load_shader(const char *name, int vertex)
     return sh;
 }
 
-/* Pixel shaders: uno por archivo (love.psu lo usan vortex y skew) */
-#define PS_CACHE 32
+/* Pixel shaders: uno por archivo (l360_love.psu is shared by the shaders with only a vertex stage) */
+#define PS_CACHE (PROG_MAX + 2)
 static struct { char name[32]; XsdkShader *sh; } ps_cache[PS_CACHE];
 
 static XsdkShader *load_ps(const char *name)
@@ -530,7 +501,7 @@ static XsdkShader *load_ps(const char *name)
 /* Vertex shader enlazado a un pixel shader. HLSL: las salidas del vertex shader van a las entradas
  * del pixel shader por semantica, como en D3D9 (libXenon no enlazaba: andaba porque estaban en el
  * mismo orden). xsdk_shader_link cambia el microcodigo del vertex shader para ese pixel shader, asi
- * que un .vsu que usan varios .psu (card.vsu con las 10 ediciones) se carga una vez por cada uno. */
+ * que un .vsu que usan varios .psu (l360_love.vsu) se carga una vez por cada uno. */
 static XsdkShader *vs_for(const char *name, XsdkShader *ps)
 {
     if (!ps)
@@ -670,12 +641,19 @@ static void flush(void)
         need_vconst = 0;
         lits_dirty = 1;
     }
-    if (sh && sh->prog != PROG_DEFAULT) {
-        xsdk_gpu_set_vertex_constants(5, sh->vs[5], 1);
-        if (p->ps_regs > 0)
-            xsdk_gpu_set_pixel_constants(0, sh->ps[0], (uint32_t)p->ps_regs);
-        if (p->ps_screen_reg >= 0)
-            xsdk_gpu_set_pixel_constants((uint32_t)p->ps_screen_reg, screen, 1);
+    if (p != &progs[0]) {
+        /* the game's uniforms: c6 = screen size, c7 = 0 and the shader's own from c8 */
+        float pc[2 + PS_MAX][4];
+        memcpy(pc[0], screen, sizeof(screen));
+        memset(pc[1], 0, sizeof(pc[1]));
+        memcpy(pc[2], sh->ps, (size_t)p->ps_regs * sizeof(pc[0]));
+        xsdk_gpu_set_pixel_constants(PS_SCREEN_REG, pc[0], 2 + (uint32_t)p->ps_regs);
+        if (p->vs_regs > 0)
+            xsdk_gpu_set_vertex_constants(VS_BASE, sh->vs[0], (uint32_t)p->vs_regs);
+        for (int i = 1; i <= p->samplers; i++) {
+            surf_t *x = sh->tex[i] ? sh->tex[i] : white_tex;
+            xsdk_gpu_set_texture((uint32_t)i, &x->t, x->linear ? &samp_linear : &samp_point);
+        }
         lits_dirty = 1;
     }
     /* los literales van despues de las constantes del juego, como en libXenon (las sube al dibujar):
@@ -710,17 +688,10 @@ static void submit(surf_t *tex, vertex_t *v, int nverts)
         return;
 
     shader_ud *sh = (L360_SHADERS && !opt_no_shaders) ? cur_shader : NULL;
-    prog_t *p = &progs[sh ? sh->prog : PROG_DEFAULT];
+    if (sh && !sh->prog)
+        sh = NULL;                   /* a shader that was not built draws as no shader */
+    prog_t *p = &progs[sh ? sh->prog : 0];
     XsdkShader *ps = p->ps, *vs = p->vs;
-    if (sh && sh->prog == PROG_DISSOLVE && sh->ps[0][0] > 0.0001f && p->ps_alt && p->vs_alt) {
-        ps = p->ps_alt;
-        vs = p->vs_alt;
-    }
-    if (!ps || !vs) {
-        p = &progs[PROG_DEFAULT];
-        ps = p->ps;
-        vs = p->vs;
-    }
     surf_t *t = tex ? tex : white_tex;
     if (!(pend.n && !opt_no_batching && pend.first + pend.n == vb_cur && pend.tex == t && pend.linear == t->linear
           && pend.sh == sh && pend.ps == ps && pend.vs == vs)) {
@@ -874,37 +845,106 @@ static int quad_getTextureDimensions(lua_State *L)
     return 2;
 }
 
-/* shader:send(nombre, valor) */
+static const uni_t *find_uniform(const prog_t *p, const char *name)
+{
+    for (int i = 0; i < p->nuni; i++)
+        if (!strcmp(p->uni[i].name, name))
+            return &p->uni[i];
+    return NULL;
+}
+
+/* One register from the value at idx: a number or a boolean (first component), or a table, from
+ * its element `first`. */
+static void read_row(lua_State *L, int idx, float *dst, int comps, int first)
+{
+    int t = lua_type(L, idx);
+    if (t == LUA_TNUMBER) {
+        dst[0] = (float)lua_tonumber(L, idx);
+    } else if (t == LUA_TBOOLEAN) {
+        dst[0] = lua_toboolean(L, idx) ? 1.0f : 0.0f;
+    } else if (t == LUA_TTABLE) {
+        for (int i = 0; i < comps; i++) {
+            lua_rawgeti(L, idx, first + i);
+            dst[i] = lua_isboolean(L, -1) ? (float)lua_toboolean(L, -1) : (float)lua_tonumber(L, -1);
+            lua_pop(L, 1);
+        }
+    }
+}
+
+/* shader:send(name, value, ...), one value per array element, as in LOVE:
+ *   float, int, bool  a number or a boolean
+ *   vecN              a table of N numbers
+ *   matN              a table of N rows (tables of N numbers) or of N*N numbers; in rows, or in
+ *                     columns if "column" comes before the first matrix
+ *   Image             an Image or a Canvas
+ * A uniform that is not in the shader's metadata is logged once as [missing]. */
 static int shader_send(lua_State *L)
 {
     shader_ud *sh = luaL_checkudata(L, 1, MT_SHADER);
     const char *name = luaL_checkstring(L, 2);
     l360_gfx_stats.sends++;
-    flush();                      /* el lote pendiente sube las constantes de ahora, no las nuevas */
-    const umap_t *m = progs[sh->prog].map;
-    if (!m)
-        return 0;
-    for (; m->name; m++) {
-        if (m->name[0] ? strcmp(m->name, name) : strcmp(sh->name, name))
-            continue;
-        float *dst = (m->vs ? sh->vs[m->reg] : sh->ps[m->reg]) + m->comp;
-        int t = lua_type(L, 3);
-        if (t == LUA_TNUMBER) {
-            dst[0] = (float)lua_tonumber(L, 3);
-        } else if (t == LUA_TBOOLEAN) {
-            dst[0] = lua_toboolean(L, 3) ? 1.0f : 0.0f;
-        } else if (t == LUA_TTABLE) {
-            for (int i = 0; i < m->n; i++) {
-                lua_rawgeti(L, 3, i + 1);
-                dst[i] = (float)lua_tonumber(L, -1);
-                lua_pop(L, 1);
-            }
+    if (!sh->prog)
+        return 0;                 /* not built: boot.lua already logged it */
+    const prog_t *p = &progs[sh->prog];
+    const uni_t *u = find_uniform(p, name);
+    if (!u) {
+        if (missing_cb) {
+            char msg[96];
+            snprintf(msg, sizeof(msg), "shader %s: uniform %.40s", p->name, name);
+            missing_cb(msg);
         }
         return 0;
     }
+    flush();                      /* el lote pendiente sube las constantes de ahora, no las nuevas */
+    if (u->sampler) {
+        tex_ud *t = to_tex(L, 3);
+        sh->tex[u->sampler] = t ? t->s : NULL;
+        return 0;
+    }
+    if (u->ps < 0 && u->vs < 0)
+        return 0;                 /* declared and not used by the shader */
+    float v[PS_MAX][4];
+    memset(v, 0, sizeof(v));
+    int arg = 3, top = lua_gettop(L), column = 0, regs = 0;
+    if (u->rows > 1 && lua_type(L, arg) == LUA_TSTRING)
+        column = !strcmp(lua_tostring(L, arg++), "column");
+    for (int e = 0; e < u->count && arg <= top; e++, arg++, regs += u->rows) {
+        float (*dst)[4] = &v[e * u->rows];
+        if (u->rows == 1) {
+            read_row(L, arg, dst[0], u->comps, 1);
+        } else if (lua_istable(L, arg)) {
+            float m[4][4];
+            memset(m, 0, sizeof(m));
+            lua_rawgeti(L, arg, 1);
+            int nested = lua_istable(L, -1);
+            lua_pop(L, 1);
+            for (int r = 0; r < u->rows; r++) {
+                if (nested) {
+                    lua_rawgeti(L, arg, r + 1);
+                    read_row(L, lua_gettop(L), m[r], u->comps, 1);
+                    lua_pop(L, 1);
+                } else {
+                    read_row(L, arg, m[r], u->comps, r * u->comps + 1);
+                }
+            }
+            for (int r = 0; r < u->rows; r++)
+                for (int c = 0; c < u->comps; c++)
+                    dst[r][c] = column ? m[c][r] : m[r][c];
+        }
+    }
+    if (u->ps >= 0)
+        memcpy(sh->ps[u->ps], v, (size_t)regs * sizeof(v[0]));
+    if (u->vs >= 0)
+        memcpy(sh->vs[u->vs], v, (size_t)regs * sizeof(v[0]));
     return 0;
 }
-static int shader_hasUniform(lua_State *L) { lua_pushboolean(L, 1); return 1; }
+
+static int shader_hasUniform(lua_State *L)
+{
+    shader_ud *sh = luaL_checkudata(L, 1, MT_SHADER);
+    lua_pushboolean(L, sh->prog && find_uniform(&progs[sh->prog], luaL_checkstring(L, 2)) != NULL);
+    return 1;
+}
 
 static void make_mt(lua_State *L, const char *name, const luaL_Reg *methods)
 {
@@ -1305,25 +1345,129 @@ static int g_newQuad(lua_State *L)
     return 1;
 }
 
+static int meta_int(lua_State *L, int t, const char *key, int def)
+{
+    lua_getfield(L, t, key);
+    int v = lua_isnumber(L, -1) ? (int)lua_tointeger(L, -1) : def;
+    lua_pop(L, 1);
+    return v;
+}
+
+/* A .psu/.vsu file name of the metadata: a plain name, inside shaders\ */
+static int meta_file(lua_State *L, int t, const char *key, char *dst, size_t size)
+{
+    lua_getfield(L, t, key);
+    const char *v = lua_type(L, -1) == LUA_TSTRING ? lua_tostring(L, -1) : "";
+    int ok = v[0] && strlen(v) < size && !strpbrk(v, "/\\:") && !strstr(v, "..");
+    snprintf(dst, size, "%s", ok ? v : "");
+    lua_pop(L, 1);
+    return ok;
+}
+
+/* The uniforms of the metadata table at t: { name = { comps, rows, count, ps, vs, sampler } }.
+ * ps and vs are register numbers (c8..., c5...). 0 if something is out of range. */
+static int read_uniforms(lua_State *L, int t, prog_t *p)
+{
+    int ok = 1;
+    lua_getfield(L, t, "uniforms");
+    if (lua_istable(L, -1)) {
+        int ut = lua_gettop(L);
+        lua_pushnil(L);
+        while (lua_next(L, ut)) {
+            if (ok) {
+                uni_t u;
+                memset(&u, 0, sizeof(u));
+                int e = lua_gettop(L);
+                ok = lua_type(L, -2) == LUA_TSTRING && lua_istable(L, -1) && p->nuni < UNI_MAX
+                     && strlen(lua_tostring(L, -2)) < sizeof(u.name);
+                if (ok) {
+                    snprintf(u.name, sizeof(u.name), "%s", lua_tostring(L, -2));
+                    u.comps = meta_int(L, e, "comps", 0);
+                    u.rows = meta_int(L, e, "rows", 0);
+                    u.count = meta_int(L, e, "count", 1);
+                    u.ps = meta_int(L, e, "ps", -1);
+                    u.vs = meta_int(L, e, "vs", -1);
+                    u.sampler = meta_int(L, e, "sampler", 0);
+                    if (u.sampler) {
+                        ok = u.sampler >= 1 && u.sampler <= SAMPLER_MAX;
+                        if (ok && u.sampler > p->samplers) p->samplers = u.sampler;
+                    } else {
+                        int regs = u.rows * u.count;
+                        ok = u.comps >= 1 && u.comps <= 4 && u.rows >= 1 && u.rows <= 4 && u.count >= 1
+                             && u.count <= PS_MAX
+                             && (u.ps < 0 || (u.ps >= PS_BASE && u.ps - PS_BASE + regs <= p->ps_regs))
+                             && (u.vs < 0 || (u.vs >= VS_BASE && u.vs - VS_BASE + regs <= p->vs_regs));
+                        if (u.ps >= 0) u.ps -= PS_BASE;
+                        if (u.vs >= 0) u.vs -= VS_BASE;
+                    }
+                }
+                uni_t *grown = ok ? realloc(p->uni, (size_t)(p->nuni + 1) * sizeof(uni_t)) : NULL;
+                if (grown) {
+                    p->uni = grown;
+                    p->uni[p->nuni++] = u;
+                } else {
+                    ok = 0;
+                }
+            }
+            lua_pop(L, 1);
+        }
+    }
+    lua_pop(L, 1);
+    return ok;
+}
+
+/* The program called `name`; the first time, registered from its metadata table (stack index t).
+ * 0 (the default program) if it cannot be used: the reason is logged, once. */
+static int prog_for(lua_State *L, int t, const char *name)
+{
+    for (int i = 1; i < nprogs; i++)
+        if (!strcmp(progs[i].name, name))
+            return progs[i].ps ? i : 0;
+    if (nprogs == PROG_MAX || strlen(name) >= sizeof(progs[0].name)) {
+        gfx_log(" [shader] %.40s: cannot be registered (at most %d shaders, names under 32 characters)",
+                name, PROG_MAX - 1);
+        return 0;
+    }
+    prog_t *p = &progs[nprogs];
+    memset(p, 0, sizeof(*p));
+    snprintf(p->name, sizeof(p->name), "%s", name);
+    char ps[32], vs[32];
+    p->ps_regs = meta_int(L, t, "ps_regs", 0);
+    p->vs_regs = meta_int(L, t, "vs_regs", 0);
+    int ok = meta_int(L, t, "version", 0) == 1;
+    ok = meta_file(L, t, "ps", ps, sizeof(ps)) && ok;
+    ok = meta_file(L, t, "vs", vs, sizeof(vs)) && ok;
+    ok = ok && p->ps_regs >= 0 && p->ps_regs <= PS_MAX && p->vs_regs >= 0 && p->vs_regs <= VS_MAX;
+    ok = ok && read_uniforms(L, t, p);
+    nprogs++;                    /* it stays registered if it fails: one attempt and one log line */
+    if (!ok) {
+        gfx_log(" [shader] %s: bad metadata (shaders\\%s.meta.lua; build the shaders again)", name, name);
+        return 0;
+    }
+    p->ps = load_ps(ps);
+    p->vs = vs_for(vs, p->ps);
+    if (!p->ps || !p->vs) {
+        gfx_log(" [shader] %s: not loaded, drawn with the default one", name);
+        p->ps = p->vs = NULL;
+        return 0;
+    }
+    gfx_log(" [shader] %s: %s + %s, %d uniforms (%d pixel and %d vertex registers, %d images)", name, ps, vs,
+            p->nuni, p->ps_regs, p->vs_regs, p->samplers);
+    return nprogs - 1;
+}
+
+/* newShader(name, meta): meta is the table of shaders/<name>.meta.lua, or nil if the shader was
+ * not built (boot.lua logs that). Returns the Shader and whether its program is in use. */
 static int g_newShader(lua_State *L)
 {
-    /* newShader(nombre_sin_extension) */
-    const char *name = luaL_checkstring(L, 1);
+    const char *name = luaL_optstring(L, 1, "");
     shader_ud *sh = lua_newuserdata(L, sizeof(shader_ud));
     memset(sh, 0, sizeof(*sh));
-    snprintf(sh->name, sizeof(sh->name), "%s", name);
-    sh->prog = PROG_DEFAULT;
-    if (!strcmp(name, "dissolve")) sh->prog = PROG_DISSOLVE;
-    else if (!strcmp(name, "background")) sh->prog = PROG_BACKGROUND;
-    else if (!strcmp(name, "CRT")) sh->prog = PROG_CRT;
-    else {
-        for (int i = 0; i < N_GEN; i++)
-            if (!strcmp(name, gen_names[i])) { sh->prog = PROG_GEN + i; break; }
-    }
+    if (lua_istable(L, 2))
+        sh->prog = prog_for(L, 2, name);
     luaL_getmetatable(L, MT_SHADER);
     lua_setmetatable(L, -2);
-    /* traducido = el programa existe y sus .psu/.vsu se cargaron */
-    lua_pushboolean(L, sh->prog != PROG_DEFAULT && progs[sh->prog].ps && progs[sh->prog].vs);
+    lua_pushboolean(L, sh->prog != 0);
     return 2;
 }
 
@@ -1434,11 +1578,6 @@ static int g_draw(lua_State *L)
     } else if (q) {
         emit_quad(t->s, &m, 0, 0, q->w, q->h,
                   q->x / q->sw, q->y / q->sh, (q->x + q->w) / q->sw, (q->y + q->h) / q->sh);
-    } else if (t->kind == TEX_CANVAS && opt_canvas_default) {
-        shader_ud *keep = cur_shader;
-        cur_shader = NULL;
-        emit_quad(t->s, &m, 0, 0, t->w, t->h, 0, 0, 1, 1);
-        cur_shader = keep;
     } else {
         emit_quad(t->s, &m, 0, 0, t->w, t->h, 0, 0, 1, 1);
     }
@@ -1681,12 +1820,11 @@ static void read_options(void)
     fclose(f);
     buf[n] = 0;
     opt_no_canvas = strstr(buf, "no_canvas") != NULL;
-    opt_canvas_default = strstr(buf, "canvas_default") != NULL;
     opt_no_shaders = strstr(buf, "no_shaders") != NULL;
     opt_no_literals = strstr(buf, "no_literals") != NULL;
     opt_no_batching = strstr(buf, "no_batching") != NULL;
-    gfx_log("[gfx] l360_gfx.txt: no_canvas=%d canvas_default=%d no_shaders=%d no_literals=%d no_batching=%d",
-            opt_no_canvas, opt_canvas_default, opt_no_shaders, opt_no_literals, opt_no_batching);
+    gfx_log("[gfx] l360_gfx.txt: no_canvas=%d no_shaders=%d no_literals=%d no_batching=%d",
+            opt_no_canvas, opt_no_shaders, opt_no_literals, opt_no_batching);
     if (strstr(buf, "shaders_xost"))
         gfx_log("[gfx] shaders_xost is no longer needed: xost shaders are read from shaders\\ by their header");
 }
@@ -1700,51 +1838,14 @@ int l360_gfx_init(uint32_t w, uint32_t h, void (*log)(const char *))
     read_options();
     (void)xsdk_system_ui_open();     /* la primera llamada empieza a escuchar a XAM */
 
-    progs[PROG_DEFAULT].ps = load_ps("default.psu");
-    progs[PROG_DEFAULT].vs = vs_for("default.vsu", progs[PROG_DEFAULT].ps);
-    progs[PROG_DEFAULT].ps_screen_reg = -1;
-    if (!progs[PROG_DEFAULT].ps || !progs[PROG_DEFAULT].vs) {
-        gfx_log("[ERROR] without shaders\\default.psu and default.vsu there are no graphics (copy the .psu/.vsu files to Love360\\shaders\\)");
+    /* The default program. The game's are registered by newShader, from their metadata. */
+    snprintf(progs[0].name, sizeof(progs[0].name), "default");
+    progs[0].ps = load_ps(DEFAULT_PS);
+    progs[0].vs = vs_for(DEFAULT_VS, progs[0].ps);
+    if (!progs[0].ps || !progs[0].vs) {
+        gfx_log("[ERROR] without shaders\\" DEFAULT_PS " and " DEFAULT_VS " there are no graphics "
+                "(copy the output of tools/shaders/build_shaders.py to shaders\\)");
         return -1;
-    }
-    progs[PROG_DISSOLVE].ps = load_ps("dissolve_fast.psu");
-    progs[PROG_DISSOLVE].vs = vs_for("dissolve.vsu", progs[PROG_DISSOLVE].ps);
-    progs[PROG_DISSOLVE].ps_alt = load_ps("dissolve_br.psu");
-    progs[PROG_DISSOLVE].vs_alt = vs_for("dissolve.vsu", progs[PROG_DISSOLVE].ps_alt);
-    progs[PROG_DISSOLVE].map = map_dissolve;
-    progs[PROG_DISSOLVE].ps_regs = 5;
-    progs[PROG_DISSOLVE].ps_screen_reg = -1;
-    progs[PROG_BACKGROUND].ps = load_ps("background.psu");
-    progs[PROG_BACKGROUND].vs = vs_for("background.vsu", progs[PROG_BACKGROUND].ps);
-    progs[PROG_BACKGROUND].map = map_background;
-    progs[PROG_BACKGROUND].ps_regs = 4;
-    progs[PROG_BACKGROUND].ps_screen_reg = 4;
-    progs[PROG_CRT].ps = load_ps("crt_vanilla.psu");
-    progs[PROG_CRT].vs = vs_for("crt.vsu", progs[PROG_CRT].ps);
-    progs[PROG_CRT].map = map_crt;
-    progs[PROG_CRT].ps_regs = 3;
-    progs[PROG_CRT].ps_screen_reg = 3;
-
-    /* shaders generados: comparten los .vsu (card, love, vortex), cada uno enlazado a su .psu */
-    for (int i = 0; i < N_GEN; i++) {
-        const char *n = gen_names[i];
-        prog_t *p = &progs[PROG_GEN + i];
-        const char *vs = "love.vsu";
-        char ps[48];
-        snprintf(ps, sizeof(ps), "%s.psu", n);
-        p->ps_regs = 8;
-        p->ps_screen_reg = 6;
-        if (i < 10) {                       /* familia de las cartas: foil, holo, ... */
-            p->map = map_edition;
-            vs = "card.vsu";
-        } else if (!strcmp(n, "flame")) p->map = map_flame;
-        else if (!strcmp(n, "splash")) p->map = map_splash;
-        else if (!strcmp(n, "flash")) p->map = map_flash;
-        else if (!strcmp(n, "gold_seal")) p->map = map_gold_seal;
-        else if (!strcmp(n, "vortex")) { p->map = map_vortex; vs = "vortex.vsu"; snprintf(ps, sizeof(ps), "love.psu"); }
-        else if (!strcmp(n, "skew")) { p->map = map_skew; vs = "card.vsu"; snprintf(ps, sizeof(ps), "love.psu"); }
-        p->ps = load_ps(ps);
-        p->vs = vs_for(vs, p->ps);
     }
 
     gfx_log("shaders: %d loaded (%d from xost), %d missing, %d failed to load, %d with literals", shaders_loaded,
@@ -1802,7 +1903,7 @@ void l360_gfx_register(lua_State *L)
         {"getViewport", quad_getViewport}, {"setViewport", quad_setViewport},
         {"getTextureDimensions", quad_getTextureDimensions}, {NULL, NULL}};
     static const luaL_Reg shader_m[] = {
-        {"send", shader_send}, {"hasUniform", shader_hasUniform}, {NULL, NULL}};
+        {"send", shader_send}, {"sendColor", shader_send}, {"hasUniform", shader_hasUniform}, {NULL, NULL}};
     make_mt(L, MT_TEX, tex_m);
     make_mt(L, MT_QUAD, quad_m);
     make_mt(L, MT_SHADER, shader_m);

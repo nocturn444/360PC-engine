@@ -5,5 +5,5 @@ return {
   title_id = "0x4D470001",
   save_dir = "save",
   aurora = { icon = "aurora/icon.png", cover = "aurora/cover.png" },
-  shaders = {},
+  shaders = { tint = "shaders/tint.glsl" },
 }

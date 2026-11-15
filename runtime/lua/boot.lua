@@ -858,13 +858,59 @@ G_.newImage = function(path, opts)
   image_cache[key] = img
   return img
 end
--- Shaders are compiled on PC (objective 3): here a shader is looked up by the name of its file.
-G_.newShader = function(src)
+-- Shaders (docs/SHADERS.md). The console runs no GLSL: each shader the game uses is declared in
+-- game.lua (shaders = { name = "x.glsl" } or { pixel = , vertex = }) and built on PC into
+-- shaders/<name>.psu/.vsu and shaders/<name>.meta.lua. newShader takes what LÖVE takes (a path or
+-- the code, for one or both stages) and finds the declared shader built from those files.
+local shader_names, shader_codes, shader_metas = {}, nil, {}
+local function shader_key(a, b)
+  if not b or a == b then return a end
+  if b < a then a, b = b, a end
+  return a .. "|" .. b
+end
+for name, d in pairs(game.shaders) do
+  shader_names[shader_key(d.glsl or d.pixel or d.vertex, d.glsl or d.vertex)] = name
+end
+-- The declared file an argument of newShader stands for: a path as it is; code, by its text.
+local function shader_file(src)
   src = tostring(src)
-  local name = src:find("\n", 1, true) and "(shader code)" or src:match("([^/\\]+)%.%w+$") or src
-  local sh, translated = c_newShader(name)
-  if not translated then log("  [untranslated shader, drawn with the default one] " .. name) end
-  return sh
+  if not src:find("\n", 1, true) then return clean_path(src) end
+  if not shader_codes then
+    shader_codes = {}
+    for _, d in pairs(game.shaders) do
+      for _, path in pairs(d) do
+        local code = game_file(path)
+        if code then shader_codes[code:gsub("\r\n", "\n")] = path end
+      end
+    end
+  end
+  return shader_codes[src:gsub("\r\n", "\n")]
+end
+local function shader_meta(name)
+  local meta = shader_metas[name]
+  if meta == nil then
+    local path = "shaders/" .. name .. ".meta.lua"
+    local src = game_file(path)
+    local chunk = src and src:sub(1, 1) ~= "\27" and loadstring(src, "@" .. path)
+    local ok
+    if chunk then ok, meta = pcall(setfenv(chunk, {})) end
+    if not ok or type(meta) ~= "table" then
+      meta = false
+      note_missing("shader " .. name .. ": " .. path .. " (build the shaders: docs/SHADERS.md); drawn with the default one")
+    end
+    shader_metas[name] = meta
+  end
+  return meta or nil
+end
+G_.newShader = function(a, b)
+  local fa, fb = shader_file(a), b ~= nil and shader_file(b) or nil
+  local name = fa and (b == nil or fb) and shader_names[shader_key(fa, fb)]
+  if not name then
+    local what = tostring(a):find("\n", 1, true) and "(shader code)" or tostring(a)
+    note_missing("shader " .. what .. ": not declared in game.lua (shaders); drawn with the default one")
+    return (c_newShader(what))
+  end
+  return (c_newShader(name, shader_meta(name)))
 end
 -- Fonts: newFont(path, size) loads that TTF from the game folder; newFont(size) uses game.lua's
 -- default_font. Without a TTF the font only measures (roughly).

@@ -1,7 +1,9 @@
 -- PC check of the console boot (runtime/lua/boot.lua) against tests/fixtures/minimal_game.
 -- Builds the l360 table like runtime/main.c and runtime/l360_sys.c do (files from disk, saves in
 -- memory, a fake controller), runs runtime/lua/l360_gfx_stub.lua and then boot.lua for FRAMES
--- frames, and checks that the game was loaded and run the way LÖVE would.
+-- frames, and checks that the game was loaded and run the way LÖVE would. The fixture's shader
+-- metadata (shaders/*.meta.lua) is generated first with tools/shaders/build_shaders.py --hlsl-only
+-- (needs python3), as the shader build would leave it in the console folder.
 -- Usage, from the repository root: luajit -joff tests/pc/boot_pc.lua [game folder]
 local root = arg[1] or 'tests/fixtures/minimal_game'
 local own_game = arg[1] == nil
@@ -14,9 +16,27 @@ local function read_file(path)
   local d = f:read('*a'); f:close(); return d
 end
 
--- The console folder: the game's files, and l360/ with runtime/lua/ (plus the number test).
+-- The shader build's output for the fixture, without compiling (no xost on this PC)
+local built_shaders
+if own_game then
+  local p = assert(io.popen('mktemp -d'))
+  built_shaders = p:read('*l'); p:close()
+  assert(built_shaders and built_shaders ~= '', 'mktemp failed')
+  local cmd = 'python3 tools/shaders/build_shaders.py ' .. root .. ' --out ' .. built_shaders .. ' --hlsl-only 2>&1'
+  p = assert(io.popen(cmd))
+  local out = p:read('*a'); p:close()
+  if not out:find('1 shaders declared, 2 files written', 1, true) then
+    raw_print('FAILED: ' .. cmd .. '\n' .. out); os.exit(1)
+  end
+end
+
+-- The console folder: the game's files, l360/ with runtime/lua/ (plus the number test), and
+-- shaders/ with the shader build's output.
 local function game_file(path)
   if path:find('%.%.') then return nil end
+  if built_shaders and path:match('^shaders/[%w_]+%.meta%.lua$') then
+    return read_file(built_shaders .. '/' .. path:match('[^/]+$'))
+  end
   local own = path:match('^l360/(.*)$')
   if own then return read_file('runtime/lua/' .. own) or read_file('tests/console/' .. own) end
   return read_file(root .. '/' .. path)
@@ -37,8 +57,10 @@ do
   check(cfg.name == 'My Game!' and cfg.identity == 'my_game' and cfg.save_dir == 'save'
     and cfg.title_id == '0x4D470001', 'defaults and title_id normalization')
   check(type(cfg.aurora) == 'table' and type(cfg.shaders) == 'table', 'aurora and shaders default to tables')
-  local sh = { crt = { 'a' } }
-  check(assert(Config.validate({ name = 'x', shaders = sh })).shaders == sh, 'shaders is passed through')
+  local sh = assert(Config.validate({ name = 'x', shaders = { crt = 'fx/crt.glsl', wave = { glsl = 'w.glsl' },
+    glow = { pixel = 'glow.frag', vertex = 'glow.vert' } } })).shaders
+  check(sh.crt.glsl == 'fx/crt.glsl' and sh.wave.glsl == 'w.glsl' and sh.glow.pixel == 'glow.frag'
+    and sh.glow.vertex == 'glow.vert', 'shaders are normalized to tables')
   check(Config.defaults().save_dir == 'save', 'defaults()')
   local bad = {
     ['not found'] = nil,
@@ -55,6 +77,12 @@ do
     ['aurora path leaves the folder'] = 'return { name = "a", aurora = { icon = "../x.png" } }',
     ['unknown aurora field'] = 'return { name = "a", aurora = { logo = "x.png" } }',
     ['shaders not a table'] = 'return { name = "a", shaders = "x" }',
+    ['shader without a file'] = 'return { name = "a", shaders = { x = {} } }',
+    ['shader with glsl and pixel'] = 'return { name = "a", shaders = { x = { glsl = "a.glsl", pixel = "b.glsl" } } }',
+    ['shader path leaves the folder'] = 'return { name = "a", shaders = { x = "../x.glsl" } }',
+    ['reserved shader name'] = 'return { name = "a", shaders = { l360_default = "x.glsl" } }',
+    ['shader name with a dot'] = 'return { name = "a", shaders = { ["x.y"] = "x.glsl" } }',
+    ['unknown shader field'] = 'return { name = "a", shaders = { x = { hlsl = "x.hlsl" } } }',
     ['uses a global'] = 'return { name = os.getenv("HOME") }',
     ['uses require'] = 'require("os") return { name = "a" }',
     ['syntax error'] = 'return {',
@@ -71,6 +99,9 @@ do
     local out = p:read('*a'); p:close()
     check(out:find('title_id=0x4D470001\n', 1, true) and out:find('name=Minimal Game\n', 1, true),
       'tools/read_game_config.lua output: ' .. out)
+    p = assert(io.popen('luajit tools/read_game_config.lua ' .. root .. ' shaders'))
+    out = p:read('*a'); p:close()
+    check(out == 'tint\tshaders/tint.glsl\tshaders/tint.glsl\n', 'tools/read_game_config.lua shaders: ' .. out)
   end
 end
 
@@ -166,8 +197,26 @@ function finish()
     local items = love.filesystem.getDirectoryItems('')
     check(#items == 1 and items[1] == 'runs.txt', 'getDirectoryItems lists what was saved')
     check(type(l360.game) == 'table' and l360.game.aurora.icon == 'aurora/icon.png', 'l360.game has the config')
+    -- Shaders: the game's newShader(path) found the declared shader and its metadata, and every
+    -- send named a uniform of it
+    check(l360.game.shaders.tint.glsl == 'shaders/tint.glsl', 'game.lua shaders')
+    check(not logged('[missing] shader'), 'the declared shader was found, with its uniforms')
+    check(st.sends >= FRAMES, 'shader:send reached the stub: ' .. st.sends)
+    local by_code = love.graphics.newShader(assert(read_file(root .. '/shaders/tint.glsl')))
+    check(by_code:hasUniform('tint') and by_code:hasUniform('amount') and not by_code:hasUniform('nope'),
+      'newShader(code) finds the declared shader by its text')
+    check(not logged('[missing] shader'), 'newShader(code) logged nothing')
+    by_code:send('nope', 1); by_code:send('nope', 2)
+    local n = 0
+    for _, l in ipairs(log_lines) do if l:find('[missing] shader tint: uniform nope', 1, true) then n = n + 1 end end
+    check(n == 1, 'an unknown uniform is logged once: ' .. n)
+    local other = love.graphics.newShader('shaders/other.glsl')
+    other:send('x', 1)
+    check(logged('[missing] shader shaders/other.glsl: not declared in game.lua'), 'an undeclared shader is logged')
+    check(not other:hasUniform('x'), 'an undeclared shader has no uniforms')
     check(not quit_called, 'nobody asked to quit')
   end
+  if built_shaders then os.execute('rm -rf ' .. built_shaders) end
   raw_print(string.format('OK: %d checks; love.load and %d frames; %d draws, %d not drawn; %d files (%d KB)',
     checks, frames, st.draws, st.skipped, files, bytes / 1024))
   os.exit(0)

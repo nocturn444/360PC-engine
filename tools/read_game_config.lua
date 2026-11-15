@@ -1,6 +1,9 @@
 -- Prints fields of a game's game.lua for the build and the packaging.
 -- Usage: luajit tools/read_game_config.lua <game folder or game.lua> [field]
 --   without field: one "key=value" line for title_id, name, identity and save_dir
+--   with "shaders": one "name<TAB>pixel file<TAB>vertex file" line per declared shader (a file
+--                   can be empty; a single-file shader has the same file twice), for
+--                   tools/shaders/build_shaders.py. Does not need title_id.
 --   with field:    only that value, e.g.
 --     cmake ... -DGAME_TITLE_ID="$(luajit tools/read_game_config.lua mygame title_id)" \
 --               -DGAME_NAME="$(luajit tools/read_game_config.lua mygame name)"
@@ -20,6 +23,16 @@ f:close()
 
 local cfg, err = Config.load(source, path)
 if not cfg then die(err) end
+if field == 'shaders' then
+  local names = {}
+  for name in pairs(cfg.shaders) do names[#names + 1] = name end
+  table.sort(names)
+  for _, name in ipairs(names) do
+    local d = cfg.shaders[name]
+    print(name .. '\t' .. (d.glsl or d.pixel or '') .. '\t' .. (d.glsl or d.vertex or ''))
+  end
+  return
+end
 if not cfg.title_id then die(path .. ': title_id is required to build or package the game') end
 
 if field then
