@@ -5,6 +5,7 @@ Build and packaging tools. Still to come: game packaging and the generic FTP ins
 
 - `read_game_config.lua`: prints `title_id`, `name`, `identity` and `save_dir` of a game's
   `game.lua` for the build ([../docs/GAME_CONFIG.md](../docs/GAME_CONFIG.md)).
+- `check_libs.lua`: the rules of `lib/` (objective 16). Each library needs a license file, a row in `lib/README.md` with its version and commit, and an entry in `THIRD_PARTY_NOTICES.md` with the full commit. Its Lua must use no FFI, `goto` or `jit.*`, and no `love.*` function outside the console subset; stubs only get a warning. Run `luajit tools/check_libs.lua` from the repository root.
 - `compat_check.lua` (with `api_subset_data.lua`): required first thing in a game's `main.lua` on
   official LÖVE on PC, it logs once every call the game makes that the console does not have, is
   a stub, or goes beyond a limit, and the callbacks the console never calls; `compat.report()`

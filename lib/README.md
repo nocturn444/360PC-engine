@@ -1,7 +1,21 @@
 # lib/
 
-Third-party Lua libraries (objective 8). Each one lives in its own folder with its LICENSE, at a
-pinned version listed in `THIRD_PARTY_NOTICES.md`, and is checked with `tools/compat_check.lua`.
+Third-party Lua libraries (objective 16). Each one lives in its own folder with its LICENSE, at a
+pinned version listed in `THIRD_PARTY_NOTICES.md`. `luajit tools/check_libs.lua` checks these rules
+(run by `tests/pc/check_libs_test.lua`), and `tools/compat_check.lua` checks the library running
+on LÖVE.
+
+## Adding a library
+
+1. Copy the files of a tagged release, unchanged, into `lib/<name>/`, together with its license
+   file. Use only MIT, zlib, BSD or a similarly permissive license.
+2. Add a row below with the version, the short commit, the license and what it does on the
+   console. Fill in that last column after running it through the engine's tests or
+   `compat_check` on LÖVE.
+3. Add a section to `THIRD_PARTY_NOTICES.md`: a table row naming `lib/<name>/` with the full
+   40-hex commit, and the license text.
+4. Run `luajit tools/check_libs.lua`. If the library has to be changed for the console, say what
+   changed in its row and keep the original license notice.
 
 | Folder | Library | Version | License | On the console |
 |---|---|---|---|---|
