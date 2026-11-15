@@ -441,6 +441,116 @@ not affect the game (particles, screen shake) goes in its own stream, never in a
 - A string seed is always hashed: `rng.new("0000C1S")` is not `rng.new(rng.code_to_seed("0000C1S"))`.
 - Two stream names with the same 32-bit hash would share a sequence (1 in 2^32 per pair).
 
+## engine.save
+
+Saves, in two files that never mix: the **run** in progress (what is needed to continue) and
+the permanent **progress** (unlocks, stats, settings). Both go through `love.filesystem`: the
+identity folder on PC, the game's `save_dir` on the console ([GAME_CONFIG.md](GAME_CONFIG.md)).
+
+```lua
+local save = engine.save.new({
+  identity = "my_game",                 -- default: love.filesystem.getIdentity()
+  run      = { version = 2, migrate = { [1] = function(data) data.floor = data.level; return data end } },
+  progress = { version = 1, defaults = { stats = { runs = 0 }, settings = { volume = 0.8 } } },
+  log      = print,                     -- where problems are reported (default: print)
+})
+
+local progress = save:load_progress()   -- always a table; also in save.progress
+progress.stats.runs = progress.stats.runs + 1
+save:save_progress()
+if save:unlock("hard_mode") then ... end      -- true the first time; saved at once
+if save:is_unlocked("hard_mode") then ... end
+
+if save:has_run() then
+  local state, why = save:load_run()    -- state, or nil and "none" / "corrupt" / "newer" / "migration"
+end
+save:save_run(state)                    -- true, or nil and the reason
+save:clear_run()                        -- on death or victory
+```
+
+| Call | Result |
+|---|---|
+| `save:save_run(state)` / `save:save_progress([data])` | `true`, or `nil` and the reason. `data` defaults to `save.progress`. |
+| `save:load_run()` | The state, or `nil` and `"none"`, `"corrupt"`, `"newer"` or `"migration"`. |
+| `save:has_run()` | Whether there is a run this game can load. The file is read and checked once, then remembered. |
+| `save:clear_run()` | Removes the run (and its `.bak`). |
+| `save:load_progress()` | The progress with `defaults` filled in for whatever is missing (so a new setting needs no migration), and `nil` or why the file was not used. |
+| `save:unlock(id)`, `save:is_unlocked(id)` | Over `progress.unlocks[id] = true`. |
+| `engine.save.serialize(value)` | The text, or `nil` and the reason. |
+| `engine.save.parse(text)` | `true` and the value, or `false` and the reason. |
+
+Options per kind: `version` (a whole number the game raises when the shape of its data changes;
+default 1), `file` (`run.sav`, `progress.sav`), `migrate`, and `defaults` for the progress.
+`backup` (default: true except on the console) keeps the previous good file as `<file>.bak`.
+
+### What to put in a run save
+
+Plain data only: numbers, strings, booleans and tables of them. The seed and the random
+streams, and what each system already knows how to serialize:
+
+```lua
+save:save_run({
+  rng = streams:state(),                 -- seed + the state of every named stream (engine.rng)
+  modifiers = player.mods:serialize(),   -- engine.modifiers
+  player = { x = player.x, y = player.y, hp = player.hp },
+  enemies = enemy_list,                  -- the game's own plain tables: kind, position, hp...
+  floor = 3,
+})
+-- and back:
+streams:set_state(state.rng); player.mods:restore(state.modifiers)
+```
+
+Entities are saved as data the game can rebuild them from (a kind and its values), not as the
+entity objects: those hold functions and references to each other. A function, a userdata, a
+table that contains itself, or a key that is not a number or a string makes `save_run` return
+`nil` and a reason that names the place (`root.player.sprite`); nothing is written. A table
+referenced twice is written twice. Save at points the game chooses (a new room, a pause), not
+every frame: the checksum is computed in Lua, and on the console a write wakes the save thread.
+
+### The file
+
+One header line, then the payload:
+
+```
+360PCSAVE 1 my_game run 2 9f3a01c4 187
+{["floor"]=3,["rng"]={["seed"]=12345,["streams"]={["level"]="..."},},}
+```
+
+magic, engine save format (`engine.save.FORMAT`), the game's identity, the kind (`run` or
+`progress`), the game's version of that kind, the FNV-1a sum of the payload (8 hex digits) and
+the payload's length in bytes. The payload is the serializer's text: table keys sorted (1..n
+first, then numbers, then strings), whole numbers in full, other numbers with 17 significant
+digits (they read back as the same double), `nan`, `inf`, `-inf`, strings in double quotes with
+`\\`, `\"`, `\n`, `\r`, `\t` and `\ddd` for the other control bytes. The same data always gives the
+same bytes, on PC and on the console.
+
+### Versions and migrations
+
+`migrate[n]` takes the data of version `n` and returns it as version `n + 1`. Loading an older
+file runs the chain up to the current version; the file is rewritten at the next save.
+
+- A file of a **newer** version of the game, or of a newer engine save format: `"newer"`. The
+  file is left alone and this session refuses to write over it or clear it.
+- A missing step in the chain, or a migration that raises: `"migration"`, same treatment.
+- A file that fails its length, checksum or parse, or belongs to another game or kind:
+  `"corrupt"`. It is copied to `<file>.corrupt` and removed; on PC a good `<file>.bak` is put
+  back and returned (second value `"backup"`), otherwise there is no run, or the progress is
+  the defaults.
+
+### Guarantees
+
+- A save is never run as code: there is no `load`, `loadstring` or `dofile` in `engine/save.lua`.
+  The parser only builds numbers, strings, booleans and tables (no metatables, at most 100
+  levels deep), so a broken or edited file can at worst be rejected.
+- No function here raises after `engine.save.new` (which checks the config): a failing
+  `love.filesystem`, a bad state or a bad file comes back as `nil` and a reason, goes to `log`
+  and stays in `save.last_error`.
+- A write cut in half does not lose the previous save. On PC (LÖVE 11 has no rename) the last
+  good file is copied to `.bak` before it is overwritten; with a filesystem that has `rename`,
+  the new file is written to `.tmp` and renamed. On the console the runtime keeps two slots
+  per file and reads the newest valid one, so `engine.save` writes once and keeps no `.bak`.
+- The checksum catches accidents (a cut write, a bad sector, a careless edit), not cheating.
+
 ## engine.anim
 
 anim8 v2.3.1 (`lib/anim8`, unchanged; `anim.anim8` is the library itself), plus animations from
@@ -462,4 +572,5 @@ mine:update(dt); mine:draw(image, x, y)
 - No small canvases: `engine.pixel` draws in `"direct"` mode there.
 - `love.keypressed`, `love.mousepressed`, `love.resize`, `love.textinput` and `love.focus` are
   never called there. `engine.run` defines them for PC, so `tools/compat_check.lua` lists them.
+- Saves go to `save_dir` with two slots per file; `engine.save` keeps no `.bak` there.
 - No built-in font: set `default_font` in `game.lua` ([GAME_CONFIG.md](GAME_CONFIG.md)).

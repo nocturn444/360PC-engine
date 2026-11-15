@@ -15,6 +15,7 @@ Reference and usage example: [docs/ENGINE.md](../docs/ENGINE.md).
 | `entity.lua` | Entities made of components, cached queries, tags and ordered systems. |
 | `modifiers.lua` | Modifiers as data: stats evaluated in a fixed order, events, stacking, timers, save state. |
 | `rng.lua` | Seeded random numbers, identical on PC and console: xoshiro128**, named streams, save state, seed codes. |
+| `save.lua` | Saves: the run in progress and the permanent progress, versioned files with a checksum, migrations, a serializer and a parser that never runs code. |
 | `anim.lua` | Animations with anim8 (`lib/anim8`). |
 | `modules/` | Optional, genre-specific modules (objective 7). |
 
@@ -22,5 +23,3 @@ Plain Lua 5.1: no FFI, no `goto`, only the LÖVE functions in
 [docs/API_SUBSET.md](../docs/API_SUBSET.md); nothing is allocated per frame or per step. A game
 needs `engine/` (and `lib/anim8/` for animations) in its folder. Tests:
 `luajit -joff tests/engine/run.lua`.
-
-Not here yet: saves (`engine/save.lua`, with the game tools).

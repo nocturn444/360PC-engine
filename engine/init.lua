@@ -15,6 +15,7 @@ local engine = {
   entity = require(prefix .. "entity"),
   modifiers = require(prefix .. "modifiers"),
   rng = require(prefix .. "rng"),
+  save = require(prefix .. "save"),
   -- set by init():
   config = nil,
   time = nil,      -- the Timestep

@@ -448,6 +448,31 @@ function finish()
     local items = love.filesystem.getDirectoryItems('')
     check(#items == 1 and items[1] == 'runs.txt', 'getDirectoryItems lists what was saved')
     check(type(l360.game) == 'table' and l360.game.aurora.icon == 'aurora/icon.png', 'l360.game has the config')
+    -- engine/save.lua on the console's love.filesystem: no .bak (the two slots do that job), the
+    -- file is in the save folder, a broken newest slot falls back to the other one
+    do
+      local function engine_module(name)
+        local path = 'engine/' .. name .. '.lua'
+        return assert(loadstring(assert(read_file(path)), '@' .. path))('engine.' .. name)
+      end
+      package.loaded['engine.rng'] = package.loaded['engine.rng'] or engine_module('rng')
+      local Save = engine_module('save')
+      local es = Save.new({ log = log, progress = { defaults = { stats = { runs = 0 } } } })
+      check(es.identity == 'minimal_game' and es.backup == false, 'engine.save: identity from love.filesystem, no .bak on the console')
+      check(not es:has_run() and select(2, es:load_run()) == 'none', 'engine.save: no run yet')
+      local state = { seed = 12345, floor = 2, player = { hp = 7.5, name = 'a "b"\n' } }
+      check(es:save_run(state) == true and type(SAVES['l360save_run.sav.a']) == 'string'
+        and SAVES['l360save_run.sav.bak.a'] == nil, 'engine.save: the run went to the save folder (slot .a)')
+      local back = Save.new({ log = log }):load_run()
+      check(back and back.seed == 12345 and back.player.hp == 7.5 and back.player.name == state.player.name,
+        'engine.save: the run reads back')
+      state.floor = 3
+      check(es:save_run(state) and type(SAVES['l360save_run.sav.b']) == 'string', 'engine.save: the second save went to slot .b')
+      check(es:unlock('hard') and Save.new({ log = log }):is_unlocked('hard')
+        and type(SAVES['l360save_progress.sav.a']) == 'string', 'engine.save: unlocks through the save folder')
+      check(es:clear_run() and not es:has_run() and not Save.new({ log = log }):has_run(), 'engine.save: clear_run')
+      check(not logged('[save] run.sav') and not logged('[save] progress.sav'), 'engine.save reported nothing')
+    end
     -- Shaders: the game's newShader(path) found the declared shader and its metadata, and every
     -- send named a uniform of it
     check(l360.game.shaders.tint.glsl == 'shaders/tint.glsl', 'game.lua shaders')
