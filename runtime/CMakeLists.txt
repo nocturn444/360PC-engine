@@ -37,7 +37,7 @@ endif()
 
 # main.c first: an object before main.c in the link makes elf2xex fail ("section .init overlaps
 # the PE headers"). l360_gfx.c uses stb_image and stb_truetype from third_party/stb.
-add_executable(game main.c l360_gfx.c l360_sys.c l360_audio.c)
+add_executable(game main.c l360_gfx.c l360_particles.c l360_sys.c l360_audio.c)
 set_target_properties(game PROPERTIES C_STANDARD 17 C_EXTENSIONS ON)
 target_compile_options(game PRIVATE -Wall -Wextra -Werror)
 target_include_directories(game PRIVATE "${LUAJIT}" "${CMAKE_CURRENT_SOURCE_DIR}/third_party/stb")

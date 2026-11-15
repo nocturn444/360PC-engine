@@ -15,6 +15,8 @@
  *   Image / Canvas  xsdk texture + size in LOVE units (dpiscale applied)
  *   Quad            a crop of a texture
  *   Shader          a registered program (the game's shader) or the default one, and its uniform values
+ *   SpriteBatch     sprites with their vertices ready
+ *   ParticleSystem  a pool of particles (the simulation is in l360_particles.c)
  */
 #include <stdarg.h>
 #include <stdint.h>
@@ -72,6 +74,7 @@ static long st_canvas_resolves, st_screen_resolves, st_last_draws, st_last_submi
 #pragma GCC diagnostic pop
 
 #include "l360_gfx.h"
+#include "l360_particles.h"
 
 /* ---------- device ---------- */
 
@@ -110,7 +113,12 @@ typedef struct {
 } surf_t;
 static surf_t *white_tex;
 static XsdkSamplerState samp_linear, samp_point;
-static XsdkBlendState blend_alpha;
+/* setBlendMode: "alpha" and "add", each with alphamultiply and premultiplied, built once at
+ * startup. A batch is drawn with the mode that was current when it was started. */
+enum { BLEND_ALPHA, BLEND_ADD, BLEND_MODES };
+static XsdkBlendState blend_states[BLEND_MODES][2];       /* [mode][premultiplied] */
+static int blend_mode, blend_premult;
+static const XsdkBlendState *bound_blend;
 
 typedef struct {
     float x, y, z, w;
@@ -557,7 +565,8 @@ static int need_vconst = 1;      /* c0-c4 (projection and screen): the text scre
 static void frame_state(void)
 {
     xsdk_gpu_set_target((uint32_t)W, (uint32_t)H);
-    xsdk_gpu_set_blend(&blend_alpha);
+    xsdk_gpu_set_blend(&blend_states[BLEND_ALPHA][0]);
+    bound_blend = &blend_states[BLEND_ALPHA][0];
     bound_ps = bound_vs = NULL;
     bound_tex = NULL;
     need_vconst = 1;              /* with the Guide open, XAM draws between frames and overwrites constants */
@@ -600,6 +609,7 @@ static struct {
     int first;                   /* first vertex in the current half of the buffer */
     surf_t *tex;
     int linear;
+    const XsdkBlendState *blend;
     shader_ud *sh;
     prog_t *p;
     XsdkShader *ps, *vs;
@@ -618,6 +628,10 @@ static void flush(void)
     uint32_t bytes = (uint32_t)nverts * sizeof(vertex_t);
     uint32_t addr = vb_addr[vb_index] + (uint32_t)pend.first * sizeof(vertex_t);
     xsdk_gpu_invalidate(addr, bytes);
+    if (pend.blend != bound_blend) {
+        xsdk_gpu_set_blend(pend.blend);
+        bound_blend = pend.blend;
+    }
 
     shader_ud *sh = pend.sh;
     prog_t *p = pend.p;
@@ -692,12 +706,14 @@ static void submit(surf_t *tex, vertex_t *v, int nverts)
     prog_t *p = &progs[sh ? sh->prog : 0];
     XsdkShader *ps = p->ps, *vs = p->vs;
     surf_t *t = tex ? tex : white_tex;
+    const XsdkBlendState *blend = &blend_states[blend_mode][blend_premult];
     if (!(pend.n && !opt_no_batching && pend.first + pend.n == vb_cur && pend.tex == t && pend.linear == t->linear
-          && pend.sh == sh && pend.ps == ps && pend.vs == vs)) {
+          && pend.blend == blend && pend.sh == sh && pend.ps == ps && pend.vs == vs)) {
         flush();
         pend.first = vb_cur;
         pend.tex = t;
         pend.linear = t->linear;
+        pend.blend = blend;
         pend.sh = sh;
         pend.p = p;
         pend.ps = ps;
@@ -778,6 +794,7 @@ static vertex_t scratch[SCRATCH_VERTS];
 #define MT_QUAD   "L360.Quad"
 #define MT_SHADER "L360.Shader"
 #define MT_BATCH  "L360.SpriteBatch"
+#define MT_PS     "L360.ParticleSystem"
 
 static void (*missing_cb)(const char *);
 void l360_gfx_set_missing_cb(void (*cb)(const char *)) { missing_cb = cb; }
@@ -1910,24 +1927,488 @@ static void draw_batch(const batch_ud *b, const mat_t *m)
     if (n) submit(s, scratch, n);
 }
 
+/* ---------- ParticleSystem ---------- */
+
+/* The simulation is in l360_particles.c (LOVE 11's, with a fixed pool); here are the Lua methods
+ * and the draw, which sends every live particle through the same path as a SpriteBatch: chunks
+ * of scratch that the batching joins into a single GPU draw. The userdata's environment table
+ * keeps the texture ([1]) and the list of Quads ([2]) alive. */
+typedef struct {
+    l360_ps ps;
+    tex_ud *tex;
+} ps_ud;
+
+static ps_ud *to_ps(lua_State *L, int i) { return luaL_checkudata(L, i, MT_PS); }
+
+static void ps_reset_offset(ps_ud *u)
+{
+    if (!u->ps.default_offset)
+        return;
+    if (u->ps.nquads) {
+        u->ps.offset_x = u->ps.quads[0].w * 0.5f;
+        u->ps.offset_y = u->ps.quads[0].h * 0.5f;
+    } else {
+        u->ps.offset_x = u->tex->w * 0.5f;
+        u->ps.offset_y = u->tex->h * 0.5f;
+    }
+}
+
+/* Makes the userdata on top of the stack a ParticleSystem with the texture at idx and no quads */
+static ps_ud *ps_new(lua_State *L, int tex_idx)
+{
+    tex_ud *t = to_tex(L, tex_idx);
+    if (!t) luaL_argerror(L, tex_idx, "Image or Canvas expected");
+    ps_ud *u = lua_newuserdata(L, sizeof(ps_ud));
+    l360_ps_init(&u->ps);
+    u->tex = t;
+    luaL_getmetatable(L, MT_PS);
+    lua_setmetatable(L, -2);
+    lua_createtable(L, 2, 0);
+    lua_pushvalue(L, tex_idx);
+    lua_rawseti(L, -2, 1);
+    lua_newtable(L);
+    lua_rawseti(L, -2, 2);
+    lua_setfenv(L, -2);
+    return u;
+}
+
+/* newParticleSystem(texture, buffersize) */
+static int g_newParticleSystem(lua_State *L)
+{
+    lua_Number size = luaL_optnumber(L, 2, 1000);
+    if (size < 1.0 || size > 0x7FFFFFFF)
+        return luaL_error(L, "Invalid ParticleSystem size");
+    ps_ud *u = ps_new(L, 1);
+    if (l360_ps_set_buffer_size(&u->ps, (uint32_t)size) != 0)
+        return luaL_error(L, "newParticleSystem: no memory for %d particles", (int)size);
+    ps_reset_offset(u);
+    return 1;
+}
+
+static int ps_gc(lua_State *L)
+{
+    l360_ps_free(&to_ps(L, 1)->ps);
+    return 0;
+}
+
+static int ps_clone(lua_State *L)
+{
+    ps_ud *src = to_ps(L, 1);
+    lua_getfenv(L, 1);                       /* 2: the source's texture and quads */
+    lua_rawgeti(L, 2, 1);                    /* 3: texture */
+    ps_ud *u = ps_new(L, 3);                 /* 4 */
+    if (l360_ps_clone(&u->ps, &src->ps) != 0)
+        return luaL_error(L, "ParticleSystem:clone: no memory for %d particles", (int)src->ps.max);
+    lua_getfenv(L, 4);
+    lua_rawgeti(L, 2, 2);
+    lua_rawseti(L, -2, 2);                   /* the same list of quads: setQuads replaces it, never changes it */
+    lua_pop(L, 1);
+    return 1;
+}
+
+static int ps_setTexture(lua_State *L)
+{
+    ps_ud *u = to_ps(L, 1);
+    tex_ud *t = to_tex(L, 2);
+    if (!t) luaL_argerror(L, 2, "Image or Canvas expected");
+    lua_getfenv(L, 1);
+    lua_pushvalue(L, 2);
+    lua_rawseti(L, -2, 1);
+    u->tex = t;
+    ps_reset_offset(u);
+    return 0;
+}
+static int ps_getTexture(lua_State *L)
+{
+    to_ps(L, 1);
+    lua_getfenv(L, 1);
+    lua_rawgeti(L, -1, 1);
+    return 1;
+}
+
+static int ps_setBufferSize(lua_State *L)
+{
+    ps_ud *u = to_ps(L, 1);
+    lua_Number size = luaL_checknumber(L, 2);
+    if (size < 1.0 || size > 0x7FFFFFFF)
+        return luaL_error(L, "Invalid buffer size");
+    if (l360_ps_set_buffer_size(&u->ps, (uint32_t)size) != 0)
+        return luaL_error(L, "ParticleSystem:setBufferSize: no memory for %d particles", (int)size);
+    return 0;
+}
+static int ps_getBufferSize(lua_State *L) { lua_pushinteger(L, (lua_Integer)to_ps(L, 1)->ps.max); return 1; }
+static int ps_getCount(lua_State *L) { lua_pushinteger(L, (lua_Integer)to_ps(L, 1)->ps.count); return 1; }
+
+static int ps_emit(lua_State *L)
+{
+    ps_ud *u = to_ps(L, 1);
+    lua_Number n = luaL_checknumber(L, 2);
+    if (n >= 1)
+        l360_ps_emit(&u->ps, n > 0x7FFFFFFF ? 0x7FFFFFFFu : (uint32_t)n);
+    return 0;
+}
+static int ps_update(lua_State *L)
+{
+    ps_ud *u = to_ps(L, 1);
+    float dt = (float)luaL_checknumber(L, 2);
+    if (dt > 0)
+        l360_ps_update(&u->ps, dt);
+    return 0;
+}
+static int ps_start(lua_State *L) { l360_ps_start(&to_ps(L, 1)->ps); return 0; }
+static int ps_stop(lua_State *L) { l360_ps_stop(&to_ps(L, 1)->ps); return 0; }
+static int ps_pause(lua_State *L) { l360_ps_pause(&to_ps(L, 1)->ps); return 0; }
+static int ps_reset(lua_State *L) { l360_ps_reset(&to_ps(L, 1)->ps); return 0; }
+static int ps_isActive(lua_State *L) { lua_pushboolean(L, to_ps(L, 1)->ps.active); return 1; }
+static int ps_isPaused(lua_State *L) { l360_ps *p = &to_ps(L, 1)->ps; lua_pushboolean(L, !p->active && p->life < p->lifetime); return 1; }
+static int ps_isStopped(lua_State *L) { l360_ps *p = &to_ps(L, 1)->ps; lua_pushboolean(L, !p->active && p->life >= p->lifetime); return 1; }
+
+/* set(a): one number; set(min, max): max is min when left out; and their getters */
+#define PS_NUM1(Name, field) \
+    static int ps_set##Name(lua_State *L) { to_ps(L, 1)->ps.field = (float)luaL_checknumber(L, 2); return 0; } \
+    static int ps_get##Name(lua_State *L) { lua_pushnumber(L, to_ps(L, 1)->ps.field); return 1; }
+#define PS_NUM2(Name, fa, fb) \
+    static int ps_set##Name(lua_State *L) { \
+        l360_ps *p = &to_ps(L, 1)->ps; \
+        p->fa = (float)luaL_checknumber(L, 2); \
+        p->fb = (float)luaL_optnumber(L, 3, p->fa); \
+        return 0; } \
+    static int ps_get##Name(lua_State *L) { \
+        l360_ps *p = &to_ps(L, 1)->ps; lua_pushnumber(L, p->fa); lua_pushnumber(L, p->fb); return 2; }
+PS_NUM1(Direction, direction)
+PS_NUM1(Spread, spread)
+PS_NUM1(SpinVariation, spin_variation)
+PS_NUM2(Speed, speed_min, speed_max)
+PS_NUM2(LinearDamping, damping_min, damping_max)
+PS_NUM2(RadialAcceleration, radial_min, radial_max)
+PS_NUM2(TangentialAcceleration, tangential_min, tangential_max)
+PS_NUM2(Rotation, rotation_min, rotation_max)
+PS_NUM2(Spin, spin_start, spin_end)
+
+static int ps_setEmissionRate(lua_State *L)
+{
+    ps_ud *u = to_ps(L, 1);
+    float rate = (float)luaL_checknumber(L, 2);
+    if (rate < 0) return luaL_error(L, "Invalid emission rate");
+    l360_ps_set_emission_rate(&u->ps, rate);
+    return 0;
+}
+static int ps_getEmissionRate(lua_State *L) { lua_pushnumber(L, to_ps(L, 1)->ps.rate); return 1; }
+static int ps_setEmitterLifetime(lua_State *L)
+{
+    l360_ps *p = &to_ps(L, 1)->ps;
+    p->life = p->lifetime = (float)luaL_checknumber(L, 2);
+    return 0;
+}
+static int ps_getEmitterLifetime(lua_State *L) { lua_pushnumber(L, to_ps(L, 1)->ps.lifetime); return 1; }
+static int ps_setParticleLifetime(lua_State *L)
+{
+    l360_ps *p = &to_ps(L, 1)->ps;
+    float a = (float)luaL_checknumber(L, 2), b = (float)luaL_optnumber(L, 3, a);
+    if (a < 0 || b < 0) return luaL_error(L, "Invalid particle lifetime (must be >= 0)");
+    p->life_min = a;
+    p->life_max = b;
+    return 0;
+}
+static int ps_getParticleLifetime(lua_State *L)
+{
+    l360_ps *p = &to_ps(L, 1)->ps;
+    lua_pushnumber(L, p->life_min); lua_pushnumber(L, p->life_max);
+    return 2;
+}
+static int ps_setPosition(lua_State *L)
+{
+    l360_ps *p = &to_ps(L, 1)->ps;
+    p->x = p->prev_x = (float)luaL_checknumber(L, 2);
+    p->y = p->prev_y = (float)luaL_checknumber(L, 3);
+    return 0;
+}
+static int ps_moveTo(lua_State *L)
+{
+    l360_ps *p = &to_ps(L, 1)->ps;
+    p->x = (float)luaL_checknumber(L, 2);
+    p->y = (float)luaL_checknumber(L, 3);
+    return 0;
+}
+static int ps_getPosition(lua_State *L)
+{
+    l360_ps *p = &to_ps(L, 1)->ps;
+    lua_pushnumber(L, p->x); lua_pushnumber(L, p->y);
+    return 2;
+}
+static int ps_setLinearAcceleration(lua_State *L)
+{
+    l360_ps *p = &to_ps(L, 1)->ps;
+    p->accel_min[0] = (float)luaL_checknumber(L, 2);
+    p->accel_min[1] = (float)luaL_checknumber(L, 3);
+    p->accel_max[0] = (float)luaL_optnumber(L, 4, p->accel_min[0]);
+    p->accel_max[1] = (float)luaL_optnumber(L, 5, p->accel_min[1]);
+    return 0;
+}
+static int ps_getLinearAcceleration(lua_State *L)
+{
+    l360_ps *p = &to_ps(L, 1)->ps;
+    lua_pushnumber(L, p->accel_min[0]); lua_pushnumber(L, p->accel_min[1]);
+    lua_pushnumber(L, p->accel_max[0]); lua_pushnumber(L, p->accel_max[1]);
+    return 4;
+}
+static int ps_setSizes(lua_State *L)
+{
+    l360_ps *p = &to_ps(L, 1)->ps;
+    int n = lua_gettop(L) - 1;
+    if (n > L360_PS_SIZES) return luaL_error(L, "At most eight (8) sizes may be used.");
+    if (n <= 1) {
+        p->sizes[0] = (float)luaL_checknumber(L, 2);
+        p->nsizes = 1;
+        return 0;
+    }
+    float sizes[L360_PS_SIZES];
+    for (int i = 0; i < n; i++) sizes[i] = (float)luaL_checknumber(L, 2 + i);
+    memcpy(p->sizes, sizes, (size_t)n * sizeof(float));
+    p->nsizes = n;
+    return 0;
+}
+static int ps_getSizes(lua_State *L)
+{
+    l360_ps *p = &to_ps(L, 1)->ps;
+    for (int i = 0; i < p->nsizes; i++) lua_pushnumber(L, p->sizes[i]);
+    return p->nsizes;
+}
+static int ps_setSizeVariation(lua_State *L)
+{
+    float v = (float)luaL_checknumber(L, 2);
+    if (v < 0 || v > 1) return luaL_error(L, "Size variation has to be between 0 and 1, inclusive.");
+    to_ps(L, 1)->ps.size_variation = v;
+    return 0;
+}
+static int ps_getSizeVariation(lua_State *L) { lua_pushnumber(L, to_ps(L, 1)->ps.size_variation); return 1; }
+
+/* setColors(r, g, b, a, r, g, b, a, ...) or setColors({r, g, b, a}, ...): components from 0 to 1 */
+static int ps_setColors(lua_State *L)
+{
+    l360_ps *p = &to_ps(L, 1)->ps;
+    float colors[L360_PS_COLORS][4];
+    int n;
+    if (lua_istable(L, 2)) {
+        n = lua_gettop(L) - 1;
+        if (n > L360_PS_COLORS) return luaL_error(L, "At most eight (8) colors may be used.");
+        for (int i = 0; i < n; i++) {
+            luaL_checktype(L, i + 2, LUA_TTABLE);
+            if (lua_objlen(L, i + 2) < 3) return luaL_argerror(L, i + 2, "expected 4 color components");
+            for (int j = 0; j < 4; j++) {
+                lua_rawgeti(L, i + 2, j + 1);
+                colors[i][j] = j < 3 ? (float)luaL_checknumber(L, -1) : (float)luaL_optnumber(L, -1, 1.0);
+                lua_pop(L, 1);
+            }
+        }
+    } else {
+        int cargs = lua_gettop(L) - 1;
+        n = (cargs + 3) / 4;
+        if (cargs != 3 && (cargs % 4 != 0 || cargs == 0))
+            return luaL_error(L, "Expected red, green, blue, and alpha. Only got %d of 4 components.", cargs % 4);
+        if (n > L360_PS_COLORS) return luaL_error(L, "At most eight (8) colors may be used.");
+        for (int i = 0; i < n; i++) {
+            for (int j = 0; j < 3; j++) colors[i][j] = (float)luaL_checknumber(L, 2 + i * 4 + j);
+            colors[i][3] = (float)luaL_optnumber(L, 2 + i * 4 + 3, 1.0);
+        }
+    }
+    memcpy(p->colors, colors, (size_t)n * sizeof(colors[0]));
+    p->ncolors = n;
+    return 0;
+}
+static int ps_getColors(lua_State *L)
+{
+    l360_ps *p = &to_ps(L, 1)->ps;
+    for (int i = 0; i < p->ncolors; i++) {
+        lua_createtable(L, 4, 0);
+        for (int j = 0; j < 4; j++) {
+            lua_pushnumber(L, p->colors[i][j]);
+            lua_rawseti(L, -2, j + 1);
+        }
+    }
+    return p->ncolors;
+}
+
+/* setQuads(quad, ...) | setQuads({quad, ...}) | setQuads(): the viewports are copied now */
+static int ps_setQuads(lua_State *L)
+{
+    ps_ud *u = to_ps(L, 1);
+    const int from_table = lua_istable(L, 2);
+    int n = from_table ? (int)lua_objlen(L, 2) : lua_gettop(L) - 1;
+    if (n > L360_PS_QUADS) return luaL_error(L, "ParticleSystem:setQuads: at most %d quads", L360_PS_QUADS);
+    l360_ps_quad quads[L360_PS_QUADS];
+    lua_createtable(L, n, 0);                /* the new list, kept in the environment */
+    int list = lua_gettop(L);
+    for (int i = 0; i < n; i++) {
+        if (from_table) lua_rawgeti(L, 2, i + 1); else lua_pushvalue(L, 2 + i);
+        quad_ud *q = luaL_checkudata(L, -1, MT_QUAD);
+        quads[i] = (l360_ps_quad){q->x, q->y, q->w, q->h, q->sw, q->sh};
+        lua_rawseti(L, list, i + 1);
+    }
+    lua_getfenv(L, 1);
+    lua_pushvalue(L, list);
+    lua_rawseti(L, -2, 2);
+    memcpy(u->ps.quads, quads, (size_t)n * sizeof(quads[0]));
+    u->ps.nquads = n;
+    ps_reset_offset(u);
+    return 0;
+}
+static int ps_getQuads(lua_State *L)
+{
+    to_ps(L, 1);
+    lua_getfenv(L, 1);
+    lua_rawgeti(L, -1, 2);
+    int n = (int)lua_objlen(L, -1);
+    lua_createtable(L, n, 0);
+    for (int i = 1; i <= n; i++) {
+        lua_rawgeti(L, -2, i);
+        lua_rawseti(L, -2, i);
+    }
+    return 1;
+}
+static int ps_setOffset(lua_State *L)
+{
+    l360_ps *p = &to_ps(L, 1)->ps;
+    p->offset_x = (float)luaL_checknumber(L, 2);
+    p->offset_y = (float)luaL_checknumber(L, 3);
+    p->default_offset = 0;
+    return 0;
+}
+static int ps_getOffset(lua_State *L)
+{
+    l360_ps *p = &to_ps(L, 1)->ps;
+    lua_pushnumber(L, p->offset_x); lua_pushnumber(L, p->offset_y);
+    return 2;
+}
+static int ps_setRelativeRotation(lua_State *L) { to_ps(L, 1)->ps.relative_rotation = lua_toboolean(L, 2); return 0; }
+static int ps_hasRelativeRotation(lua_State *L) { lua_pushboolean(L, to_ps(L, 1)->ps.relative_rotation); return 1; }
+
+static const char *const ps_areas[] = {"none", "uniform", "normal", "ellipse", "borderellipse", "borderrectangle", NULL};
+static const char *const ps_inserts[] = {"top", "bottom", "random", NULL};
+
+/* setEmissionArea(distribution, dx, dy, angle, directionRelativeToCenter) */
+static int ps_setEmissionArea(lua_State *L)
+{
+    l360_ps *p = &to_ps(L, 1)->ps;
+    int area = lua_isnoneornil(L, 2) ? L360_PS_AREA_NONE : luaL_checkoption(L, 2, NULL, ps_areas);
+    float x = 0, y = 0, angle = 0;
+    int relative = 0;
+    if (area != L360_PS_AREA_NONE) {
+        x = (float)luaL_checknumber(L, 3);
+        y = (float)luaL_checknumber(L, 4);
+        if (x < 0 || y < 0) return luaL_error(L, "Invalid area spread parameters (must be >= 0)");
+        angle = (float)luaL_optnumber(L, 5, 0);
+        relative = lua_toboolean(L, 6);
+    }
+    p->area = area;
+    p->area_x = x;
+    p->area_y = y;
+    p->area_angle = angle;
+    p->area_relative = relative;
+    return 0;
+}
+static int ps_getEmissionArea(lua_State *L)
+{
+    l360_ps *p = &to_ps(L, 1)->ps;
+    lua_pushstring(L, ps_areas[p->area]);
+    lua_pushnumber(L, p->area_x); lua_pushnumber(L, p->area_y);
+    lua_pushnumber(L, p->area_angle);
+    lua_pushboolean(L, p->area_relative);
+    return 5;
+}
+static int ps_setInsertMode(lua_State *L) { to_ps(L, 1)->ps.insert_mode = luaL_checkoption(L, 2, NULL, ps_inserts); return 0; }
+static int ps_getInsertMode(lua_State *L) { lua_pushstring(L, ps_inserts[to_ps(L, 1)->ps.insert_mode]); return 1; }
+static int ps_type(lua_State *L) { lua_pushliteral(L, "ParticleSystem"); return 1; }
+static int ps_typeOf(lua_State *L)
+{
+    const char *n = luaL_checkstring(L, 2);
+    lua_pushboolean(L, !strcmp(n, "ParticleSystem") || !strcmp(n, "Drawable") || !strcmp(n, "Object"));
+    return 1;
+}
+
+/* Each particle is its texture (or its quad) moved to its position, turned by its angle and
+ * scaled by its size around the offset, then by the draw's transform; its colour is multiplied
+ * by the current colour. Particles wholly off screen are left out, as with a SpriteBatch. */
+static void draw_particles(const ps_ud *u, const mat_t *m)
+{
+    const l360_ps *ps = &u->ps;
+    surf_t *s = u->tex->s;
+    if (!s || (u->tex->kind == TEX_CANVAS && opt_no_canvas)) {
+        l360_gfx_stats.skipped++;
+        return;
+    }
+    l360_gfx_stats.particles += (long)ps->count;
+    const shader_ud *sh = (L360_SHADERS && !opt_no_shaders) ? cur_shader : NULL;
+    const int cull = !sh || !sh->prog;
+    const float sw = (float)W, sh_ = (float)H;
+    const float ox = ps->offset_x, oy = ps->offset_y;
+    float w = u->tex->w, h = u->tex->h, u0 = 0, v0 = 0, u1 = 1, v1 = 1;
+    int n = 0;
+    for (const l360_particle *p = ps->head; p; p = p->next) {
+        if (ps->nquads) {
+            const l360_ps_quad *q = &ps->quads[p->quad];
+            w = q->w; h = q->h;
+            u0 = q->x / q->sw; v0 = q->y / q->sh;
+            u1 = (q->x + q->w) / q->sw; v1 = (q->y + q->h) / q->sh;
+        }
+        float c = p->size, sn = 0;
+        if (p->angle != 0) {
+            c = cosf(p->angle) * p->size;
+            sn = sinf(p->angle) * p->size;
+        }
+        /* T(x, y) R(angle) S(size) T(-ox, -oy), then m */
+        mat_t lt = {c, sn, -sn, c, p->x - ox * c + oy * sn, p->y - ox * sn - oy * c}, pm;
+        mat_mul(&pm, m, &lt);
+        const float x0 = pm.e, y0 = pm.f;
+        const float x1 = x0 + pm.a * w, y1 = y0 + pm.b * w;
+        const float x2 = x0 + pm.c * h, y2 = y0 + pm.d * h;
+        const float x3 = x1 + pm.c * h, y3 = y1 + pm.d * h;
+        if (cull && ((x0 < 0 && x1 < 0 && x2 < 0 && x3 < 0) || (x0 > sw && x1 > sw && x2 > sw && x3 > sw) ||
+                     (y0 < 0 && y1 < 0 && y2 < 0 && y3 < 0) || (y0 > sh_ && y1 > sh_ && y2 > sh_ && y3 > sh_)))
+            continue;
+        if (n == SCRATCH_VERTS) {
+            submit(s, scratch, n);
+            n = 0;
+        }
+        vertex_t *v = scratch + n;
+        v[0].x = x0; v[0].y = y0; v[0].u = u0; v[0].v = v0;
+        v[1].x = x1; v[1].y = y1; v[1].u = u1; v[1].v = v0;
+        v[2].x = x2; v[2].y = y2; v[2].u = u0; v[2].v = v1;
+        v[4].x = x3; v[4].y = y3; v[4].u = u1; v[4].v = v1;
+        v[0].z = v[1].z = v[2].z = v[4].z = 0;
+        v[0].w = v[1].w = v[2].w = v[4].w = 1;
+        v[0].r = p->color[0] * color[0]; v[0].g = p->color[1] * color[1];
+        v[0].b = p->color[2] * color[2]; v[0].a = p->color[3] * color[3];
+        v[1].r = v[2].r = v[4].r = v[0].r; v[1].g = v[2].g = v[4].g = v[0].g;
+        v[1].b = v[2].b = v[4].b = v[0].b; v[1].a = v[2].a = v[4].a = v[0].a;
+        v[3] = v[1];
+        v[5] = v[2];
+        n += 6;
+    }
+    if (n) submit(s, scratch, n);
+}
+
 /* draw(drawable, [quad], x, y, r, sx, sy, ox, oy, kx, ky) */
 static int g_draw(lua_State *L)
 {
     tex_ud *t = to_tex(L, 1);
     text_ud *tx = t ? NULL : luaL_testudata(L, 1, MT_TEXT);
     batch_ud *sb = (t || tx) ? NULL : luaL_testudata(L, 1, MT_BATCH);
-    if ((!t && !tx && !sb) || (t && !t->s) || (t && t->kind == TEX_CANVAS && opt_no_canvas)) {
+    ps_ud *psys = (t || tx || sb) ? NULL : luaL_testudata(L, 1, MT_PS);
+    if ((!t && !tx && !sb && !psys) || (t && !t->s) || (t && t->kind == TEX_CANVAS && opt_no_canvas)) {
         l360_gfx_stats.skipped++;        /* Video and others: not yet; textures from step 2b */
         return 0;
     }
     int a = 2;
-    quad_ud *q = sb ? NULL : luaL_testudata(L, 2, MT_QUAD);
+    quad_ud *q = (sb || psys) ? NULL : luaL_testudata(L, 2, MT_QUAD);
     if (q) a = 3;
     mat_t lt, m;
     arg_local(L, a, a + 2, &lt);
     mat_mul(&m, &mstack[msp], &lt);
     if (sb) {
         draw_batch(sb, &m);
+    } else if (psys) {
+        draw_particles(psys, &m);
     } else if (tx) {
         draw_text(tx, &m);
     } else if (q) {
@@ -2353,6 +2834,29 @@ static int g_sync(lua_State *L)
     return 0;
 }
 
+/* setBlendMode(mode, alphamode): "alpha" or "add" (boot.lua turns the other modes into "alpha"),
+ * with "alphamultiply" (default) or "premultiplied". The factors are LOVE 11's:
+ *   alpha: rgb = src * A + dst * (1 - srcA),  a = src + dst * (1 - srcA)
+ *   add:   rgb = src * A + dst,               a = dst
+ * where A is the source alpha, or 1 with "premultiplied". Nothing is sent to the GPU here: the
+ * next submit starts a new batch if the mode changed. */
+static const char *const blend_names[] = {"alpha", "add", NULL};
+static const char *const blend_alpha_names[] = {"alphamultiply", "premultiplied", NULL};
+static int g_setBlendMode(lua_State *L)
+{
+    int mode = luaL_checkoption(L, 1, NULL, blend_names);
+    int premult = luaL_checkoption(L, 2, "alphamultiply", blend_alpha_names);
+    blend_mode = mode;
+    blend_premult = premult;
+    return 0;
+}
+static int g_getBlendMode(lua_State *L)
+{
+    lua_pushstring(L, blend_names[blend_mode]);
+    lua_pushstring(L, blend_alpha_names[blend_premult]);
+    return 2;
+}
+
 static int g_getStats(lua_State *L)
 {
     lua_newtable(L);
@@ -2368,7 +2872,9 @@ static const luaL_Reg gfx_funcs[] = {
     {"push", g_push}, {"pop", g_pop}, {"origin", g_origin}, {"translate", g_translate},
     {"scale", g_scale}, {"rotate", g_rotate}, {"shear", g_shear},
     {"draw", g_draw}, {"rectangle", g_rectangle}, {"polygon", g_polygon},
-    {"newSpriteBatch", g_newSpriteBatch}, {"print", g_print}, {"printf", g_printf},
+    {"newSpriteBatch", g_newSpriteBatch}, {"newParticleSystem", g_newParticleSystem},
+    {"setBlendMode", g_setBlendMode}, {"getBlendMode", g_getBlendMode},
+    {"print", g_print}, {"printf", g_printf},
     {"line", g_line}, {"circle", g_circle}, {"ellipse", g_ellipse}, {"points", g_points},
     {"setPointSize", g_setPointSize}, {"getPointSize", g_getPointSize},
     {"setCanvas", g_setCanvas}, {"present", g_present}, {"sync", g_sync},
@@ -2434,7 +2940,16 @@ int l360_gfx_init(uint32_t w, uint32_t h, void (*log)(const char *))
         .color_op = XSDK_BLEND_OP_ADD,
         .alpha_source = XSDK_BLEND_ONE, .alpha_dest = XSDK_BLEND_ONE_MINUS_SRC_ALPHA,
         .alpha_op = XSDK_BLEND_OP_ADD, .write_mask = XSDK_WRITE_ALL};
-    xsdk_gpu_blend_state(&blend_alpha, &blend);
+    xsdk_gpu_blend_state(&blend_states[BLEND_ALPHA][0], &blend);
+    blend.color_source = XSDK_BLEND_ONE;
+    xsdk_gpu_blend_state(&blend_states[BLEND_ALPHA][1], &blend);
+    /* add: color SRCALPHA (or ONE) / ONE, alpha ZERO / ONE */
+    blend.color_dest = XSDK_BLEND_ONE;
+    blend.alpha_source = XSDK_BLEND_ZERO;
+    blend.alpha_dest = XSDK_BLEND_ONE;
+    xsdk_gpu_blend_state(&blend_states[BLEND_ADD][1], &blend);
+    blend.color_source = XSDK_BLEND_SRC_ALPHA;
+    xsdk_gpu_blend_state(&blend_states[BLEND_ADD][0], &blend);
 
     static unsigned char white[32 * 32 * 4];
     memset(white, 255, sizeof(white));
@@ -2496,6 +3011,40 @@ void l360_gfx_register(lua_State *L)
     make_mt(L, MT_BATCH, batch_m);
     luaL_getmetatable(L, MT_BATCH);
     lua_pushcfunction(L, batch_gc);
+    lua_setfield(L, -2, "__gc");
+    lua_pop(L, 1);
+    static const luaL_Reg ps_m[] = {
+        {"clone", ps_clone}, {"setTexture", ps_setTexture}, {"getTexture", ps_getTexture},
+        {"setBufferSize", ps_setBufferSize}, {"getBufferSize", ps_getBufferSize}, {"getCount", ps_getCount},
+        {"emit", ps_emit}, {"update", ps_update}, {"start", ps_start}, {"stop", ps_stop},
+        {"pause", ps_pause}, {"reset", ps_reset}, {"isActive", ps_isActive}, {"isPaused", ps_isPaused},
+        {"isStopped", ps_isStopped}, {"setInsertMode", ps_setInsertMode}, {"getInsertMode", ps_getInsertMode},
+        {"setEmissionRate", ps_setEmissionRate}, {"getEmissionRate", ps_getEmissionRate},
+        {"setEmitterLifetime", ps_setEmitterLifetime}, {"getEmitterLifetime", ps_getEmitterLifetime},
+        {"setParticleLifetime", ps_setParticleLifetime}, {"getParticleLifetime", ps_getParticleLifetime},
+        {"setPosition", ps_setPosition}, {"getPosition", ps_getPosition}, {"moveTo", ps_moveTo},
+        {"setEmissionArea", ps_setEmissionArea}, {"getEmissionArea", ps_getEmissionArea},
+        {"setDirection", ps_setDirection}, {"getDirection", ps_getDirection},
+        {"setSpread", ps_setSpread}, {"getSpread", ps_getSpread},
+        {"setSpeed", ps_setSpeed}, {"getSpeed", ps_getSpeed},
+        {"setLinearAcceleration", ps_setLinearAcceleration}, {"getLinearAcceleration", ps_getLinearAcceleration},
+        {"setRadialAcceleration", ps_setRadialAcceleration}, {"getRadialAcceleration", ps_getRadialAcceleration},
+        {"setTangentialAcceleration", ps_setTangentialAcceleration},
+        {"getTangentialAcceleration", ps_getTangentialAcceleration},
+        {"setLinearDamping", ps_setLinearDamping}, {"getLinearDamping", ps_getLinearDamping},
+        {"setSizes", ps_setSizes}, {"getSizes", ps_getSizes},
+        {"setSizeVariation", ps_setSizeVariation}, {"getSizeVariation", ps_getSizeVariation},
+        {"setRotation", ps_setRotation}, {"getRotation", ps_getRotation},
+        {"setSpin", ps_setSpin}, {"getSpin", ps_getSpin},
+        {"setSpinVariation", ps_setSpinVariation}, {"getSpinVariation", ps_getSpinVariation},
+        {"setColors", ps_setColors}, {"getColors", ps_getColors},
+        {"setQuads", ps_setQuads}, {"getQuads", ps_getQuads},
+        {"setOffset", ps_setOffset}, {"getOffset", ps_getOffset},
+        {"setRelativeRotation", ps_setRelativeRotation}, {"hasRelativeRotation", ps_hasRelativeRotation},
+        {"type", ps_type}, {"typeOf", ps_typeOf}, {NULL, NULL}};
+    make_mt(L, MT_PS, ps_m);
+    luaL_getmetatable(L, MT_PS);
+    lua_pushcfunction(L, ps_gc);
     lua_setfield(L, -2, "__gc");
     lua_pop(L, 1);
     make_mt(L, MT_FONT, font_m);

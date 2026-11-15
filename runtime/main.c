@@ -621,7 +621,7 @@ static int l_gfxstats(lua_State *L)
 {
 	lua_newtable(L);
 #define F(k) lua_pushnumber(L, (double)l360_gfx_stats.k); lua_setfield(L, -2, #k);
-	F(draws) F(submits) F(verts) F(sends) F(skipped) F(dropped) F(frames) F(missing_images) F(texture_bytes) F(image_ms) F(gpu_wait_ms)
+	F(draws) F(submits) F(verts) F(sends) F(skipped) F(dropped) F(frames) F(missing_images) F(particles) F(texture_bytes) F(image_ms) F(gpu_wait_ms)
 #undef F
 	return 1;
 }

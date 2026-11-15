@@ -7,8 +7,8 @@
 typedef struct {
     /* draws: GPU draw calls (one per batch of submits that share texture and shader);
      * submits: draws, shapes and texts asked by the game that reached the vertex buffer;
-     * verts: vertices copied to it */
-    long draws, submits, verts, sends, skipped, dropped, frames, missing_images;
+     * verts: vertices copied to it; particles: live particles of the ParticleSystems drawn */
+    long draws, submits, verts, sends, skipped, dropped, frames, missing_images, particles;
     long texture_bytes;
     unsigned long image_ms, gpu_wait_ms;
     /* when the last sync and last present started and ended (CLOCK_MONOTONIC ms), so that

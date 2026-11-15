@@ -974,8 +974,23 @@ G_.getDPIScale = function() return 1 end
 G_.isActive = function() return true end
 G_.isCreated = function() return true end
 G_.setLineStyle = nop
-G_.setBlendMode = nop
-G_.getBlendMode = function() return "alpha", "alphamultiply" end
+-- setBlendMode(mode, alphamode): "alpha" and "add" are drawn; LÖVE's other modes are drawn as
+-- "alpha" and logged once. getBlendMode answers the mode in use.
+local c_setBlendMode = gfx.setBlendMode
+local blend_modes = { alpha = "alpha", add = "add", subtract = false, multiply = false, lighten = false,
+  darken = false, screen = false, replace = false, none = false }
+G_.setBlendMode = function(mode, alphamode)
+  local known = blend_modes[mode]
+  if known == nil then error("Invalid blend mode '" .. tostring(mode) .. "'", 2) end
+  if alphamode ~= nil and alphamode ~= "alphamultiply" and alphamode ~= "premultiplied" then
+    error("Invalid blend alpha mode '" .. tostring(alphamode) .. "'", 2)
+  end
+  if not known then
+    note_missing("love.graphics.setBlendMode(\"" .. mode .. "\"): drawn as \"alpha\"")
+    known = "alpha"
+  end
+  c_setBlendMode(known, alphamode)
+end
 G_.setScissor = nop
 G_.reset = nop
 G_.setStencilTest = nop

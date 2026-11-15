@@ -2,7 +2,7 @@
 -- Builds the l360 table like runtime/main.c and runtime/l360_sys.c do (files from disk, saves in
 -- memory, a fake controller), runs runtime/lua/l360_gfx_stub.lua and then boot.lua for FRAMES
 -- frames, and checks that the game was loaded and run the way LÖVE would, and that what it drew
--- (SpriteBatch, text, lines, shapes) reached l360.gfx with the expected vertices. The fixture's shader
+-- (SpriteBatch, ParticleSystem, text, lines, shapes) reached l360.gfx with the expected vertices. The fixture's shader
 -- metadata (shaders/*.meta.lua) is generated first with tools/shaders/build_shaders.py --hlsl-only
 -- (needs python3), as the shader build would leave it in the console folder.
 -- Usage, from the repository root: luajit -joff tests/pc/boot_pc.lua [game folder]
@@ -236,12 +236,18 @@ function finish()
     check(logged('minimal_game: frame 60'), 'love.update ran on every frame')
     check(st.draws >= FRAMES - 1, 'love.draw drew a rectangle per frame: ' .. st.draws)
     -- Each frame of the fixture: 2 rectangles, a 40x4 tile SpriteBatch, a line of 4 points, a
-    -- circle outline (24 segments for radius 30) and a filled one of 16; print and printf are not
-    -- drawn, because the fixture has no default_font
-    local drawn = st.draws / 6
-    check(drawn >= FRAMES - 1 and drawn == math.floor(drawn), 'six submits per frame: ' .. st.draws)
+    -- circle outline (24 segments for radius 30), a filled one of 16 and a ParticleSystem (one
+    -- draw, a quad per live particle); print and printf are not drawn, because the fixture has no
+    -- default_font
+    local drawn = st.draws / 7
+    check(drawn >= FRAMES - 1 and drawn == math.floor(drawn), 'seven submits per frame: ' .. st.draws)
     check(st.submits == st.draws, 'the stub counts one draw per submit')
-    check(st.verts == drawn * (6 + 6 + 40 * 4 * 6 + 3 * 6 + 24 * 6 + 16 * 3), 'vertices per frame: ' .. st.verts / drawn)
+    check(st.verts == drawn * (6 + 6 + 40 * 4 * 6 + 3 * 6 + 24 * 6 + 16 * 3) + 6 * st.particles,
+      'vertices per frame: ' .. st.verts / drawn)
+    -- the fixture's system holds 24 particles and is asked for more
+    check(st.particles > 12 * drawn and st.particles <= 24 * drawn, 'particles per frame: ' .. st.particles / drawn)
+    check(logged('minimal_game: frame 30, x = 200, 24 sparks'), 'the fixture\'s ParticleSystem fills up')
+    check(love.graphics.getBlendMode() == 'alpha', 'the fixture left the blend mode at alpha')
     check(st.skipped == 2 * drawn, 'print and printf without a font are counted as not drawn: ' .. st.skipped)
     check(logged('[missing] default font'), 'the missing default font is logged')
 
@@ -268,6 +274,84 @@ function finish()
     batch:clear()
     check(batch:getCount() == 0 and verts(function() g.draw(batch) end) == 0, 'SpriteBatch:clear')
     check(not pcall(g.newSpriteBatch, 'tiles.png'), 'newSpriteBatch needs an Image')
+    -- ParticleSystem
+    local function draws(f) local a = l360.gfxstats().draws; f(); return l360.gfxstats().draws - a end
+    local function particles(f) local a = l360.gfxstats().particles; f(); return l360.gfxstats().particles - a end
+    local ps = g.newParticleSystem(img, 8)
+    check(ps:getCount() == 0 and ps:getBufferSize() == 8 and ps:isActive(), 'a new ParticleSystem is empty and active')
+    check(ps:getTexture() == img and ps:type() == 'ParticleSystem' and ps:typeOf('Drawable'), 'ParticleSystem texture and type')
+    check(select('#', ps:getOffset()) == 2 and ps:getOffset() == 16, 'the default offset is the middle of the texture')
+    check(draws(function() g.draw(ps, 10, 10) end) == 0, 'an empty ParticleSystem draws nothing')
+    ps:setParticleLifetime(0.5, 1)
+    local lmin, lmax = ps:getParticleLifetime()
+    check(lmin == 0.5 and lmax == 1, 'setParticleLifetime(min, max)')
+    ps:emit(5)
+    check(ps:getCount() == 5, 'emit(5): ' .. ps:getCount())
+    ps:emit(100)
+    check(ps:getCount() == 8, 'emit never goes past the buffer size: ' .. ps:getCount())
+    check(draws(function() check(verts(function() check(particles(function() g.draw(ps, 10, 10, 0, 2, 2) end) == 8,
+      'gfxstats counts the particles drawn') end) == 48, 'a quad per live particle') end) == 1, 'one draw per ParticleSystem')
+    ps:update(0.49)
+    check(ps:getCount() == 8, 'no particle dies before the shortest lifetime: ' .. ps:getCount())
+    ps:update(0.52)
+    check(ps:getCount() == 0, 'every particle is gone after the longest lifetime: ' .. ps:getCount())
+    ps:setEmissionRate(30)
+    check(ps:getEmissionRate() == 30, 'setEmissionRate')
+    ps:setParticleLifetime(0.1)
+    for _ = 1, 30 do ps:update(1 / 30) end
+    check(ps:getCount() >= 2 and ps:getCount() <= 4, 'rate 30/s with a 0.1 s lifetime keeps about 3 alive: ' .. ps:getCount())
+    ps:setParticleLifetime(60)
+    for _ = 1, 30 do ps:update(1 / 30); check(ps:getCount() <= 8, 'update never goes past the buffer size') end
+    check(ps:getCount() == 8, 'the emission rate fills the buffer: ' .. ps:getCount())
+    ps:pause()
+    check(not ps:isActive() and not ps:isStopped(), 'pause')
+    ps:emit(1); ps:reset()
+    check(ps:getCount() == 0, 'reset removes the particles')
+    ps:update(1)
+    check(ps:getCount() == 0, 'a paused ParticleSystem emits nothing')
+    ps:stop()
+    check(ps:isStopped() and not ps:isPaused(), 'stop')
+    ps:start()
+    ps:setEmitterLifetime(0.5)
+    for _ = 1, 30 do ps:update(1 / 30) end
+    check(ps:isStopped() and ps:getCount() >= 7, 'the emitter stops after its lifetime: ' .. ps:getCount())
+    ps:setBufferSize(4)
+    check(ps:getBufferSize() == 4 and ps:getCount() == 0, 'setBufferSize empties the system')
+    ps:setSizes(1, 2, 0.5); ps:setColors(1, 1, 1, 1, 1, 0, 0, 0); ps:setQuads(quad, quad)
+    ps:setSpeed(10); ps:setLinearAcceleration(0, 100); ps:setEmissionArea('uniform', 4, 2, 0, true)
+    ps:setInsertMode('random'); ps:setSpread(1); ps:setDirection(2); ps:setRotation(0, 1); ps:setSpin(1)
+    ps:setLinearDamping(1, 2); ps:setSizeVariation(0.5); ps:setRelativeRotation(true); ps:setPosition(5, 6)
+    local smin, smax = ps:getSpeed()
+    local c1, c2 = ps:getColors()
+    local ax0, ay0, ax1, ay1 = ps:getLinearAcceleration()
+    check(smin == 10 and smax == 10 and select('#', ps:getSizes()) == 3 and c2[1] == 1 and c2[4] == 0 and c1[4] == 1
+      and ax0 == 0 and ay0 == 100 and ax1 == 0 and ay1 == 100 and #ps:getQuads() == 2 and ps:getQuads()[1] == quad
+      and ps:getInsertMode() == 'random' and ps:hasRelativeRotation() and ps:getOffset() == 8,
+      'ParticleSystem setters and getters')
+    local dist, dx, dy, angle, rel = ps:getEmissionArea()
+    check(dist == 'uniform' and dx == 4 and dy == 2 and angle == 0 and rel == true, 'setEmissionArea')
+    check(not pcall(ps.setEmissionArea, ps, 'square', 1, 1) and not pcall(ps.setSizeVariation, ps, 2)
+      and not pcall(ps.setSizes, ps, 1, 2, 3, 4, 5, 6, 7, 8, 9) and not pcall(g.newParticleSystem, 'tiles.png', 8),
+      'bad ParticleSystem arguments fail')
+    local copy = ps:clone()
+    ps:emit(2)
+    check(copy:getCount() == 0 and copy:getBufferSize() == 4 and copy:getSpeed() == 10 and copy:getTexture() == img,
+      'clone copies the settings, not the particles')
+    -- Blend modes
+    local mode, alphamode = g.getBlendMode()
+    check(mode == 'alpha' and alphamode == 'alphamultiply', 'the default blend mode')
+    g.setBlendMode('add')
+    check(g.getBlendMode() == 'add', 'setBlendMode add')
+    g.setBlendMode('alpha', 'premultiplied')
+    mode, alphamode = g.getBlendMode()
+    check(mode == 'alpha' and alphamode == 'premultiplied', 'setBlendMode with an alpha mode')
+    g.setBlendMode('multiply'); g.setBlendMode('multiply')
+    mode, alphamode = g.getBlendMode()
+    check(mode == 'alpha' and alphamode == 'alphamultiply', 'an unsupported blend mode is drawn as alpha')
+    n = 0
+    for _, l in ipairs(log_lines) do if l:find('[missing] love.graphics.setBlendMode("multiply")', 1, true) then n = n + 1 end end
+    check(n == 1, 'an unsupported blend mode is logged once: ' .. n)
+    check(not pcall(g.setBlendMode, 'nope') and not pcall(g.setBlendMode, 'add', 'nope'), 'an unknown blend mode fails')
     -- Text: a font with a file can draw (the stub measures 0.44 of the size per byte)
     local font = g.newFont('test_font.ttf', 20)
     g.setFont(font)

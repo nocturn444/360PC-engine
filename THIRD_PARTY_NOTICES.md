@@ -12,8 +12,9 @@ The license texts below are **copied in full from their sources**, without abrid
 | 3 | xsdk `THIRD_PARTY_NOTICES.md`, same commit |
 | 4 | LuaJIT `COPYRIGHT`, commit `a4c064539ea931274d407e1249b4bb575424a0f4` (`toolchain/build_luajit_xsdk.sh`) |
 | 5 | End of `runtime/third_party/stb/stb_image.h` (v2.30) and `stb_truetype.h` (v1.26) |
+| 6 | Header of LÖVE's `src/modules/graphics/ParticleSystem.cpp`, tag `11.5` (https://github.com/love2d/love) |
 
-Update these full texts when updating xsdk, LuaJIT or stb. Third-party Lua libraries in `lib/`
+Update these full texts when updating xsdk, LuaJIT, stb or the code adapted from LÖVE. Third-party Lua libraries in `lib/`
 will be added here as they are copied in (objective 8).
 
 ## 1. 360PC-Engine (MIT)
@@ -270,3 +271,31 @@ SOFTWARE.
 ------------------------------------------------------------------------------
 ```
 
+## 6. LÖVE 11.5 (zlib)
+
+`runtime/l360_particles.c`, the particle simulation behind `love.graphics.newParticleSystem`, is
+adapted from LÖVE's `ParticleSystem.cpp`, rewritten in C with a different random generator and
+fixed limits. It is an altered version, not the original software. No other LÖVE code is in the
+runtime.
+
+```
+/**
+ * Copyright (c) 2006-2023 LOVE Development Team
+ *
+ * This software is provided 'as-is', without any express or implied
+ * warranty.  In no event will the authors be held liable for any damages
+ * arising from the use of this software.
+ *
+ * Permission is granted to anyone to use this software for any purpose,
+ * including commercial applications, and to alter it and redistribute it
+ * freely, subject to the following restrictions:
+ *
+ * 1. The origin of this software must not be misrepresented; you must not
+ *    claim that you wrote the original software. If you use this software
+ *    in a product, an acknowledgment in the product documentation would be
+ *    appreciated but is not required.
+ * 2. Altered source versions must be plainly marked as such, and must not be
+ *    misrepresented as being the original software.
+ * 3. This notice may not be removed or altered from any source distribution.
+ **/
+```

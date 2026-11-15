@@ -1,9 +1,11 @@
 -- Minimal game for the runtime checks: a moving rectangle, a log line now and then, a counter
 -- kept in the save folder, a shader (shaders/tint.glsl, declared in game.lua), a tile map in a
--- SpriteBatch (tiles.png: two 16x16 tiles), text, lines and circles, and the pad's A button.
+-- SpriteBatch (tiles.png: two 16x16 tiles), text, lines and circles, sparks from a ParticleSystem
+-- drawn with additive blending, and the pad's A button.
 -- Runs the same on LÖVE 11.x.
 local x, frames, runs = 0, 0, 0
-local tint, map
+local tint, map, sparks
+local SPARKS = 24
 local MAP_W, MAP_H = 40, 4
 
 function love.load()
@@ -22,13 +24,30 @@ function love.load()
   end
   map:setColor(1, 1, 0.5, 1)
   map:set(1, quads[2], 0, 0)
+  -- more sparks are asked for (60 a second, living up to 0.6 s) than the system holds
+  sparks = love.graphics.newParticleSystem(tiles, SPARKS)
+  sparks:setQuads(quads[2])
+  sparks:setParticleLifetime(0.3, 0.6)
+  sparks:setEmissionRate(60)
+  sparks:setSpeed(80, 160)
+  sparks:setDirection(-math.pi / 2)
+  sparks:setSpread(math.pi / 3)
+  sparks:setLinearAcceleration(0, 400)
+  sparks:setSizes(1, 0.25)
+  sparks:setColors(1, 1, 1, 1, 1, 0.5, 0, 0)
+  sparks:setEmissionArea("uniform", 8, 2)
+  sparks:emit(4)
   print(string.format("minimal_game: love.load, run %d, window %dx%d", runs, love.graphics.getDimensions()))
 end
 
 function love.update(dt)
   frames = frames + 1
   x = (x + 200 * dt) % 1280
-  if frames % 30 == 0 then print(string.format("minimal_game: frame %d, x = %.0f", frames, x)) end
+  sparks:moveTo(x + 60, 300)
+  sparks:update(dt)
+  if frames % 30 == 0 then
+    print(string.format("minimal_game: frame %d, x = %.0f, %d sparks", frames, x, sparks:getCount()))
+  end
 end
 
 function love.draw()
@@ -49,6 +68,11 @@ function love.draw()
   love.graphics.setColor(0.2, 0.6, 0.9, 1)
   love.graphics.circle("fill", x + 60, 240, 20, 16)
   love.graphics.setLineWidth(1)
+
+  love.graphics.setColor(1, 1, 1, 1)
+  love.graphics.setBlendMode("add")
+  love.graphics.draw(sparks)
+  love.graphics.setBlendMode("alpha")
 end
 
 function love.gamepadpressed(joystick, button)

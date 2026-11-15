@@ -4,7 +4,7 @@
 -- vertices each call would send, so the test can tell what was asked. Nothing is batched here:
 -- draws and submits are the same number (l360_gfx.c joins submits that share texture and shader).
 local st = { draws = 0, submits = 0, verts = 0, sends = 0, skipped = 0, dropped = 0, frames = 0,
-  missing_images = 0, texture_bytes = 0, image_ms = 0, gpu_wait_ms = 0 }
+  missing_images = 0, particles = 0, texture_bytes = 0, image_ms = 0, gpu_wait_ms = 0 }
 local function nop() end
 local function submit(verts)
   st.draws = st.draws + 1; st.submits = st.submits + 1; st.verts = st.verts + verts
@@ -38,7 +38,9 @@ gfx.newImage = function(path, data, dpi)
   return texture(w, h, dpi)
 end
 gfx.newCanvas = function(w, h) w, h = tonumber(w) or 1280, tonumber(h) or 720 return texture(w, h, 1) end
-gfx.newQuad = function() return setmetatable({}, { __index = function() return nop end }) end
+gfx.newQuad = function(x, y, w, h)
+  return setmetatable({ is_quad = true, w = tonumber(w), h = tonumber(h) }, { __index = function() return nop end })
+end
 -- newShader(name, meta), like l360_gfx.c: meta is the table of shaders/<name>.meta.lua, or nil if
 -- the shader was not built. Second result: whether the shader's own program is in use (never
 -- without a GPU, but the uniforms are still checked against the metadata).
@@ -152,6 +154,200 @@ gfx.newSpriteBatch = function(tex, size)
   return setmetatable({ is_batch = true, tex = tex, count = 0, size = math.max(1, math.floor(tonumber(size) or 1000)),
     color = { 1, 1, 1, 1 } }, Batch)
 end
+-- ParticleSystem: the settings are kept as given and the particles are only their remaining
+-- lifetimes, emitted and expired as l360_particles.c does (the pool's cap, the emission rate, the
+-- emitter's lifetime); they have no position. Drawing one sends 6 vertices per live particle.
+local ps_pairs = { ParticleLifetime = true, Speed = true, LinearDamping = true, RadialAcceleration = true,
+  TangentialAcceleration = true, Rotation = true, Spin = true }
+local ps_areas = { none = true, uniform = true, normal = true, ellipse = true, borderellipse = true, borderrectangle = true }
+local ps_inserts = { top = true, bottom = true, random = true }
+local ps_seed = 0
+local function ps_number(v, what) return (assert(tonumber(v), "ParticleSystem:" .. what .. ": number expected")) end
+local function ps_offset(p)
+  if p.custom_offset then return end
+  local q = p.props.Quads[1]
+  if q and q.w then p.props.Offset = { q.w / 2, q.h / 2 } else p.props.Offset = { p.tex.w / 2, p.tex.h / 2 } end
+end
+local function ps_add(p)
+  if #p.life >= p.size then return end
+  local min, max = p.props.ParticleLifetime[1], p.props.ParticleLifetime[2]
+  p.seed = (p.seed * 1103515245 + 12345) % 2147483648
+  p.life[#p.life + 1] = min + (max - min) * (p.seed / 2147483648)
+end
+local PS = {}
+PS.emit = function(p, n)
+  n = math.floor(ps_number(n, "emit"))
+  if not p.active then return end
+  for _ = 1, math.min(n, p.size - #p.life) do ps_add(p) end
+end
+PS.update = function(p, dt)
+  dt = ps_number(dt, "update")
+  if dt <= 0 then return end
+  local live = {}
+  for _, l in ipairs(p.life) do if l - dt > 0 then live[#live + 1] = l - dt end end
+  p.life = live
+  if not p.active then return end
+  local rate = p.props.EmissionRate[1]
+  if rate > 0 then
+    p.emit_counter = p.emit_counter + dt
+    while p.emit_counter > 1 / rate do ps_add(p); p.emit_counter = p.emit_counter - 1 / rate end
+  end
+  p.emitter_life = p.emitter_life - dt
+  if p.props.EmitterLifetime[1] ~= -1 and p.emitter_life < 0 then p:stop() end
+end
+PS.start = function(p) p.active = true end
+PS.pause = function(p) p.active = false end
+PS.stop = function(p) p.active = false; p.emitter_life = p.props.EmitterLifetime[1]; p.emit_counter = 0 end
+PS.reset = function(p) p.life = {}; p.emitter_life = p.props.EmitterLifetime[1]; p.emit_counter = 0 end
+PS.isActive = function(p) return p.active end
+PS.isPaused = function(p) return not p.active and p.emitter_life < p.props.EmitterLifetime[1] end
+PS.isStopped = function(p) return not p.active and p.emitter_life >= p.props.EmitterLifetime[1] end
+PS.getCount = function(p) return #p.life end
+PS.getBufferSize = function(p) return p.size end
+PS.setBufferSize = function(p, size)
+  size = math.floor(ps_number(size, "setBufferSize"))
+  assert(size >= 1, "Invalid buffer size")
+  p.size = size
+  p:reset()
+end
+PS.setTexture = function(p, tex)
+  assert(type(tex) == "table" and tex.is_texture, "Image or Canvas expected")
+  p.tex = tex
+  ps_offset(p)
+end
+PS.getTexture = function(p) return p.tex end
+PS.moveTo = function(p, x, y) p.props.Position = { ps_number(x, "moveTo"), ps_number(y, "moveTo") } end
+PS.setEmitterLifetime = function(p, life)
+  p.props.EmitterLifetime = { ps_number(life, "setEmitterLifetime") }
+  p.emitter_life = p.props.EmitterLifetime[1]
+end
+PS.setEmissionRate = function(p, rate)
+  rate = ps_number(rate, "setEmissionRate")
+  assert(rate >= 0, "Invalid emission rate")
+  p.props.EmissionRate = { rate }
+  if rate > 0 then p.emit_counter = math.min(p.emit_counter, 1 / rate) end
+end
+PS.setLinearAcceleration = function(p, xmin, ymin, xmax, ymax)
+  xmin, ymin = ps_number(xmin, "setLinearAcceleration"), ps_number(ymin, "setLinearAcceleration")
+  p.props.LinearAcceleration = { xmin, ymin, tonumber(xmax) or xmin, tonumber(ymax) or ymin }
+end
+PS.setSizes = function(p, ...)
+  local n = select("#", ...)
+  assert(n <= 8, "At most eight (8) sizes may be used.")
+  local sizes = {}
+  for i = 1, math.max(n, 1) do sizes[i] = ps_number((select(i, ...)), "setSizes") end
+  p.props.Sizes = sizes
+end
+PS.setSizeVariation = function(p, v)
+  v = ps_number(v, "setSizeVariation")
+  assert(v >= 0 and v <= 1, "Size variation has to be between 0 and 1, inclusive.")
+  p.props.SizeVariation = { v }
+end
+PS.setColors = function(p, ...)
+  local args, colors = { ... }, {}
+  if type(args[1]) == "table" then
+    for i, c in ipairs(args) do
+      assert(type(c) == "table" and #c >= 3, "expected 4 color components")
+      colors[i] = { ps_number(c[1], "setColors"), ps_number(c[2], "setColors"), ps_number(c[3], "setColors"), tonumber(c[4]) or 1 }
+    end
+  else
+    local n = select("#", ...)
+    assert(n == 3 or (n > 0 and n % 4 == 0), "Expected red, green, blue, and alpha.")
+    for i = 1, n, 4 do
+      colors[#colors + 1] = { ps_number(args[i], "setColors"), ps_number(args[i + 1], "setColors"),
+        ps_number(args[i + 2], "setColors"), tonumber(args[i + 3]) or 1 }
+    end
+  end
+  assert(#colors <= 8, "At most eight (8) colors may be used.")
+  p.props.Colors = colors
+end
+PS.setQuads = function(p, first, ...)
+  local quads = type(first) == "table" and not first.is_quad and first or { first, ... }
+  assert(#quads <= 64, "ParticleSystem:setQuads: at most 64 quads")
+  for _, q in ipairs(quads) do assert(type(q) == "table" and q.is_quad, "Quad expected") end
+  p.props.Quads = { unpack(quads) }
+  ps_offset(p)
+end
+PS.getQuads = function(p) return { unpack(p.props.Quads) } end
+PS.setOffset = function(p, x, y)
+  p.props.Offset = { ps_number(x, "setOffset"), ps_number(y, "setOffset") }
+  p.custom_offset = true
+end
+PS.setEmissionArea = function(p, dist, dx, dy, angle, relative)
+  dist = dist or "none"
+  assert(ps_areas[dist], "Invalid particle distribution: " .. tostring(dist))
+  if dist == "none" then p.props.EmissionArea = { "none", 0, 0, 0, false } return end
+  dx, dy = ps_number(dx, "setEmissionArea"), ps_number(dy, "setEmissionArea")
+  assert(dx >= 0 and dy >= 0, "Invalid area spread parameters (must be >= 0)")
+  p.props.EmissionArea = { dist, dx, dy, tonumber(angle) or 0, relative and true or false }
+end
+PS.setInsertMode = function(p, mode)
+  assert(ps_inserts[mode], "Invalid insert mode: " .. tostring(mode))
+  p.props.InsertMode = { mode }
+end
+PS.setRelativeRotation = function(p, on) p.props.RelativeRotation = { on and true or false } end
+PS.hasRelativeRotation = function(p) return p.props.RelativeRotation[1] end
+PS.type = function() return "ParticleSystem" end
+PS.typeOf = function(_, n) return n == "ParticleSystem" or n == "Drawable" or n == "Object" end
+PS.release = nop
+-- The other setters take one number, or min and max (max is min when left out)
+for _, name in ipairs({ "ParticleLifetime", "Position", "Direction", "Spread", "Speed", "LinearDamping",
+  "RadialAcceleration", "TangentialAcceleration", "Rotation", "Spin", "SpinVariation" }) do
+  PS["set" .. name] = function(p, a, b)
+    a = ps_number(a, "set" .. name)
+    if name == "Position" then b = ps_number(b, "setPosition") elseif ps_pairs[name] then b = tonumber(b) or a else b = nil end
+    if name == "ParticleLifetime" then assert(a >= 0 and b >= 0, "Invalid particle lifetime (must be >= 0)") end
+    p.props[name] = { a, b }
+  end
+end
+for _, name in ipairs({ "EmissionRate", "EmitterLifetime", "ParticleLifetime", "Position", "Direction", "Spread", "Speed",
+  "LinearAcceleration", "LinearDamping", "RadialAcceleration", "TangentialAcceleration", "Sizes", "SizeVariation",
+  "Rotation", "Spin", "SpinVariation", "Offset", "EmissionArea", "InsertMode" }) do
+  PS["get" .. name] = function(p) return unpack(p.props[name], 1, name == "EmissionArea" and 5 or nil) end
+end
+PS.getColors = function(p)
+  local out = {}
+  for i, c in ipairs(p.props.Colors) do out[i] = { c[1], c[2], c[3], c[4] } end
+  return unpack(out)
+end
+local function ps_make(tex, size, props)
+  ps_seed = ps_seed + 1
+  local p = setmetatable({ is_particles = true, tex = tex, size = size, life = {}, active = true, emit_counter = 0,
+    seed = ps_seed, props = props }, { __index = PS })
+  p.emitter_life = props.EmitterLifetime[1]
+  return p
+end
+PS.clone = function(p)
+  local props = {}
+  for k, v in pairs(p.props) do
+    props[k] = {}
+    for i, x in pairs(v) do props[k][i] = x end
+  end
+  local c = ps_make(p.tex, p.size, props)
+  c.custom_offset = p.custom_offset
+  return c
+end
+gfx.newParticleSystem = function(tex, size)
+  assert(type(tex) == "table" and tex.is_texture, "Image or Canvas expected")
+  size = math.floor(tonumber(size) or 1000)
+  assert(size >= 1, "Invalid ParticleSystem size")
+  local p = ps_make(tex, size, { EmissionRate = { 0 }, EmitterLifetime = { -1 }, ParticleLifetime = { 0, 0 },
+    Position = { 0, 0 }, Direction = { 0 }, Spread = { 0 }, Speed = { 0, 0 }, LinearAcceleration = { 0, 0, 0, 0 },
+    LinearDamping = { 0, 0 }, RadialAcceleration = { 0, 0 }, TangentialAcceleration = { 0, 0 }, Sizes = { 1 },
+    SizeVariation = { 0 }, Rotation = { 0, 0 }, Spin = { 0, 0 }, SpinVariation = { 0 }, Colors = { { 1, 1, 1, 1 } },
+    Quads = {}, EmissionArea = { "none", 0, 0, 0, false }, InsertMode = { "top" }, RelativeRotation = { false } })
+  ps_offset(p)
+  return p
+end
+-- setBlendMode(mode, alphamode): "alpha" or "add"; boot.lua turns LÖVE's other modes into "alpha"
+local blend_mode, blend_alpha = "alpha", "alphamultiply"
+gfx.setBlendMode = function(mode, alphamode)
+  alphamode = alphamode or "alphamultiply"
+  assert(mode == "alpha" or mode == "add", "setBlendMode: invalid blend mode " .. tostring(mode))
+  assert(alphamode == "alphamultiply" or alphamode == "premultiplied", "setBlendMode: invalid blend alpha mode " .. tostring(alphamode))
+  blend_mode, blend_alpha = mode, alphamode
+end
+gfx.getBlendMode = function() return blend_mode, blend_alpha end
 gfx.newText = function()
   return setmetatable({}, { __index = function(_, k)
     if k == "getWidth" or k == "getHeight" then return function() return 10 end end
@@ -171,6 +367,11 @@ gfx.getPointSize = function() return point_size end
 gfx.draw = function(what)
   if type(what) == "table" and what.is_batch then
     if what.count > 0 then submit(6 * what.count) end
+    return
+  end
+  if type(what) == "table" and what.is_particles then
+    st.particles = st.particles + #what.life
+    if #what.life > 0 then submit(6 * #what.life) end
     return
   end
   submit(6)
