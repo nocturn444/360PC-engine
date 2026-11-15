@@ -121,6 +121,43 @@ end
 local files, bytes = 0, 0
 local SAVES, save_dir = {}, 'save'
 local finish
+-- The controller callbacks, recorded as "frame name port args" (the game's own still run)
+local pad_events, rumbles, pad_checks, watching = {}, {}, {}, false
+local function watch_pad()
+  if watching then return end
+  watching = true
+  for _, name in ipairs({ 'joystickadded', 'joystickremoved', 'gamepadpressed', 'gamepadreleased',
+      'gamepadaxis', 'joystickpressed', 'joystickreleased', 'joystickaxis', 'joystickhat',
+      'keypressed', 'keyreleased' }) do
+    local game = rawget(love, name)
+    love[name] = function(joy, ...)
+      local e = { frames, name, type(joy) == 'table' and joy.port or tostring(joy), ... }
+      for i = 1, #e do e[i] = tostring(e[i]) end
+      pad_events[#pad_events + 1] = table.concat(e, ' ')
+      if name == 'gamepadpressed' and joy.port == 0 and ... == 'a' then
+        -- The state seen from inside a callback, and the rumble with a duration
+        pad_checks.down = joy:isGamepadDown('a') and joy:isDown(1) and not joy:isGamepadDown('b', 'x')
+        pad_checks.vib = joy:setVibration(0.5, 1, 0.05)
+        local l, r = joy:getVibration()
+        pad_checks.vib_get = l == 0.5 and r == 1
+      elseif name == 'gamepadaxis' and ... == 'triggerleft' and select(2, ...) == 1 then
+        local lx, ly, rx, ry, lt, rt = joy:getAxes()
+        pad_checks.axes = joy:getGamepadAxis('leftx') == 1 and joy:getGamepadAxis('lefty') == -1
+          and joy:getGamepadAxis('triggerleft') == 1 and joy:getGamepadAxis('triggerright') == 0
+          and lx == 1 and ly == -1 and rx == 0 and ry == 0 and lt == 1 and rt == -1 and joy:getAxis(5) == 1
+      elseif name == 'joystickhat' and select(2, ...) == 'u' then
+        pad_checks.hat = joy:getHat(1) == 'u' and joy:isGamepadDown('dpup') and not joy:isDown(1, 2, 3)
+      elseif name == 'joystickadded' and joy.port == 1 then
+        pad_checks.second = love.joystick.getJoystickCount() == 2 and love.joystick.getJoysticks()[2] == joy
+          and joy:isConnected() and joy:getID() == 2
+      elseif name == 'joystickremoved' then
+        pad_checks.removed = not joy:isConnected() and love.joystick.getJoystickCount() == 1
+          and not joy:isGamepadDown('x') and joy:setVibration(1, 1) == false
+      end
+      if game then return game(joy, ...) end
+    end
+  end
+end
 
 l360 = {
   time = function() return t end,
@@ -141,14 +178,27 @@ l360 = {
   end,
   set_context = function(s) ctx = s end,
   start_render = function() start_render = true end,
-  -- A connected controller with nothing held, except A on frames 10 to 12.
+  -- Port 0: connected from the start; A on frames 10 to 12, left stick right/up and the left trigger
+  -- on 20 to 22, d-pad up on 24, guide on 26. Port 1: connected on frames 30 to 39, X held from 38.
   pad = function(port)
-    if port and port ~= 0 then return nil end
-    return { s1_x = 0, s1_y = 0, s2_x = 0, s2_y = 0, s1_z = 0, s2_z = 0, lb = 0, rb = 0,
-      start = 0, back = 0, a = (frames >= 10 and frames <= 12) and 1 or 0, b = 0, x = 0, y = 0,
+    watch_pad()
+    local f = frames
+    if port == 1 and not (f >= 30 and f <= 39) then return nil end
+    if port ~= 0 and port ~= 1 then return nil end
+    local p = { s1_x = 0, s1_y = 0, s2_x = 0, s2_y = 0, s1_z = 0, s2_z = 0, lb = 0, rb = 0,
+      start = 0, back = 0, a = 0, b = 0, x = 0, y = 0,
       up = 0, down = 0, left = 0, right = 0, lt = 0, rt = 0, logo = 0 }
+    if port == 1 then p.x = f >= 38 and 1 or 0; return p end
+    p.a = (f >= 10 and f <= 12) and 1 or 0
+    if f >= 20 and f <= 22 then p.s1_x, p.s1_y, p.lt = 32767, 32767, 255 end
+    p.up = f == 24 and 1 or 0
+    p.logo = f == 26 and 1 or 0
+    return p
   end,
-  rumble = function() return true end,
+  rumble = function(port, left, right)
+    rumbles[#rumbles + 1] = port .. ':' .. left .. ':' .. right
+    return true
+  end,
   -- Like l360_sys.c: nothing to list in the save folder before the first save, files by stat.
   filetype = function(path)
     if path == save_dir then return nil end
@@ -253,6 +303,49 @@ function finish()
       'getAverageDelta and getDelta')
     check(love.timer.getTime() == t and type(love.timer.step()) == 'number', 'getTime and step')
     check(logged('minimal_game: gamepadpressed a'), 'the controller reached love.gamepadpressed')
+    -- The controller, as LOVE shows an Xbox controller on PC
+    local expected = {
+      '0 joystickadded 0',
+      '10 joystickpressed 0 1', '10 gamepadpressed 0 a',
+      '13 joystickreleased 0 1', '13 gamepadreleased 0 a',
+      '20 joystickaxis 0 1 1', '20 gamepadaxis 0 leftx 1',
+      '20 joystickaxis 0 2 -1', '20 gamepadaxis 0 lefty -1',
+      '20 joystickaxis 0 5 1', '20 gamepadaxis 0 triggerleft 1',
+      '23 joystickaxis 0 1 0', '23 gamepadaxis 0 leftx 0',
+      '23 joystickaxis 0 2 0', '23 gamepadaxis 0 lefty 0',
+      '23 joystickaxis 0 5 -1', '23 gamepadaxis 0 triggerleft 0',
+      '24 joystickhat 0 1 u', '24 gamepadpressed 0 dpup',
+      '25 joystickhat 0 1 c', '25 gamepadreleased 0 dpup',
+      '26 joystickpressed 0 11', '26 gamepadpressed 0 guide',
+      '27 joystickreleased 0 11', '27 gamepadreleased 0 guide',
+      '30 joystickadded 1',
+      '38 joystickpressed 1 3', '38 gamepadpressed 1 x',
+      '40 joystickremoved 1',
+    }
+    for i = 1, math.max(#expected, #pad_events) do
+      check(pad_events[i] == expected[i], 'controller event ' .. i .. ': ' .. tostring(pad_events[i])
+        .. ', expected ' .. tostring(expected[i]))
+    end
+    for _, k in ipairs({ 'down', 'vib', 'vib_get', 'axes', 'hat', 'second', 'removed' }) do
+      check(pad_checks[k], 'controller state inside the callbacks: ' .. k)
+    end
+    check(table.concat(rumbles, ' ') == '0:128:255 0:0:0', 'setVibration and its duration: ' .. table.concat(rumbles, ' '))
+    local joys = love.joystick.getJoysticks()
+    local joy = joys[1]
+    check(#joys == 1 and love.joystick.getJoystickCount() == 1, 'getJoysticks after the second one left')
+    check(joy:isConnected() and joy:isGamepad() and joy:getName() == 'Xbox 360 Controller'
+      and #joy:getGUID() == 32 and joy:getID() == 1 and select(2, joy:getID()) == 1, 'Joystick identity')
+    check(joy:getAxisCount() == 6 and joy:getButtonCount() == 11 and joy:getHatCount() == 1
+      and joy:getAxis(1) == 0 and joy:getAxis(6) == -1 and joy:getHat(1) == 'c', 'Joystick raw layout')
+    check(joy:isVibrationSupported() and select('#', joy:getVibration()) == 2 and joy:getVibration() == 0,
+      'the vibration stopped')
+    check(not pcall(joy.getGamepadAxis, joy, 'nope') and not pcall(joy.isGamepadDown, joy, 'nope'),
+      'unknown gamepad names are errors')
+    check(select(1, joy:getGamepadMapping('a')) == 'button' and select(2, joy:getGamepadMapping('start')) == 8
+      and select(3, joy:getGamepadMapping('dpleft')) == 'l', 'getGamepadMapping')
+    check(love.keyboard.isDown('space', 'a') == false and love.keyboard.isScancodeDown('a') == false
+      and love.keyboard.getKeyFromScancode('a') == 'a' and love.keyboard.getScancodeFromKey('z') == 'z',
+      'love.keyboard: nothing is down')
     check(love.window.getTitle() == 'Minimal Game' and love.filesystem.getIdentity() == 'minimal_game',
       'title and identity')
     check(ctx == 'Minimal Game', 'l360.set_context')

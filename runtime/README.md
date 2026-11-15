@@ -17,7 +17,6 @@ their metadata ([../docs/SHADERS.md](../docs/SHADERS.md)). Still to do:
 
 - There is no built-in font: `newFont(size)` needs `default_font` in `game.lua`; without it text
   is measured roughly and not drawn.
-- No keyboard/pad action mapping yet (objective 4); the pad reaches the game as a LÖVE gamepad.
 - `love.thread` threads run as coroutines on the main thread, one turn per frame.
 - `love.filesystem.getDirectoryItems` does not list saves written in earlier runs.
 
@@ -36,6 +35,29 @@ Source comments are still partly in Spanish; they are translated to English as e
   `lua/save.lua`: saves with two slots per file.
 - `lua/l360_gfx_stub.lua`: the same `l360.gfx` API without drawing (PC tests and GPU fallback).
 - `third_party/stb/`: stb_image v2.30 and stb_truetype v1.26.
+
+## Controller
+
+The controller reaches the game exactly as an Xbox controller does in official LÖVE 11 on PC, so
+the same code runs on both. Nothing is turned into keys: `love.keyboard.isDown` is always false
+and `love.keypressed` never fires.
+
+- `love.joystick.getJoysticks` / `getJoystickCount`: one Joystick per connected port (up to 4), in
+  connection order. `getName` is `"Xbox 360 Controller"`, `isGamepad` is true.
+- Gamepad API: `getGamepadAxis` (`leftx lefty rightx righty` from -1 to 1 with down positive,
+  `triggerleft triggerright` from 0 to 1; no deadzone, that is the game's job as in LÖVE) and
+  `isGamepadDown` (`a b x y back guide start leftstick rightstick leftshoulder rightshoulder dpup
+  dpdown dpleft dpright`).
+- Raw API in SDL's XInput order: axes 1-6 = leftx, lefty, rightx, righty, left trigger, right
+  trigger (raw triggers rest at -1); buttons 1-11 = a, b, x, y, leftshoulder, rightshoulder, back,
+  start, leftstick, rightstick, guide; the d-pad is hat 1 (`getHat`).
+- `setVibration(left, right, duration)` (0 to 1, seconds), `getVibration`, `isVibrationSupported`.
+- Callbacks, fired once per frame before `love.update`: `joystickadded` / `joystickremoved` (the
+  controllers already connected at startup are added after `love.load`), `gamepadpressed` /
+  `gamepadreleased`, `gamepadaxis`, `joystickpressed` / `joystickreleased`, `joystickaxis`,
+  `joystickhat`.
+- Back held 3 s still leaves the game (handled in C); a short press is a normal `back`. `guide`
+  is reported only if XAM delivers the Guide button to the title.
 
 ## Implemented love.graphics functions
 

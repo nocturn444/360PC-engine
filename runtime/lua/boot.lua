@@ -18,7 +18,6 @@ local W, H = l360.width or 1280, l360.height or 720
 local DT = 1 / 30
 local gfx = l360.gfx
 local RT = l360.runtime_dir or "l360/"
-local input_config = l360.input_config or { deadzone = 0.2 }
 
 local function runtime_module(name)
   local src = assert(l360.read(RT .. name), "missing " .. RT .. name)
@@ -1050,8 +1049,17 @@ love.mouse = module("love.mouse", {
   setGrabbed = nop, setRelativeMode = nop, isDown = function() return false end,
   setPosition = nop, getSystemCursor = nop, setCursor = nop,
 })
-love.keyboard = module("love.keyboard", { isDown = function() return false end, setKeyRepeat = nop })
-local input = runtime_module("input.lua").new(love, l360, input_config)
+-- There is no keyboard on the console and the controller is not turned into keys: nothing is ever
+-- down and love.keypressed / keyreleased / textinput never fire.
+love.keyboard = module("love.keyboard", {
+  isDown = function() return false end, isScancodeDown = function() return false end,
+  getKeyFromScancode = function(scancode) return scancode end,
+  getScancodeFromKey = function(key) return key end,
+  setKeyRepeat = nop, hasKeyRepeat = function() return false end,
+  setTextInput = nop, hasTextInput = function() return false end,
+  hasScreenKeyboard = function() return false end,
+})
+local input = runtime_module("input.lua").new(love, l360)
 love.touch = module("love.touch", { getTouches = function() return {} end })
 love.window = module("love.window", {
   setMode = function() return true end, updateMode = function() return true end,
