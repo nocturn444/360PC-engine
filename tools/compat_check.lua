@@ -211,6 +211,21 @@ M.checks = {
 ---------------------------------------------------------------------------
 -- Wrapping
 ---------------------------------------------------------------------------
+-- LÖVE's own Lua code (boot.lua, wrap_*.lua) is loaded under chunk names like
+-- '=[love "wrap_Graphics.lua"]'. A call from there is LÖVE working inside one of its own
+-- functions (newShader asks getSupported, poll asks poll_i), not the game, so it is not counted.
+local getinfo = debug and debug.getinfo
+local function from_love(level)
+  if not getinfo then return false end
+  local info = getinfo(level + 1, 'S')
+  return info ~= nil and type(info.source) == 'string' and info.source:sub(1, 7) == '=[love '
+end
+
+-- Names LÖVE keeps for itself: "_shaderCodeToGLSL", "poll_i". Never the game's API.
+local function internal_name(k)
+  return k:sub(1, 1) == '_' or k:sub(-2) == '_i'
+end
+
 local function status_of(entry)
   if type(entry) == 'table' then return entry[1], entry[2] end
   return entry, nil
@@ -226,25 +241,25 @@ local function wrap(fn, name, entry, why)
   if status == nil then
     local text = 'not on the console (missing' .. (why and ': ' .. why or '') .. ')'
     wrapper = function(...)
-      if not s.used[name] then s.used[name] = true; s.used_count = s.used_count + 1; warn('missing', name, text) end
+      if not s.used[name] and not from_love(2) then s.used[name] = true; s.used_count = s.used_count + 1; warn('missing', name, text) end
       return fn(...)
     end
   elseif status == 'stub' and not QUIET[name] then
     local text = 'a stub on the console (' .. (note or 'does nothing') .. ')'
     wrapper = function(...)
-      if not s.used[name] then s.used[name] = true; s.used_count = s.used_count + 1; warn('stub', name, text) end
+      if not s.used[name] and not from_love(2) then s.used[name] = true; s.used_count = s.used_count + 1; warn('stub', name, text) end
       return fn(...)
     end
   elseif check then
     wrapper = function(...)
-      if not s.used[name] then s.used[name] = true; s.used_count = s.used_count + 1 end
+      if not s.used[name] and not from_love(2) then s.used[name] = true; s.used_count = s.used_count + 1 end
       local ok, text = pcall(check, ...)
       if ok and text then warn('limit', name, text) end
       return fn(...)
     end
   else
     wrapper = function(...)
-      if not s.used[name] then s.used[name] = true; s.used_count = s.used_count + 1 end
+      if not s.used[name] and not from_love(2) then s.used[name] = true; s.used_count = s.used_count + 1 end
       return fn(...)
     end
   end
@@ -255,7 +270,7 @@ end
 local function wrap_table(t, prefix, entries, why)
   local names = {}
   for k, v in pairs(t) do
-    if type(k) == 'string' and type(v) == 'function' and k:sub(1, 2) ~= '__' and not state.wrapped[v] then
+    if type(k) == 'string' and type(v) == 'function' and not internal_name(k) and not state.wrapped[v] then
       names[#names + 1] = k
     end
   end
