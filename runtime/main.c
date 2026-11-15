@@ -1,19 +1,19 @@
 /*
- * 360PC-Engine console runtime: a LOVE game as a .xex opened from Aurora (from Love360, tarea 05).
+ * 360PC-Engine console runtime: a LOVE game as a .xex opened from Aurora (from Love360, task 05).
  *
  * The game is the folder of the .xex (game:\): game.lua, conf.lua, main.lua and its assets. The
  * runtime's own Lua layer is in game:\l360\ (runtime/lua/ in the repository).
  *
- * LuaJIT 2.1 (interprete) + la tabla l360 que ve l360/boot.lua.
- * Fase 1: tiempo, registro, archivos y memoria de verdad. Fase 2 (tarea 07): l360.gfx es
- * l360_gfx.c sobre la GPU de xsdk, con los shaders de game:\shaders\; si no arranca (faltan los
- * shaders), sigue el stub en Lua de la fase 1 (l360_gfx_stub.lua) con la pantalla de texto. No hay
- * sonido. El mando, los archivos en trozos, el guardado y la salida estan en l360_sys.c (fase 4).
+ * LuaJIT 2.1 (interpreter) + the l360 table that l360/boot.lua sees.
+ * Phase 1: time, log, files and real memory. Phase 2 (task 07): l360.gfx is
+ * l360_gfx.c on xsdk's GPU, with the shaders in game:\shaders\; if it does not start (the shaders
+ * are missing), the Lua stub from phase 1 (l360_gfx_stub.lua) keeps the text screen. There is no
+ * sound. The controller, chunked files, saving and exit are in l360_sys.c (phase 4).
  *
- * Archivos: todo se lee de game:\ (la carpeta del .xex). El registro es game:\<nombre del
- * .xex>.log (lo escribe xsdk: default.log en la consola) y tambien se ve en pantalla, como la consola
- * de texto de libXenon. Back mantenido 3 s sale y abre Aurora (o vuelve al dashboard si no la
- * encuentra): un toque de Back lo usa el juego.
+ * Files: everything is read from game:\ (the .xex folder). The log is game:\<name of the
+ * .xex>.log (xsdk writes it: default.log on the console) and it is also shown on screen, like the
+ * text console of libXenon. Holding Back for 3 s exits and opens Aurora (or returns to the
+ * dashboard if it cannot find it): a single Back press is used by the game.
  */
 #include <malloc.h>
 #include <pthread.h>
@@ -51,9 +51,9 @@ enum {
 	BUFFERS = 2,
 	SWAP_INTERVAL = 1,
 	BEGIN_TIMEOUT_MS = 5000,
-	CON_LINES = 32,          /* lineas del registro en pantalla */
+	CON_LINES = 32,          /* lines of the log on screen */
 	CON_COLS = 120,
-	CON_REDRAW_MS = 100,     /* durante la carga, redibujar a lo sumo cada 100 ms */
+	CON_REDRAW_MS = 100,     /* during loading, redraw at most every 100 ms */
 };
 static const uint32_t CLEAR_ARGB = 0xFF101828;
 static const uint32_t TEXT_ARGB = 0xFFFFFFFF;
@@ -68,9 +68,9 @@ static double now_s(void)
 	return (double)(t.tv_sec - t_start.tv_sec) + (double)(t.tv_nsec - t_start.tv_nsec) / 1e9;
 }
 
-/* times(): el clock() de newlib lo usa (os.clock de LuaJIT) y xsdk no lo trae (su docs/GUIDE.md,
- * "Porting"). Va en este archivo y no en uno aparte: un .o puesto antes de main.c en el enlace hace
- * que elf2xex falle con "section .init overlaps the PE headers". */
+/* times(): newlib's clock() uses it (LuaJIT's os.clock) and xsdk does not provide it (its docs/GUIDE.md,
+ * "Porting"). It lives in this file and not in a separate one: an .o placed before main.c in the link
+ * makes elf2xex fail with "section .init overlaps the PE headers". */
 clock_t times(struct tms *buf)
 {
 	const clock_t ticks = (clock_t)(now_s() * CLOCKS_PER_SEC);
@@ -81,11 +81,11 @@ clock_t times(struct tms *buf)
 	return ticks;
 }
 
-/* ---------- pantalla de texto (el registro en pantalla) ---------- */
+/* ---------- text screen (the log on screen) ---------- */
 
-static int screen_on;                    /* 1 si la GPU y la pantalla abrieron */
-static int gfx_ok;                       /* 1 si l360_gfx.c arranco (si no, el stub en Lua) */
-static int gfx_active;                   /* desde start_render la pantalla es del juego (l360_gfx.c) */
+static int screen_on;                    /* 1 if the GPU and the screen opened */
+static int gfx_ok;                       /* 1 if l360_gfx.c started (if not, the Lua stub) */
+static int gfx_active;                   /* from start_render on, the screen belongs to the game (l360_gfx.c) */
 static uint32_t screen_w, screen_h;
 static char con[CON_LINES][CON_COLS];
 static int con_next, con_count;
@@ -133,22 +133,22 @@ static void screen_draw(void)
 	xsdk_gpu_resolve(address, screen_w, screen_h, CLEAR_ARGB);
 	xsdk_present_end();
 	con_drawn_at = now_s();
-	/* el texto cambio target, shaders, stream 0, slot 0 y constantes: l360_gfx.c los vuelve a poner */
+	/* the text changed target, shaders, stream 0, slot 0 and constants: l360_gfx.c sets them again */
 	if (gfx_ok)
 		l360_gfx_forget_state();
 }
 
-/* redibuja si paso CON_REDRAW_MS desde la ultima vez (para la carga, que no tiene frames) */
+/* redraws if CON_REDRAW_MS have passed since the last time (for loading, which has no frames) */
 static void screen_maybe_draw(void)
 {
-	/* durante el juego no: cortaria el frame que se esta armando */
+	/* not during the game: it would cut the frame being built */
 	if (gfx_active)
 		return;
 	if (con_drawn_at < 0 || now_s() - con_drawn_at >= CON_REDRAW_MS / 1000.0)
 		screen_draw();
 }
 
-/* copia una linea de pantalla, cortada a lo que entra (CON_COLS - 1 caracteres) */
+/* copies a screen line, cut to what fits (CON_COLS - 1 characters) */
 static void copy_line(char *dst, const char *s)
 {
 	size_t n = strlen(s);
@@ -163,8 +163,8 @@ static void set_status(const char *s)
 	copy_line(con_status, s);
 }
 
-/* agrega texto a la pantalla, una linea por cada '\n' (xsdk_text_draw saltaria de linea solo y
- * escribiria encima de las siguientes, como pasaba con los errores de Lua) */
+/* adds text to the screen, one line per '\n' (xsdk_text_draw would wrap lines on its own and
+ * write over the following ones, as happened with the Lua errors) */
 static void con_add(const char *s)
 {
 	for (;;) {
@@ -183,15 +183,15 @@ static void con_add(const char *s)
 	}
 }
 
-/* ---------- registro ---------- */
+/* ---------- log ---------- */
 
-/* ---------- registro corto (tarea 12, version publicada) ----------
- * Cada linea del registro se escribe en el pendrive. En la version publicada (compilada con
- * -DL360_PUBLICADO=ON, que define L360_REGISTRO_CORTO) solo van al .log: los errores, lo que falta,
- * los resumenes de cada 300 frames ([memory], [audio], [gfx] frame, [hitches]) y los [hitch]. Hasta
- * start_render van tambien las lineas de arranque (no las de cada archivo leido), para saber con que
- * se arranco. La pantalla de texto sigue mostrando todo. En game:\l360_gfx.txt, "registro_completo"
- * o "registro_corto" eligen otra cosa que la compilada. */
+/* ---------- short log (task 12, published version) ----------
+ * Each log line is written to the USB stick. In the published version (built with
+ * -DL360_PUBLICADO=ON, which defines L360_REGISTRO_CORTO) only these go to the .log: errors, what is
+ * missing, the summaries every 300 frames ([memory], [audio], [gfx] frame, [hitches]) and the [hitch]
+ * lines. Up to start_render the startup lines also go (not the ones for each file read), to know what
+ * it started with. The text screen still shows everything. In game:\l360_gfx.txt, "registro_completo"
+ * or "registro_corto" choose something other than the built-in setting. */
 #ifdef L360_REGISTRO_CORTO
 static int log_short = 1;
 #else
@@ -209,25 +209,25 @@ static int log_keep(const char *s)
 	return 0;
 }
 
-/* ---------- registro en un hilo aparte (tarea 12) ----------
- * En la consola el pendrive se frena cerca de 0,9 s de vez en cuando, y cada linea del registro se
- * escribia (NtWriteFile) desde el hilo principal: el juego esperaba (los tirones de ~900 ms del
- * registro del #48 venian casi todos despues de una linea escrita). Ahora las lineas van a una cola
- * en memoria y un hilo propio (LOG_HW_THREAD) las escribe con xsdk_log_write, que ya se cuida solo
- * entre hilos. El hilo principal nunca espera: si la cola se llena, la linea se pierde y despues se
- * anota cuantas. Antes de que arranque el hilo (y si no arranca) se escribe como antes.
- * l360_log_flush() espera a que se vacie (lo llama la salida a Aurora). */
+/* ---------- log on a separate thread (task 12) ----------
+ * On the console the USB stick sometimes stalls for about 0.9 s, and each log line was written
+ * (NtWriteFile) from the main thread, so the game waited (the ~900 ms hitches in the #48 log almost
+ * all came right after a written line). Now the lines go to an in-memory queue and their own thread
+ * (LOG_HW_THREAD) writes them with xsdk_log_write, which already takes care of threads on its own.
+ * The main thread never waits: if the queue is full, the line is lost and the count is noted later.
+ * Before the thread starts (or if it does not start), it is written as before.
+ * l360_log_flush() waits until it is empty (called on the exit to Aurora). */
 enum {
 	LOG_SLOTS = 256,                 /* lineas en cola: 128 KB */
-	LOG_LINE_CHARS = 512,            /* lo mismo que una linea de xsdk_log_write */
-	LOG_HW_THREAD = 3,               /* nucleo 1, con el audio y el guardado; nunca el 0 de Lua */
+	LOG_LINE_CHARS = 512,            /* same as a line of xsdk_log_write */
+	LOG_HW_THREAD = 3,               /* core 1, with audio and saving; never core 0 (Lua) */
 	LOG_STACK = 32 * 1024,
 	LOG_FLUSH_MS = 3000,
 };
 static char log_ring[LOG_SLOTS][LOG_LINE_CHARS];
-static unsigned log_head, log_tail;       /* el hilo escribe log_head; el principal llena log_tail */
-static int log_writing;                   /* 1 mientras el hilo escribe una linea fuera del lock */
-static unsigned long log_dropped;         /* lineas perdidas con la cola llena (bajo log_mu) */
+static unsigned log_head, log_tail;       /* the thread writes log_head; the main thread fills log_tail */
+static int log_writing;                   /* 1 while the thread writes a line outside the lock */
+static unsigned long log_dropped;         /* lines lost while the queue was full (under log_mu) */
 static int log_thread_on;
 static HANDLE log_thread;
 static pthread_mutex_t log_mu = PTHREAD_MUTEX_INITIALIZER;
@@ -307,30 +307,30 @@ static void logline(const char *s)
 	screen_maybe_draw();
 }
 
-/* al registro sin pasar por la pantalla (lecturas de archivos: son cientos) */
+/* to the log, without going through the screen (file reads: there are hundreds) */
 static void logline_quiet(const char *s)
 {
 	if (log_keep(s))
 		log_out(s);
 }
 
-/* Lo usa l360_sys.c (mando, salida, archivos en trozos y guardado) para escribir en el registro
- * que se ve en pantalla, sin tocar esta parte. */
+/* Used by l360_sys.c (controller, exit, chunked files and saving) to write to the log shown
+ * on screen, without touching this part. */
 void l360_log(const char *s)
 {
 	logline(s);
 }
 
-/* ---------- archivos ---------- */
+/* ---------- files ---------- */
 
 static int files_read;
 static double bytes_read, read_ms;
 
-/* Lee GAME_DIR<ruta> entero; NULL si no esta. */
+/* Reads all of GAME_DIR<path>; NULL if it is not there. */
 static char *read_game_file(const char *path, size_t *len)
 {
 	char name[320];
-	if (l360_sys_game_missing(path))    /* no esta en la lista de su carpeta: ni se abre */
+	if (l360_sys_game_missing(path))    /* not in its folder's listing: not even opened */
 		return NULL;
 	snprintf(name, sizeof(name), GAME_DIR "%s", path);
 	FILE *f = fopen(name, "rb");
@@ -352,7 +352,7 @@ static char *read_game_file(const char *path, size_t *len)
 	return buf;
 }
 
-/* ---------- funciones para Lua ---------- */
+/* ---------- functions for Lua ---------- */
 
 static int l_time(lua_State *L)
 {
@@ -366,7 +366,7 @@ static int l_log(lua_State *L)
 	return 0;
 }
 
-/* read(ruta): contenido de game:\<ruta>, o nil */
+/* read(path): contents of game:\<path>, or nil */
 static int l_read(lua_State *L)
 {
 	const char *path = luaL_checkstring(L, 1);
@@ -397,7 +397,7 @@ static int l_readstats(lua_State *L)
 {
 	int fetch_files = 0;
 	double fetch_bytes = 0, fetch_ms = 0;
-	l360_sys_readstats(&fetch_files, &fetch_bytes, &fetch_ms);   /* lo que bajo l360.fetch_* */
+	l360_sys_readstats(&fetch_files, &fetch_bytes, &fetch_ms);   /* what l360.fetch_* downloaded */
 	lua_newtable(L);
 	lua_pushnumber(L, files_read + fetch_files);
 	lua_setfield(L, -2, "files");
@@ -408,7 +408,7 @@ static int l_readstats(lua_State *L)
 	return 1;
 }
 
-/* heap(): KB usados y KB pedidos al sistema por malloc (newlib) */
+/* heap(): KB in use and KB requested from the system by malloc (newlib) */
 static int l_heap(lua_State *L)
 {
 	struct mallinfo mi = mallinfo();
@@ -417,21 +417,21 @@ static int l_heap(lua_State *L)
 	return 2;
 }
 
-/* ---------- estado del juego (registro y pantalla) ---------- */
+/* ---------- game state (log and screen) ---------- */
 
 static char crash_ctx[128];
 
 static int frames;
 
-/* ---------- tirones: los frames lentos, partidos en pedazos ----------
- * El bucle del boot (runtime/lua/boot.lua) hace por frame: poll_input, love.update, gfx.sync,
- * love.draw, present, la musica y wait_frame. Con las marcas de poll_input y wait_frame, mas las de
- * sync y present de l360_gfx.c, cada frame que tarda mas de TIRON_MS en llegar a wait_frame va al
- * registro con: update, espera de la GPU, draw, present y lo demas; la memoria de Lua al empezar y
- * al terminar; cuantas recolecciones de basura terminaron en el frame (un objeto con __gc que se
- * vuelve a crear en cada una); lo que se subio de texturas; y los draws. */
+/* ---------- hitches: slow frames, broken into pieces ----------
+ * The boot loop (runtime/lua/boot.lua) does per frame: poll_input, love.update, gfx.sync,
+ * love.draw, present, the music and wait_frame. With the marks of poll_input and wait_frame, plus
+ * those of sync and present in l360_gfx.c, every frame that takes more than TIRON_MS to reach
+ * wait_frame goes to the log with: update, GPU wait, draw, present and the rest; Lua memory at the
+ * start and at the end; how many garbage collections finished in the frame (an object with __gc that
+ * is created again each time); how much texture data was uploaded; and the draws. */
 #define TIRON_MS 40.0
-#define TIRON_MAX_POR_300 30            /* para no llenar el registro si todo va lento */
+#define TIRON_MAX_POR_300 30            /* so as not to fill the log if everything is slow */
 
 static double ms_now(void)
 {
@@ -458,7 +458,7 @@ static void gc_sentinel_new(lua_State *L)
 		lua_setfield(L, -2, "__gc");
 	}
 	lua_setmetatable(L, -2);
-	lua_pop(L, 1);                   /* sin referencias: la proxima recoleccion lo junta */
+	lua_pop(L, 1);                   /* no references: the next collection picks it up */
 }
 
 static struct {
@@ -469,7 +469,7 @@ static struct {
 } fr;
 static long tirones, tirones_logged, tirones_omitted, tiron_frames;
 static double tiron_worst;
-static int opt_gc_paso;                  /* "gc_paso" en game:\l360_gfx.txt (ver wait_frame) */
+static int opt_gc_paso;                  /* "gc_paso" in game:\l360_gfx.txt (see wait_frame) */
 static long gc_steps;
 
 static void frame_begin(lua_State *L)
@@ -498,7 +498,7 @@ static void frame_end(lua_State *L)
 		if (total > tiron_worst) tiron_worst = total;
 		if (tirones_logged < TIRON_MAX_POR_300) {
 			tirones_logged++;
-			/* las marcas de l360_gfx.c son de este frame solo si quedaron despues de poll_input */
+			/* the l360_gfx.c marks belong to this frame only if they were set after poll_input */
 			int ok = g->sync_at >= fr.at && g->sync_end_at >= g->sync_at && g->present_at >= g->sync_end_at &&
 				 g->present_end_at >= g->present_at && end >= g->present_end_at;
 			char parts[160];
@@ -536,18 +536,18 @@ static void frame_end(lua_State *L)
 	}
 }
 
-/* poll_input(): una vez por frame. El mando, el guardado y la salida (Back mantenido 3 s) estan en
- * l360_sys.c, fase 4. Es lo primero del frame: ahi empieza la medicion de tirones. */
+/* poll_input(): once per frame. The controller, saving and exit (Back held for 3 s) are in
+ * l360_sys.c, phase 4. It is the first thing in the frame: the hitch measurement starts there. */
 static int l_poll_input(lua_State *L)
 {
 	frame_begin(L);
 	l360_sys_poll();
-	l360_audio_update();             /* libera los buffers de audio que Lua solto y ya no suenan */
+	l360_audio_update();             /* frees the audio buffers Lua released that are no longer playing */
 	return 0;
 }
 
-/* wait_frame(hasta): espera hasta ese instante (segundos de l360.time). Dibuja la pantalla de
- * texto (xsdk_present_begin espera el vblank) y duerme lo que falte. */
+/* wait_frame(until): waits until that instant (seconds of l360.time). Draws the text screen
+ * (xsdk_present_begin waits for the vblank) and sleeps for what is left. */
 static int l_wait_frame(lua_State *L)
 {
 	double until = luaL_checknumber(L, 1);
@@ -559,8 +559,8 @@ static int l_wait_frame(lua_State *L)
 	set_status(status);
 	if (!gfx_active)
 		screen_draw();
-	/* gc_paso (prueba): pasos chicos del recolector en lo que sobra del frame, dejando 3 ms, para que
-	 * la recoleccion no se junte toda en un frame. Se corta al terminar una recoleccion. */
+	/* gc_paso (test): small collector steps in the spare time of the frame, leaving 3 ms, so that
+	 * collection does not all land in one frame. It stops when a collection finishes. */
 	while (opt_gc_paso && (until - now_s()) * 1000 > 3) {
 		gc_steps++;
 		if (lua_gc(L, LUA_GCSTEP, 0))
@@ -570,7 +570,7 @@ static int l_wait_frame(lua_State *L)
 		double left_ms = (until - now_s()) * 1000;
 		if (left_ms <= 0)
 			break;
-		/* xsdk duerme hasta 1 ms mas de lo pedido (docs/PITFALLS.md de xsdk) */
+		/* xsdk sleeps up to 1 ms longer than requested (docs/PITFALLS.md of xsdk) */
 		if (left_ms > 2)
 			xsdk_thread_sleep((uint32_t)(left_ms - 1));
 	}
@@ -595,14 +595,14 @@ static int l_start_render(lua_State *L)
 	return 0;
 }
 
-/* ---------- arranque ---------- */
+/* ---------- startup ---------- */
 
-/* Despues de un error o del final del boot: deja el registro en pantalla hasta que se apriete
- * Back mantenido 3 s (un toque de Back lo usa el juego). */
+/* After an error or the end of the boot: leaves the log on screen until Back is held for 3 s
+ * (a single Back press is used by the game). */
 static void wait_back_forever(void) __attribute__((noreturn));
 static void wait_back_forever(void)
 {
-	gfx_active = 0;                  /* vuelve la pantalla de texto con el registro */
+	gfx_active = 0;                  /* back to the text screen with the log */
 	char status[200];
 	snprintf(status, sizeof(status), "Hold Back 3 s: exit (log at %.120s)",
 		 xsdk_log_path() ? xsdk_log_path() : "?");
@@ -615,7 +615,7 @@ static void wait_back_forever(void)
 	}
 }
 
-/* ---------- graficos ---------- */
+/* ---------- graphics ---------- */
 
 static int l_gfxstats(lua_State *L)
 {
@@ -626,7 +626,7 @@ static int l_gfxstats(lua_State *L)
 	return 1;
 }
 
-/* Funciones de LOVE que el juego usa y l360_gfx.c no tiene: una linea por cada una, una sola vez */
+/* LOVE functions the game uses that l360_gfx.c does not have: one line for each, only once */
 static void missing_cb(const char *what)
 {
 	static char seen[4096];
@@ -641,7 +641,7 @@ static void missing_cb(const char *what)
 	logline(line);
 }
 
-/* Corre GAME_DIR<ruta>; 0 si anduvo, -1 (y el error al registro) si no. */
+/* Runs GAME_DIR<path>; 0 if it worked, -1 (and the error to the log) if not. */
 static int run_game_lua(lua_State *L, const char *path)
 {
 	char line[1024];
@@ -673,7 +673,7 @@ int main(void)
 	if (!NT_SUCCESS(splash))
 		xsdk_log_write("runtime: xsdk_splash_show failed: 0x%08X", (unsigned)splash);
 	screen_open();
-	log_thread_start();              /* desde aca el registro lo escribe otro hilo */
+	log_thread_start();              /* from here on, the log is written by another thread */
 	logline("360PC-Engine on xsdk");
 	if (screen_on) {
 		gfx_ok = l360_gfx_init(screen_w, screen_h, logline) == 0;
@@ -682,7 +682,7 @@ int main(void)
 		else
 			logline("[ERROR] graphics did not start: continuing with the text screen (l360.gfx stub)");
 	}
-	/* sonido (fase 3): sin el, el juego sigue mudo (boot.lua avisa que falta l360.audio) */
+	/* sound (phase 3): without it the game stays silent (boot.lua warns that l360.audio is missing) */
 	const int audio = l360_audio_init();
 	if (audio == 0) {
 		atexit(l360_audio_close);
@@ -693,7 +693,7 @@ int main(void)
 		logline(line);
 	}
 
-	/* gc_paso: la misma lista de interruptores de l360_gfx.c (game:\l360_gfx.txt) */
+	/* gc_paso: the same switch list as l360_gfx.c (game:\l360_gfx.txt) */
 	FILE *opts = fopen("game:/l360_gfx.txt", "rb");
 	if (opts) {
 		char buf[256] = { 0 };
@@ -733,7 +733,7 @@ int main(void)
 	lua_pushcfunction(L, l_poll_input);   lua_setfield(L, -2, "poll_input");
 	lua_pushcfunction(L, l_set_context);  lua_setfield(L, -2, "set_context");
 	lua_pushcfunction(L, l_start_render); lua_setfield(L, -2, "start_render");
-	l360_sys_register(L);                 /* mando, poll, fetch_*, upload y guardado (fase 4) */
+	l360_sys_register(L);                 /* controller, poll, fetch_*, upload and saving (phase 4) */
 	if (audio == 0) {
 		l360_audio_register(L);           lua_setfield(L, -2, "audio");
 	}
@@ -755,7 +755,7 @@ int main(void)
 		run_game_lua(L, RUNTIME_DIR "xsdk_numeros.lua");
 	}
 
-	/* l360.gfx y l360.gfxstats: si l360_gfx.c no arranco, el stub en Lua de la fase 1; despues el boot */
+	/* l360.gfx and l360.gfxstats: if l360_gfx.c did not start, the Lua stub from phase 1; then the boot */
 	if (!gfx_ok && run_game_lua(L, RUNTIME_DIR "l360_gfx_stub.lua"))
 		wait_back_forever();
 	logline("Loading the game...");

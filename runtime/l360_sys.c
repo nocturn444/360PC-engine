@@ -1,24 +1,24 @@
 /*
- * 360PC-Engine console runtime (from Love360): mando, archivos, guardado y salida (tarea 05 fase 4, tarea 08).
+ * 360PC-Engine console runtime (from Love360): controller, files, saving and exit (task 05 phase 4, task 08).
  *
- * Todo lo de la fase 4 vive aca para no chocar con la fase 2 (graficos), que trabaja en main.c:
- *   - l360.pad / l360.rumble sobre XamInputGetState / XamInputSetState, con la misma tabla y los
- *     mismos valores que libXenon (runtime/source/main.c, l_pad): sticks de -32768 a 32767,
- *     gatillos de 0 a 255, botones 0 o 1.
- *   - l360.poll / l360.poll_input: no hay red; poll_input (en main.c) llama a l360_sys_poll(), que
- *     lee el mando una vez por frame y mira la salida.
- *   - Salida: Back mantenido 3 s llama a quit_to_aurora; un toque de Back sigue siendo de Balatro.
- *     (Back + Start no: es el atajo de captura de pantalla de la consola y el juego no lo recibe.)
- *   - l360.fetch_start / fetch_step: los trozos de musica. Aca no hay red: el archivo se lee
- *     entero de game:\ en un hilo aparte y fetch_step lo devuelve cuando termino.
- *   - l360.save_dir / save_read / save_write: game:\save\ (archivos comunes), como pide la tarea.
- *   - l360.upload: escribe game:\<nombre> (en libXenon subia por TFTP). upload_log no hace falta:
- *     xsdk escribe el registro linea por linea con NtWriteFile, sin buffer que vaciar.
+ * Everything from phase 4 lives here so it does not clash with phase 2 (graphics), which works in main.c:
+ *   - l360.pad / l360.rumble on XamInputGetState / XamInputSetState, with the same table and the
+ *     same values as libXenon (runtime/source/main.c, l_pad): sticks from -32768 to 32767,
+ *     triggers from 0 to 255, buttons 0 or 1.
+ *   - l360.poll / l360.poll_input: there is no network; poll_input (in main.c) calls l360_sys_poll(), which
+ *     reads the controller once per frame and checks for exit.
+ *   - Exit: holding Back for 3 s calls quit_to_aurora; a short Back press still goes to the game.
+ *     (Back + Start does not: it is the console's screenshot shortcut and the game does not receive it.)
+ *   - l360.fetch_start / fetch_step: the music chunks. There is no network here: the file is read
+ *     whole from game:\ on a separate thread, and fetch_step returns it when done.
+ *   - l360.save_dir / save_read / save_write: game:\save\ (regular files), as the task asks.
+ *   - l360.upload: writes game:\<name> (on libXenon it uploaded over TFTP). upload_log is not needed:
+ *     xsdk writes the log line by line with NtWriteFile, with no buffer to flush.
  *
- * El signo del eje Y: XAM entrega los sticks como el reporte HID de la 360, que es lo mismo que
- * entrega libXenon (libxenon/drivers/usb/usbctrl.c copia los mismos dos bytes con signo: arriba
- * positivo). Por eso se pasan tal cual; el que cambia el signo para LOVE es input.lua
- * (linea 20: "XInput: arriba positivo; LOVE: abajo positivo"), que no se toca.
+ * The sign of the Y axis: XAM delivers the sticks as the 360's HID report, which is the same thing
+ * libXenon delivers (libxenon/drivers/usb/usbctrl.c copies the same two signed bytes: up is
+ * positive). That is why they are passed through as they are; the one that flips the sign for LOVE is
+ * input.lua (line 20: "XInput: arriba positivo; LOVE: abajo positivo"), which is not changed.
  */
 #include <dirent.h>
 #include <errno.h>
@@ -46,13 +46,13 @@
 #define SAVE_DIR_DEFAULT "save"
 
 enum {
-	PORTS = 4,               /* mandos 0 a 3 de XAM */
-	EXIT_HOLD_MS = 3000,     /* Back mantenido, para salir */
-	NAME_MAX_CHARS = 80,     /* igual que libXenon: l360.save_read/save_write */
+	PORTS = 4,               /* XAM controllers 0 to 3 */
+	EXIT_HOLD_MS = 3000,     /* Back held, to exit */
+	NAME_MAX_CHARS = 80,     /* same as libXenon: l360.save_read/save_write */
 	SAVE_DIR_NAME_MAX = 32,  /* the save folder's name (l360.save_set_dir) */
 };
 
-/* Segundos de reloj monotono (para no depender de l360.time, que lo lleva main.c). */
+/* Seconds of the monotonic clock (so as not to depend on l360.time, which main.c keeps). */
 static double now_s(void)
 {
 	struct timespec t;
@@ -60,15 +60,15 @@ static double now_s(void)
 	return (double)t.tv_sec + (double)t.tv_nsec / 1e9;
 }
 
-/* ---------- mando ---------- */
+/* ---------- controller ---------- */
 
-static INPUT_STATE pads[PORTS];   /* ultimo estado leido por l360_sys_poll */
-static int pad_ok[PORTS];         /* 1 = ese puerto tiene mando (l360.pad devuelve la tabla) */
-static int pad_seen[PORTS] = { -1, -1, -1, -1 };   /* para anotar conexiones y desconexiones una vez */
+static INPUT_STATE pads[PORTS];   /* last state read by l360_sys_poll */
+static int pad_ok[PORTS];         /* 1 = that port has a controller (l360.pad returns the table) */
+static int pad_seen[PORTS] = { -1, -1, -1, -1 };   /* to log connections and disconnections once */
 
-/* Lee los cuatro puertos. Igual que libXenon: un error pasajero conserva el ultimo estado (si no,
- * un parpadeo del USB cortaria la vibracion y los botones a mitad de partida); solo "no hay mando
- * conectado" (ERROR_DEVICE_NOT_CONNECTED) da nil en l360.pad. */
+/* Reads the four ports. As in libXenon: a passing error keeps the last state (otherwise a USB
+ * glitch would cut the rumble and the buttons in the middle of a run); only "no controller
+ * connected" (ERROR_DEVICE_NOT_CONNECTED) gives nil in l360.pad. */
 static void sample_pads(void)
 {
 	for (int port = 0; port < PORTS; port++) {
@@ -92,7 +92,7 @@ static void sample_pads(void)
 	}
 }
 
-/* pad(puerto): la misma tabla que libXenon, o nil si ese puerto no tiene mando. */
+/* pad(port): the same table as libXenon, or nil if that port has no controller. */
 static int l_pad(lua_State *L)
 {
 	const int port = (int)luaL_optinteger(L, 1, 0);
@@ -126,13 +126,13 @@ static int l_pad(lua_State *L)
 	PAD_FIELD("right", (buttons & INPUT_GAMEPAD_DPAD_RIGHT) != 0);
 	PAD_FIELD("lt", g->left_trigger);
 	PAD_FIELD("rt", g->right_trigger);
-	/* La Guia la maneja XAM y probablemente no llegue al titulo; si llega, se informa. */
+	/* The Guide is handled by XAM and probably does not reach the title; if it does, it is logged. */
 	PAD_FIELD("logo", (buttons & INPUT_GAMEPAD_GUIDE) != 0);
 #undef PAD_FIELD
 	return 1;
 }
 
-/* Los dos motores apagados: xsdk pide dejarlos en cero antes de terminar (docs/GUIDE.md). */
+/* Both motors off: xsdk asks for them to be set to zero before exiting (docs/GUIDE.md). */
 static void rumble_stop(void)
 {
 	const INPUT_VIBRATION off = { 0, 0 };
@@ -150,11 +150,11 @@ static int motor_speed(int v)
 	return v;
 }
 
-static int rumble_failed[PORTS];   /* 1 = ya se anoto que XAM no toma la vibracion en ese puerto */
+static int rumble_failed[PORTS];   /* 1 = already logged that XAM does not accept the rumble on that port */
 
-/* rumble(puerto, izquierdo, derecho): 0-255; true si habia mando (como libXenon, que no mira el
- * resultado). Si XAM no lo toma se anota una vez en el registro y se sigue: sin vibracion no se
- * pierde la partida. */
+/* rumble(port, left, right): 0-255; true if there was a controller (as libXenon does, which does not
+ * check the result). If XAM does not take it, it is logged once in the log and it carries on: without
+ * rumble the run is not lost. */
 static int l_rumble(lua_State *L)
 {
 	const int port = (int)luaL_checkinteger(L, 1);
@@ -164,7 +164,7 @@ static int l_rumble(lua_State *L)
 		lua_pushboolean(L, 0);
 		return 1;
 	}
-	/* XAM toma la velocidad de cada motor de 0 a 65535; Lua manda 0-255 como en libXenon */
+	/* XAM takes each motor's speed from 0 to 65535; Lua sends 0-255, as in libXenon */
 	const INPUT_VIBRATION vibration = { (uint16_t)(left * 257), (uint16_t)(right * 257) };
 	const uint32_t r = XamInputSetState((uint32_t)port, 0, &vibration);
 	if (r != ERROR_SUCCESS && !rumble_failed[port]) {
@@ -178,10 +178,10 @@ static int l_rumble(lua_State *L)
 	return 1;
 }
 
-/* ---------- salida ---------- */
+/* ---------- exit ---------- */
 
-/* Donde buscar Aurora al salir: la ruta de game:\lanzador_aurora.txt (una linea), si esta, y
- * despues las de siempre. Igual que en runtime/ y en herramientas/lanzador_aurora. */
+/* Where to look for Aurora on exit: the path in game:\lanzador_aurora.txt (one line), if it is there,
+ * and then the usual ones. Same as in runtime/ and in herramientas/lanzador_aurora. */
 static const char *const AURORA[] = {
 	"usb:\\Apps\\Aurora\\Aurora.xex",
 	"usb1:\\Apps\\Aurora\\Aurora.xex",
@@ -200,24 +200,24 @@ static void launch_if_there(const char *path)
 	}
 	snprintf(line, sizeof(line), "exit: launching %s", path);
 	l360_log(line);
-	l360_log_flush();                /* el registro hasta aca, antes de irse */
-	/* si anda no vuelve: termina el titulo como exit y XAM abre el otro .xex */
+	l360_log_flush();                /* the log up to here, before leaving */
+	/* if it works, it does not return: the title ends as an exit and XAM opens the other .xex */
 	const int r = xsdk_launch(path, NULL, 0);
 	snprintf(line, sizeof(line), "exit: could not launch %s (%d)", path, r);
 	l360_log(line);
 }
 
-/* Sale de Love360 y abre Aurora; si no la encuentra, vuelve al dashboard. Se llama solo cuando el
- * juego leyo Back mantenido 3 s: docs/PITFALLS.md de xsdk ("Ending under the Guide") pide terminar con
- * un boton que lea el titulo (XAM no le pasa Back con la Guia abierta), nunca solo. Por Xbox Home no
- * corre atexit, asi que aca no hay trabajo de salida que hacer: apagar la vibracion y abrir lo
- * siguiente. */
+/* Leaves Love360 and opens Aurora; if it cannot find it, returns to the dashboard. It is called only
+ * when the game read Back held for 3 s: docs/PITFALLS.md of xsdk ("Ending under the Guide") asks to exit
+ * with a button that the title reads (XAM does not pass Back with the Guide open), never on its own.
+ * Through Xbox Home atexit does not run, so there is no exit work to do here: turn off the rumble and
+ * open the next one. */
 static void quit_to_aurora(void) __attribute__((noreturn));
 static void quit_to_aurora(void)
 {
 	rumble_stop();
-	l360_sys_save_flush();           /* lo que quedo en la cola de guardado, antes de irse */
-	l360_audio_close();              /* xsdk_audio_close antes de abrir otro .xex (fase 3) */
+	l360_sys_save_flush();           /* what is left in the save queue, before leaving */
+	l360_audio_close();              /* xsdk_audio_close before opening another .xex (phase 3) */
 	char path[260] = { 0 };
 	FILE *f = fopen("game:/lanzador_aurora.txt", "r");
 	if (f) {
@@ -235,9 +235,9 @@ static void quit_to_aurora(void)
 	exit(0);
 }
 
-/* Back mantenido 3 s en cualquier mando sale. Un toque de Back llega a Balatro como siempre (en
- * esos 3 s tambien, como un Back mas). Back + Start no sirve: la consola lo toma para la captura de
- * pantalla y el juego nunca lo ve. */
+/* Back held for 3 s on any controller exits. A short Back press reaches the game as usual (during
+ * those 3 s too, as just another Back). Back + Start does not work: the console takes it for the
+ * screenshot and the game never sees it. */
 static double exit_since = -1;
 
 static void check_exit(void)
@@ -264,12 +264,12 @@ static void check_exit(void)
 	quit_to_aurora();
 }
 
-/* ---------- archivos ---------- */
+/* ---------- files ---------- */
 
 static int fetch_files;
 static double fetch_bytes, fetch_ms;
 
-/* Lee un archivo entero; NULL si no esta o si no se pudo leer. */
+/* Reads a whole file; NULL if it is not there or could not be read. */
 static char *read_whole(const char *path, size_t *len)
 {
 	FILE *f = fopen(path, "rb");
@@ -291,20 +291,20 @@ static char *read_whole(const char *path, size_t *len)
 	return buf;
 }
 
-/* ---------- lista de lo que hay en game:\ (tarea 12, tirones) ----------
- * En la consola, abrir un archivo que no esta en el pendrive tardo hasta 872 ms
- * ("no esta resources/sounds/ambientFire3.idx", justo antes de un tiron de 939 ms): el boot busca el
- * .idx de cada sonido la primera vez que suena, y casi ninguno tiene. Cada carpeta se lista una sola
- * vez (opendir/readdir de xsdk; resources/sounds ya al arrancar, las demas la primera vez que se lee
- * algo de ellas) y lo que no esta en la lista no se intenta abrir. Los nombres se comparan sin
- * mayusculas, como la FAT del pendrive. Si una carpeta no se pudo listar entera, de esa carpeta se
- * sigue abriendo todo (nunca se da por faltante algo que podria estar). "sin_lista" en
- * game:\l360_gfx.txt la apaga. */
+/* ---------- list of what is in game:\ (task 12, hitches) ----------
+ * On the console, opening a file that was not on the USB stick took up to 872 ms
+ * ("resources/sounds/ambientFire3.idx" is not there, just before a 939 ms hitch): the boot looks for the
+ * .idx of each sound the first time it plays, and almost none of them exist. Each folder is listed
+ * only once (xsdk's opendir/readdir; resources/sounds at startup, the others the first time something
+ * is read from them), and what is not in the list is not opened. Names are compared without case,
+ * like the USB stick's FAT. If a folder could not be listed in full, everything in it is still opened
+ * (something that might exist is never treated as missing). "sin_lista" in game:\l360_gfx.txt turns
+ * it off. */
 enum { LIST_DIRS = 48, LIST_DIR_CHARS = 160 };
 
 typedef struct {
-	char dir[LIST_DIR_CHARS];   /* en minusculas, sin barra al final; "" = game:\ */
-	char **names;               /* en minusculas y ordenados; NULL si no se pudo listar */
+	char dir[LIST_DIR_CHARS];   /* lowercase, no trailing slash; "" = game:\ */
+	char **names;               /* lowercase and sorted; NULL if it could not be listed */
 	int count;
 } dirlist_t;
 
@@ -330,7 +330,7 @@ static int cmp_names(const void *a, const void *b)
 
 static double now_ms_sys(void) { return now_s() * 1000.0; }
 
-/* Lista game:\<dir> (dir ya en minusculas) y la deja en lists[]; NULL si no hay lugar. */
+/* Lists game:\<dir> (dir already lowercase) and stores it in lists[]; NULL if there is no room. */
 static dirlist_t *list_add(const char *dir)
 {
 	if (list_count >= LIST_DIRS)
@@ -389,7 +389,7 @@ static dirlist_t *list_add(const char *dir)
 	}
 	if (count > 1)
 		qsort(names, (size_t)count, sizeof(*names), cmp_names);
-	lists[slot].names = names ? names : malloc(sizeof(*names));   /* carpeta vacia: lista vacia, no "sin lista" */
+	lists[slot].names = names ? names : malloc(sizeof(*names));   /* empty folder: empty list, not "no list" */
 	lists[slot].count = count;
 	snprintf(line, sizeof(line), "  [files] %s: %d files, listed in %.1f ms", path, count, now_ms_sys() - t0);
 	l360_log(line);
@@ -448,34 +448,34 @@ int l360_sys_game_missing(const char *path)
 	return bsearch(&name, l->names, (size_t)l->count, sizeof(*l->names), cmp_names) == NULL;
 }
 
-/* ---------- musica en trozos (l360.fetch_start / l360.fetch_step) ---------- */
+/* ---------- music in chunks (l360.fetch_start / l360.fetch_step) ---------- */
 
-/* Una descarga a la vez, como en libXenon. El trozo se lee en un hilo aparte (FETCH_HW_THREAD):
- * leerlo en fetch_start frenaba el hilo principal, y el boot lo pide despues de present, con lo que
- * los primeros frames (SPLASH, los trozos 0 de todas las pistas) duraban 60-90 ms ("resto" de 60-70
- * ms en el [hitch], tarea 12), y un frenazo del pendrive en medio del juego seria un tiron de casi
- * un segundo. fetch_step espera a lo sumo los ms que le dan y devuelve "pendiente" si no termino.
- * Un archivo que no esta se avisa en fetch_step (nil y el motivo), no en fetch_start, como con
- * libXenon. La lista de la carpeta (l360_sys_game_missing) se mira en fetch_start, en el hilo
- * principal: el hilo de lectura no toca el registro, la lista ni Lua. Si el hilo no arranca, se
- * lee en fetch_start como antes. */
+/* One download at a time, as in libXenon. The chunk is read on a separate thread (FETCH_HW_THREAD):
+ * reading it in fetch_start stalled the main thread, and the boot asks for it after present, so the
+ * first frames (SPLASH, chunk 0 of every track) took 60-90 ms (the "rest" of 60-70 ms in the [hitch],
+ * task 12), and a USB stall in the middle of the game would be a hitch of almost a second.
+ * fetch_step waits at most the ms it is given and returns "pendiente" if it has not finished.
+ * A missing file is reported in fetch_step (nil and the reason), not in fetch_start, as with libXenon.
+ * The folder listing (l360_sys_game_missing) is checked in fetch_start, on the main thread: the reader
+ * thread does not touch the log, the listing or Lua. If the thread does not start, it is read in
+ * fetch_start as before. */
 enum { FETCH_HW_THREAD = 3, FETCH_STACK = 32 * 1024 };
 
 static struct {
 	int active;
-	int id;                 /* id que vale ahora; 0 = no hay ninguna descarga en curso */
-	char name[200];         /* la ruta pedida, para el registro */
-	char path[460];         /* game:\<ruta>, para el hilo */
-	char error[260];        /* el motivo, si no se pudo leer */
+	int id;                 /* the id that is valid now; 0 = no download in progress */
+	char name[200];         /* the requested path, for the log */
+	char path[460];         /* game:\<path>, for the thread */
+	char error[260];        /* the reason, if it could not be read */
 	char *data;
 	size_t len;
 	int failed;
-	int pending;            /* 1 mientras el hilo lo lee (bajo fetch_mu) */
-	double ms;              /* lo que tardo leerlo, para readstats */
+	int pending;            /* 1 while the thread reads it (under fetch_mu) */
+	double ms;              /* how long the read took, for readstats */
 } fetch;
 
 static int fetch_last_id;
-static int fetch_thread_state;          /* 0 sin arrancar, 1 andando, -1 no arranco: se lee en el momento */
+static int fetch_thread_state;          /* 0 not started, 1 running, -1 did not start: it is read right away */
 static HANDLE fetch_thread;
 static pthread_mutex_t fetch_mu = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t fetch_cv = PTHREAD_COND_INITIALIZER;
@@ -489,7 +489,7 @@ static uint32_t fetch_worker(void *context)
 		while (fetch.pending != 1)
 			pthread_cond_wait(&fetch_cv, &fetch_mu);
 		memcpy(path, fetch.path, sizeof(path));
-		fetch.pending = 2;               /* leyendo: fetch_start no lo vuelve a pedir */
+		fetch.pending = 2;               /* reading: fetch_start does not request it again */
 		pthread_mutex_unlock(&fetch_mu);
 
 		const double t0 = now_s();
@@ -531,7 +531,7 @@ static int l_fetch_start(lua_State *L)
 		lua_pushstring(L, "a download is already running");
 		return 2;
 	}
-	pthread_mutex_lock(&fetch_mu);       /* el hilo esta quieto (pending 0): el lock es por prolijidad */
+	pthread_mutex_lock(&fetch_mu);       /* the thread is idle (pending 0): the lock is for tidiness */
 	free(fetch.data);
 	memset(&fetch, 0, sizeof fetch);
 	pthread_mutex_unlock(&fetch_mu);
@@ -559,8 +559,8 @@ static int l_fetch_start(lua_State *L)
 	return 1;
 }
 
-/* fetch_step(id, ms): "pendiente", los datos, o nil y el motivo. Espera a lo sumo ms (0 a 1000) a
- * que el hilo termine de leer. */
+/* fetch_step(id, ms): "pendiente", the data, or nil and the reason. Waits at most ms (0 to 1000)
+ * for the thread to finish reading. */
 static int l_fetch_step(lua_State *L)
 {
 	const lua_Number id = luaL_checknumber(L, 1);
@@ -588,7 +588,7 @@ static int l_fetch_step(lua_State *L)
 		const struct timespec one_ms = { 0, 1000 * 1000 };
 		nanosleep(&one_ms, NULL);
 	}
-	fetch.active = 0;               /* el id ya no sirve, como en libXenon */
+	fetch.active = 0;               /* the id is no longer valid, as in libXenon */
 	fetch.id = 0;
 	char line[460];
 	if (fetch.failed) {
@@ -621,11 +621,11 @@ void l360_sys_readstats(int *files, double *bytes, double *ms)
 		*ms = fetch_ms;
 }
 
-/* ---------- guardado (game:\save\, archivos comunes) ---------- */
+/* ---------- saving (game:\save\, regular files) ---------- */
 
-/* Carpeta de guardado: game:\save\. Se crea la primera vez que se usa, si no esta (game: es la
- * carpeta del .xex). Lo que antes caia a "game:\l360save_*" por no haber guard_dir ahora
- * queda ordenado en su carpeta; save.lua no cambia (ya hace las dos ranuras). */
+/* Save folder: game:\save\. It is created the first time it is used, if it is missing (game: is the
+ * .xex folder). What used to fall into "game:\l360save_*" because there was no guard_dir is now
+ * kept in its own folder; save.lua does not change (it already uses the two slots). */
 static char save_dir_path[48] = GAME_DIR SAVE_DIR_DEFAULT "/";   /* ends in '/' */
 static int save_dir_used;                /* 1 once the folder was used: its name can no longer change */
 
@@ -637,7 +637,7 @@ static const char *save_dir(void)
 		bare[strlen(bare) - 1] = 0;          /* without the final '/' */
 		struct stat st;
 		if (stat(bare, &st) != 0)
-			mkdir(bare, 0777);   /* la primera vez; si falla, save_write devuelve false */
+			mkdir(bare, 0777);   /* the first time; if it fails, save_write returns false */
 		save_dir_used = 1;
 	}
 	return save_dir_path;
@@ -686,7 +686,7 @@ static int l_save_set_dir(lua_State *L)
 	return 1;
 }
 
-/* Nombre plano (letras, numeros, _ . -) de hasta 80 caracteres -> ruta completa; -1 si no sirve. */
+/* Flat name (letters, digits, _ . -) of up to 80 characters -> full path; -1 if it is not valid. */
 static int save_path(char *out, size_t n, const char *name)
 {
 	if (!name || !*name || strlen(name) > NAME_MAX_CHARS)
@@ -705,23 +705,23 @@ static int l_save_dir(lua_State *L)
 	return 1;
 }
 
-/* ---------- guardado en un hilo aparte (tarea 12, tirones) ----------
- * Balatro guarda la partida en medio del juego (save_run) y escribir en el pendrive frenaba el frame.
- * l360.save_write copia los datos, los deja en una cola y vuelve enseguida con true; un hilo propio
- * (SAVE_HW_THREAD, lejos del hilo 0 que corre Lua) los escribe en orden. Lo que ve Lua no cambia:
- *  - save_read de un archivo que todavia esta en la cola devuelve lo que se mando a escribir.
- *  - Si un archivo esta dos veces en la cola sin empezar, se escribe solo el ultimo.
- *  - Las dos ranuras de save.lua (.a y .b, por turno) siguen cuidando que un corte de luz a
- *    mitad de una escritura deje la otra entera: el hilo escribe una ranura por vez, en orden.
- *  - Un error al escribir sale en el registro desde el hilo principal (l360_sys_poll), no desde el
- *    hilo de escritura, que no toca el registro ni Lua.
- *  - Antes de salir a Aurora se espera a que la cola se vacie (SAVE_FLUSH_MS como mucho).
- *  - Si el hilo no arranca o no hay memoria para la copia, se escribe como antes, en el momento.
- * "guardado_directo" en game:\l360_gfx.txt lo apaga (todo como antes). */
+/* ---------- saving on a separate thread (task 12, hitches) ----------
+ * The game saves the run in the middle of play (save_run), and writing to the USB stick stalled the frame.
+ * l360.save_write copies the data, puts it in a queue and returns true right away; a dedicated thread
+ * (SAVE_HW_THREAD, away from thread 0 that runs Lua) writes them in order. What Lua sees does not change:
+ *  - save_read of a file still in the queue returns what was sent to be written.
+ *  - If a file is in the queue twice before it starts, only the last one is written.
+ *  - save.lua's two slots (.a and .b, alternating) still make sure that a power cut in the middle of
+ *    a write leaves the other one intact: the thread writes one slot at a time, in order.
+ *  - A write error is logged from the main thread (l360_sys_poll), not from the writer thread,
+ *    which does not touch the log or Lua.
+ *  - Before leaving for Aurora it waits for the queue to empty (SAVE_FLUSH_MS at most).
+ *  - If the thread does not start or there is no memory for the copy, it is written as before, right away.
+ * "guardado_directo" in game:\l360_gfx.txt turns it off (everything as before). */
 enum {
-	SAVE_HW_THREAD = 3,               /* nucleo 1, con el mezclador de audio (2); no el 0 de Lua */
+	SAVE_HW_THREAD = 3,               /* core 1, with the audio mixer (2); not core 0 (Lua) */
 	SAVE_STACK = 64 * 1024,
-	SAVE_QUEUE_MAX = 16 * 1024 * 1024,   /* mas que esto en cola: save_write espera (nunca paso) */
+	SAVE_QUEUE_MAX = 16 * 1024 * 1024,   /* above this in the queue, save_write waits (it never drops data) */
 	SAVE_FLUSH_MS = 5000,
 };
 
@@ -730,19 +730,19 @@ typedef struct save_job {
 	char path[200];
 	char *data;
 	size_t len;
-	double queued_at;                 /* now_s() al encolar */
+	double queued_at;                 /* now_s() when queued */
 } save_job_t;
 
 static pthread_mutex_t save_mu = PTHREAD_MUTEX_INITIALIZER;
-static pthread_cond_t save_cv = PTHREAD_COND_INITIALIZER;       /* hay trabajo */
-static pthread_cond_t save_done_cv = PTHREAD_COND_INITIALIZER;  /* termino uno */
-static save_job_t *save_head, *save_tail;   /* sin empezar, en orden */
-static save_job_t *save_busy;               /* el que se esta escribiendo (lo lee save_read) */
+static pthread_cond_t save_cv = PTHREAD_COND_INITIALIZER;       /* there is work */
+static pthread_cond_t save_done_cv = PTHREAD_COND_INITIALIZER;  /* one finished */
+static save_job_t *save_head, *save_tail;   /* not started, in order */
+static save_job_t *save_busy;               /* the one being written (save_read reads it) */
 static size_t save_queued_bytes;
-static int save_thread_state;               /* 0 sin arrancar, 1 andando, -1 no arranco: directo */
-static int save_direct;                     /* "guardado_directo" en l360_gfx.txt */
+static int save_thread_state;               /* 0 not started, 1 running, -1 did not start: direct */
+static int save_direct;                     /* "guardado_directo" in l360_gfx.txt */
 static HANDLE save_thread;
-/* Lo que el hilo deja para que el principal lo anote (bajo save_mu) */
+/* What the thread leaves for the main thread to log (under save_mu) */
 static char save_note[8][300];
 static int save_notes;
 
@@ -752,7 +752,7 @@ static int write_file(const char *path, const char *data, size_t len)
 	FILE *f = fopen(path, "wb");
 	if (f) {
 		ok = fwrite(data, 1, len, f) == len;
-		if (fclose(f))          /* aca tambien hay que cerrar bien: la FAT se escribe al cerrar */
+		if (fclose(f))          /* here too it has to close properly: FAT is written on close */
 			ok = 0;
 	}
 	return ok;
@@ -809,7 +809,7 @@ static int save_thread_start(void)
 	return save_thread_state > 0;
 }
 
-/* Encola una copia de data para path. 0 si no se pudo (sin hilo o sin memoria): el que llama escribe. */
+/* Queues a copy of data for path. 0 if it could not (no thread or no memory): the caller writes it. */
 static int save_enqueue(const char *path, const char *data, size_t len)
 {
 	if (save_direct || !save_thread_start())
@@ -829,7 +829,7 @@ static int save_enqueue(const char *path, const char *data, size_t len)
 	pthread_mutex_lock(&save_mu);
 	while (save_queued_bytes > SAVE_QUEUE_MAX)
 		pthread_cond_wait(&save_done_cv, &save_mu);
-	/* el mismo archivo sin empezar: se reemplazan sus datos (se escribe solo el ultimo) */
+	/* same file, not started yet: its data is replaced (only the last one is written) */
 	for (save_job_t *j = save_head; j; j = j->next) {
 		if (!strcmp(j->path, path)) {
 			save_queued_bytes -= j->len;
@@ -853,7 +853,7 @@ static int save_enqueue(const char *path, const char *data, size_t len)
 	return 1;
 }
 
-/* Si path esta en la cola (o escribiendose), lo empuja a Lua y da 1: lo ultimo que se mando gana. */
+/* If path is in the queue (or being written), it pushes it to Lua and returns 1: the last one sent wins. */
 static int save_push_queued(lua_State *L, const char *path)
 {
 	if (save_thread_state <= 0)
@@ -874,7 +874,7 @@ static int save_push_queued(lua_State *L, const char *path)
 	return found;
 }
 
-/* Lo que dejo el hilo de escritura, al registro (desde el hilo principal, una vez por frame). */
+/* What the writer thread left, for the log (from the main thread, once per frame). */
 static void save_log_notes(void)
 {
 	if (save_thread_state <= 0)
@@ -1026,9 +1026,9 @@ static int l_quit(lua_State *L)
 	quit_to_aurora();
 }
 
-/* ---------- registro y archivos en game:\ ---------- */
+/* ---------- log and files in game:\ ---------- */
 
-/* upload(nombre, datos): en libXenon subia a la PC por TFTP; aca escribe game:\<nombre>. */
+/* upload(name, data): on libXenon it uploaded to the PC over TFTP; here it writes game:\<name>. */
 static int l_upload(lua_State *L)
 {
 	size_t len;
@@ -1052,26 +1052,26 @@ static int l_upload(lua_State *L)
 	return 1;
 }
 
-/* El registro de xsdk (game:\<nombre del .xex>.log, default.log en la consola) se escribe linea
- * por linea con NtWriteFile: cuando l360.upload_log() vuelve ya esta en el disco, sin buffer que
- * vaciar y sin PC a la que subirlo. Se deja la funcion porque boot.lua la llama. */
+/* xsdk's log (game:\<name of the .xex>.log, default.log on the console) is written line by line
+ * with NtWriteFile: when l360.upload_log() returns, it is already on disk, with no buffer to flush
+ * and no PC to upload it to. The function is kept because boot.lua calls it. */
 static int l_upload_log(lua_State *L)
 {
 	(void)L;
 	return 0;
 }
 
-/* ---------- red ---------- */
+/* ---------- network ---------- */
 
-/* poll(): en libXenon atiende la red; aca no hay red que atender (el registro puede ir por el
- * net_log.txt de xsdk, que no necesita que el juego haga nada). */
+/* poll(): on libXenon it services the network; here there is no network to service (the log can go
+ * through xsdk's net_log.txt, which needs nothing from the game). */
 static int l_poll(lua_State *L)
 {
 	(void)L;
 	return 0;
 }
 
-/* ---------- lo que llama main.c ---------- */
+/* ---------- what main.c calls ---------- */
 
 void l360_sys_poll(void)
 {
