@@ -686,6 +686,10 @@ Optional, loaded by the game that wants them; nothing above requires one.
 - `engine/modules/platformer`: tile collisions with bump.lua (`lib/bump`), one-way platforms, a
   character controller and the reach of its jump. Reference:
   [engine/modules/platformer/README.md](../engine/modules/platformer/README.md).
+- `engine/modules/combat`: hitboxes and hurtboxes, damage through stats and modifier events,
+  invulnerability frames, knockback, hitstop, and a state machine with enemy behaviours. It needs
+  no other module. Reference:
+  [engine/modules/combat/README.md](../engine/modules/combat/README.md).
 
 ```lua
 local platformer = require("engine.modules.platformer")
@@ -693,6 +697,21 @@ local grid = platformer.grid.new({ "......", "..==..", "######" }, { tile_size =
 local world = platformer.collision.newWorld(grid)
 local body = platformer.controller.new(world, { x = 8, y = 0, w = 10, h = 14 })
 function play:update(dt) body:step(engine.controls, dt) end     -- actions left, right, jump, down
+```
+
+```lua
+local combat = require("engine.modules.combat")
+local fight = combat.world.new()
+local hero = fight:fighter({ body = body, team = "player", mods = set })   -- stats and events from the set
+hero:hurtbox({ w = 10, h = 14 })
+local slash = hero:hitbox({ ox = 10, oy = 2, w = 12, h = 8, knockback = 150, hitstop = 3 / 60 })
+function play:update(dt)
+  if not hero:frozen() then                       -- hitstop: the game skips what is frozen
+    body:step(engine.controls, dt)
+    if engine.controls:pressed("attack") then slash:activate(6 / 60) end
+  end
+  fight:step(dt)                                  -- overlaps, damage, i-frames, knockback
+end
 ```
 
 ## What the console does differently
