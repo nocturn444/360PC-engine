@@ -18,9 +18,10 @@ Reference and usage example: [docs/ENGINE.md](../docs/ENGINE.md).
 | `save.lua` | Saves: the run in progress and the permanent progress, versioned files with a checksum, migrations, a serializer and a parser that never runs code. |
 | `ui.lua` | Controller-first menus: focus and spatial navigation, widgets, stacks, themes as data, a pick-1-of-N screen. |
 | `anim.lua` | Animations with anim8 (`lib/anim8`). |
-| `modules/` | Optional, genre-specific modules (objective 7). |
+| `modules/` | Optional, genre-specific modules: [`modules/README.md`](modules/README.md). The first is `platformer/` (objective 12). |
 
 Plain Lua 5.1: no FFI, no `goto`, only the LÖVE functions in
 [docs/API_SUBSET.md](../docs/API_SUBSET.md); nothing is allocated per frame or per step. A game
-needs `engine/` (and `lib/anim8/` for animations) in its folder. Tests:
+needs `engine/` (and `lib/anim8/` for animations, `lib/bump/` for `modules/platformer`) in its
+folder. Tests:
 `luajit -joff tests/engine/run.lua`.

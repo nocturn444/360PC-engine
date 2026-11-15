@@ -24,7 +24,7 @@ function T.no_new_globals(before)
 end
 
 local names = { "state_test", "timestep_test", "input_test", "camera_test", "pixel_test",
-  "layers_test", "anim_test", "entity_test", "modifiers_test", "rng_test", "save_test", "ui_test", "engine_test", "demo_test" }
+  "layers_test", "anim_test", "entity_test", "modifiers_test", "rng_test", "save_test", "ui_test", "platformer_test", "engine_test", "demo_test" }
 if arg[1] then names = { unpack(arg) } end
 
 local jit_on = jit and jit.status()
@@ -36,7 +36,7 @@ for _, name in ipairs(names) do
   local before = T.checks
   local ok, err = xpcall(function() assert(loadfile("tests/engine/" .. name .. ".lua"))(T) end, debug.traceback)
   if ok then
-    print(string.format("ok   %-14s %3d checks", name, T.checks - before))
+    print(string.format("ok   %-15s %3d checks", name, T.checks - before))
   else
     failed = failed + 1
     print("FAIL " .. name .. "\n" .. tostring(err))

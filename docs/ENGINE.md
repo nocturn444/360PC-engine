@@ -2,7 +2,8 @@
 
 Generic Lua modules on top of the LÖVE 11 subset ([API_SUBSET.md](API_SUBSET.md)). The same code
 runs on official LÖVE 11.x on PC and on the console. Nothing in it knows about a game or a genre.
-A game needs the `engine/` folder (and `lib/anim8/` for animations) in its own folder.
+A game needs the `engine/` folder (and `lib/anim8/` for animations, `lib/bump/` for the
+platformer module) in its own folder.
 
 ## A minimal game
 
@@ -676,6 +677,22 @@ local anims = engine.anim.set(grid, {
 })
 local mine = anims.walk:clone()                                 -- one copy per sprite
 mine:update(dt); mine:draw(image, x, y)
+```
+
+## Genre modules (`engine/modules/`)
+
+Optional, loaded by the game that wants them; nothing above requires one.
+
+- `engine/modules/platformer`: tile collisions with bump.lua (`lib/bump`), one-way platforms, a
+  character controller and the reach of its jump. Reference:
+  [engine/modules/platformer/README.md](../engine/modules/platformer/README.md).
+
+```lua
+local platformer = require("engine.modules.platformer")
+local grid = platformer.grid.new({ "......", "..==..", "######" }, { tile_size = 16 })
+local world = platformer.collision.newWorld(grid)
+local body = platformer.controller.new(world, { x = 8, y = 0, w = 10, h = 14 })
+function play:update(dt) body:step(engine.controls, dt) end     -- actions left, right, jump, down
 ```
 
 ## What the console does differently
