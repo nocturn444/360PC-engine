@@ -1,4 +1,4 @@
-// Stencil de prueba propio: conservar muestras y orden, acotar las temporales de xost.
+// Our own test stencil: keep samples and order, bound the temporaries of xost.
 sampler2D s0 : register(s0);
 float4 l360_zero : register(c7);
 struct Entrada { float2 uv : TEXCOORD0; };

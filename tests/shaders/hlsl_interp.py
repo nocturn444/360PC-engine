@@ -6,7 +6,7 @@ import math
 import re
 
 # ---------------------------------------------------------------------------------------------
-# Interprete de HLSL (el subconjunto que usan estos shaders)
+# HLSL interpreter (the subset these shaders use)
 # ---------------------------------------------------------------------------------------------
 
 def preprocesar(src):
@@ -270,7 +270,7 @@ def vmap(f, *args):
         return f(*args)
     cols = [a if isinstance(a, tuple) else (a,) * n for a in args]
     if any(len(c) != n for c in cols):
-        n = min(len(c) for c in cols)      # HLSL trunca al vector mas corto
+        n = min(len(c) for c in cols)      # HLSL truncates to the shortest vector
         cols = [c[:n] for c in cols]
     return tuple(f(*x) for x in zip(*cols))
 
@@ -292,7 +292,7 @@ def construir(n, args):
 SWZ = {"x": 0, "y": 1, "z": 2, "w": 3, "r": 0, "g": 1, "b": 2, "a": 3}
 
 def textura(uv):
-    """textura falsa: suave, con valores en todo [0, 1] (alpha tambien cerca de 0)"""
+    """fake texture: smooth, with values across all of [0, 1] (alpha also near 0)"""
     u, v = uv[0], uv[1]
     return (0.5 + 0.5 * math.sin(12.9 * u + 3.1 * v), 0.5 + 0.5 * math.cos(7.3 * u - 5.7 * v),
             (u * 3.7 + v * 1.3) % 1.0, 0.5 + 0.5 * math.sin(4.0 * u + 9.0 * v))
@@ -346,7 +346,7 @@ class Shader:
         return 0.0 if n == 1 else tuple([0.0] * n)
 
     def ejecutar(self, regs, entradas):
-        """regs: {indice: float4}; entradas: {semantica: valor} -> salida como {semantica: valor}"""
+        """regs: {index: float4}; inputs: {semantic: value} -> output as {semantic: value}"""
         self.glob = {}
         for tipo, nombre, reg, init in self.p.globales:
             if reg and reg[0] == "c":

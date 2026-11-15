@@ -27,7 +27,7 @@ def check_tree(path, revision):
 
 
 def variable(text, name):
-    # Las continuaciones del Makefile estan indentadas; no incluir la variable siguiente.
+    # Continuation lines of the Makefile are indented; do not include the next variable.
     value = re.search(r"^" + name + r" := (.*(?:\n[ \t]+.*)*)", text, re.M).group(1)
     return value.replace("\\\n", " ").split()
 
@@ -51,7 +51,7 @@ def main():
     version = (root / "runtime/XSDK_VERSION").read_text().splitlines()[1].strip()
     check_tree(sdk, version)
     check_tree(glslang, GLSLANG_VERSION)
-    # OPT=OFF deja llamadas y variables locales que xost no puede bajar.
+    # OPT=OFF leaves calls and local variables that xost cannot lower.
     known = json.loads((glslang / "known_good.json").read_text())
     for repo in known["commits"]:
         if "spirv" in repo["name"].lower():
@@ -66,7 +66,7 @@ def main():
     windows = not args.native or os.name == "nt"
     if windows and not args.toolchain_notices:
         raise SystemExit("A Windows build needs --toolchain-notices (see README.md)")
-    # Validar los textos antes de gastar tiempo compilando.
+    # Validate the texts before spending time on the build.
     notices = build_notices(sdk, glslang, args.toolchain_notices)
     library = out / ("xsc.dll" if windows else "libxsc.so")
     cc, cxx = shutil.which(args.cc), shutil.which(args.cxx)
@@ -85,9 +85,9 @@ def main():
     if not args.native:
         configure += ["-DCMAKE_SYSTEM_NAME=Windows", "-DCMAKE_SYSTEM_PROCESSOR=AMD64"]
     run(configure)
-    # Al reutilizar un build con otro compilador, CMake borra la cache y pierde
-    # los -D de la primera pasada. Reaplicarlos antes de construir (Release,
-    # enlace estatico y OPT incluidos), tambien si solo cambio el case de .exe.
+    # When reusing a build with another compiler, CMake clears the cache and loses
+    # the -D flags of the first pass. Reapply them before building (Release,
+    # static linking and OPT included), even if only the case of .exe changed.
     run(configure)
     run([args.cmake, "--build", build, "--target", "glslang-standalone", "-j", str(args.jobs)])
     exe = "glslang.exe" if windows else "glslang"

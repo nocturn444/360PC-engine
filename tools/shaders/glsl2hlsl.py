@@ -45,7 +45,7 @@ class ShaderError(Exception):
     """The shader uses something the translator (or xost) does not support."""
 
 def split_args(s):
-    """separa argumentos de nivel superior"""
+    """splits arguments at the top level"""
     out, depth, cur = [], 0, ""
     for ch in s:
         if ch in "([":
@@ -60,7 +60,7 @@ def split_args(s):
     return out
 
 def find_call(src, start):
-    """src[start] es '(' -> indice del ')' que lo cierra"""
+    """src[start] is '(' -> index of the ')' that closes it"""
     depth = 0
     for i in range(start, len(src)):
         if src[i] == "(":
@@ -72,8 +72,8 @@ def find_call(src, start):
     raise ValueError("unclosed parenthesis")
 
 def rewrite_calls(src, fname, fn, inner=None):
-    """reemplaza cada llamada fname(args) por fn(lista_args); a los argumentos antes se les
-    aplica inner (rewrite_all si no se dice otra cosa)"""
+    """replaces each call fname(args) with fn(arg_list); the arguments before it are
+    passed through inner (rewrite_all unless said otherwise)"""
     pat = re.compile(r"\b" + fname + r"\s*\(")
     pos = 0
     while True:
@@ -89,7 +89,7 @@ def rewrite_calls(src, fname, fn, inner=None):
         pos = m.start() + len(rep)
 
 def find_close(src, start, op="(", cl=")"):
-    """src[start] es op -> indice del cl que lo cierra"""
+    """src[start] is op -> index of the cl that closes it"""
     depth = 0
     for i in range(start, len(src)):
         if src[i] == op:
@@ -105,7 +105,7 @@ def strip_comments(src):
     return re.sub(r"//[^\n]*", "", src)
 
 def functions(src):
-    """lista de (inicio, fin, cabecera, cuerpo) de cada funcion de nivel superior"""
+    """list of (start, end, header, body) for each top-level function"""
     out, pos = [], 0
     pat = re.compile(r"\b\w+\s+(\w+)\s*\(")
     while True:
@@ -138,7 +138,7 @@ def skip_ws(s, i):
     return i
 
 def stmt_span(s, i):
-    """(inicio, fin) de la sentencia que empieza en s[i] (un if con sus else es una sola)"""
+    """(start, end) of the statement that starts at s[i] (an if with its else counts as one)"""
     i = skip_ws(s, i)
     start = i
     if s.startswith("{", i):
@@ -163,7 +163,7 @@ def stmt_span(s, i):
     raise ValueError("statement missing ';'")
 
 def statements(body):
-    """separa un bloque en sentencias de nivel superior"""
+    """splits a block into top-level statements"""
     out, i = [], 0
     while True:
         i = skip_ws(body, i)
@@ -173,7 +173,7 @@ def statements(body):
         out.append(body[s:i])
 
 def split_if(stmt):
-    """'if (c) A else B' -> (c, A, B o None), con A y B sin llaves externas"""
+    """'if (c) A else B' -> (c, A, B or None), with A and B without outer braces"""
     m = re.match(r"if\s*\(", stmt)
     close_i = find_close(stmt, m.end() - 1)
     cond = stmt[m.end():close_i]
@@ -554,11 +554,11 @@ L360_ATAN2 = ("float l360_atan2(float y, float x) { float ax = abs(x), ay = abs(
               "a = x < 0.0 ? 3.14159265359 - a : a; return y < 0.0 ? -a : a; }")
 
 def xost_math(src):
-    """Reducir antes de las instrucciones aproximadas; tambien en llamadas anidadas.
+    """Reduce before the approximate instructions; also in nested calls.
 
-    Los overloads conservan el ancho del argumento. clamp solo protege el ultimo
-    redondeo de float32, no sustituye la reduccion periodica. Idempotente: el
-    instalador genera HLSL xost y el compilador vuelve a pasar para_xost().
+    The overloads keep the argument's width. clamp only protects the last
+    float32 rounding; it does not replace the periodic reduction. Idempotent: the
+    installer generates xost HLSL and the compiler passes it through for_xost() again.
     """
     def fix(t):
         for name in ("sin", "cos"):
@@ -585,9 +585,9 @@ def xost_math(src):
         for n in range(2, 5):
             helpers.append("float%d l360_atan(float%d x) { return float%d(%s); }" %
                            (n, n, n, ", ".join("l360_atan(x.%s)" % c for c in "xyzw"[:n])))
-    # translate/glsl_pixel ya convierten mod a glsl_mod = x-y*floor(x/y).
-    # No emitir OpFMod (reciproco aproximado en multiplos exactos), ni cambiarlo
-    # por fmod (trunca y da otro resultado para negativos).
+    # translate/glsl_pixel already convert mod to glsl_mod = x-y*floor(x/y).
+    # Do not emit OpFMod (approximate reciprocal on exact multiples), nor change it
+    # to fmod (it truncates and gives another result for negatives).
     if re.search(r"\b(mod|fmod)\s*\(", strip_comments(src)):
         raise ValueError("xost: mod/fmod sin traducir; usar x-y*floor(x/y) para GLSL mod")
     if helpers:
@@ -603,8 +603,8 @@ def xost_clamp(a):
     return "min(max(%s,%s),%s)" % tuple(a)
 
 def single_exit(sts, rv):
-    """sentencias de una funcion -> las mismas, con cada 'return X;' cambiado por 'rv = X;' y lo
-    que sigue a un 'if (c) return ...;' metido en su else (devuelve el texto)"""
+    """statements of a function -> the same, with each 'return X;' changed to 'rv = X;' and what
+    follows an 'if (c) return ...;' put into its else (returns the text)"""
     out = []
     for k, st in enumerate(sts):
         br = ""
@@ -634,14 +634,14 @@ def single_exit(sts, rv):
     return "\n".join(out)
 
 def xost_sample_reduction(src):
-    """Serializar una reduccion de muestras sin reducir su cantidad ni cambiar el orden.
+    """Serialize a reduction of samples without reducing their number or changing their order.
 
-    xost recoge TODOS los tex2D antes de bajar la expresion de color. En un
-    stencil desenrollado eso mantiene una temporal por muestra hasta el final.
-    Una dependencia de las coordenadas en ambos acumuladores, multiplicada por
-    el cero del runtime, obliga a consumir cada muestra antes de pedir la otra.
-    Solo reconoce dos bucles simetricos pequenos y acumuladores finitos; no es
-    una transformacion general de bucles ni de contadores enteros arbitrarios.
+    xost collects ALL the tex2D calls before lowering the color expression. In an
+    unrolled stencil this keeps one temporary per sample until the end.
+    A dependency of the coordinates on both accumulators, multiplied by
+    the runtime's zero, forces each sample to be consumed before asking for the other.
+    It only recognizes two small symmetric loops and finite accumulators; it is not
+    a general transformation of loops or of arbitrary integer counters.
     """
     if not re.search(r"float4\s+l360_zero\s*:\s*register\(c\d+\)", src):
         return src
@@ -672,7 +672,7 @@ def xost_sample_reduction(src):
             continue
         count, accum = counter[1], total[1]
         declaration = re.compile(r"\bint\s+" + count + r"\s*=\s*0\s*;")
-        # Solo declaracion, incremento y conversion final a float: no otros usos enteros.
+        # Only the declaration, increment and final conversion to float: no other integer uses.
         if not declaration.search(src) or len(re.findall(r"\b" + count + r"\b", src)) != 3:
             continue
         if not re.search(r"\bfloat\s*\(\s*" + count + r"\s*\)", src):
@@ -682,7 +682,7 @@ def xost_sample_reduction(src):
         args = split_args(src[m.end():end])
         if len(args) != 2:
             continue
-        # El limite de los bucles garantiza un contador exactamente representable en float.
+        # The loop bound guarantees a counter that is exactly representable as a float.
         replacement = ("%s = tex2D(%s, (%s) + l360_zero.x * (%s + %s)).a;\n"
                        "%s += (%s) ? 1.0 : 0.0;\n%s += (%s) ? %s : 0.0;" % (
                            m[1], args[0], args[1], accum, count,

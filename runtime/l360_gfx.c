@@ -1,19 +1,19 @@
 /*
  * 360PC-Engine - love.graphics on xsdk's GPU (from Love360).
  *
- * Copia de runtime/source/l360_gfx.c (libXenon) con otra capa de abajo: la transformacion de
- * vertices, los lotes, la tabla de programas y registros de shader y los tipos de Lua son los
- * mismos. Cambia como se habla con la GPU (xsdk_gpu_*, xsdk_present_*, xsdk_texture_*).
+ * Copy of runtime/source/l360_gfx.c (libXenon) with a different layer underneath: the vertex
+ * transform, batches, the shader program and register tables, and the Lua types are the same.
+ * What changes is how it talks to the GPU (xsdk_gpu_*, xsdk_present_*, xsdk_texture_*).
  *
- * Como LOVE 11: cada dibujo se transforma en la CPU con la pila de transformaciones
- * (asi el shader recibe posiciones en pixeles de pantalla) y se manda como un par de triangulos con sus constantes.
+ * As in LOVE 11: each draw is transformed on the CPU with the transform stack (so the shader gets
+ * positions in screen pixels) and sent as a pair of triangles with their constants.
  *
- * Pasos 2a a 2d: pantalla, figuras de color, imagenes, texto, canvas (resolve a su textura) y los
- * shaders del juego (docs/SHADERS.md).
+ * Steps 2a to 2d: screen, color shapes, images, text, canvases (resolve to their texture), and the
+ * game's shaders (docs/SHADERS.md).
  *
- * Tipos (userdata con metatabla):
- *   Image / Canvas  textura de xsdk + tamano en unidades de LOVE (dpiscale aplicado)
- *   Quad            recorte de una textura
+ * Types (userdata with a metatable):
+ *   Image / Canvas  xsdk texture + size in LOVE units (dpiscale applied)
+ *   Quad            a crop of a texture
  *   Shader          a registered program (the game's shader) or the default one, and its uniform values
  */
 #include <stdarg.h>
@@ -34,25 +34,25 @@
 #include "lua.h"
 #include "lauxlib.h"
 
-/* 1 desde el paso 2b: imagenes (stb_image) y texto (atlas de stb_truetype) como texturas de xsdk.
- * Con 0 (paso 2a) newImage solo lee el tamano del PNG y las fuentes no arman su atlas: imagenes y
- * texto se cuentan como "skipped" y solo se ven las figuras de color. */
+/* 1 from step 2b: images (stb_image) and text (stb_truetype atlas) as xsdk textures.
+ * With 0 (step 2a) newImage only reads the PNG size and fonts do not build their atlas: images and
+ * text count as "skipped" and only the color shapes are visible. */
 #define L360_TEXTURAS 1
 
-/* 1 desde el paso 2d: cada dibujo usa el programa que pidio el juego.
- * Con 0 todo se dibuja con l360_default.psu/.vsu (paso 2b: probar solo texturas);
- * newShader responde igual en los dos casos, para que Lua haga lo mismo. */
+/* 1 from step 2d: each draw uses the program the game asked for.
+ * With 0 everything is drawn with l360_default.psu/.vsu (step 2b: testing textures only);
+ * newShader answers the same in both cases, so Lua does the same thing. */
 #define L360_SHADERS 1
 
-/* Interruptores de prueba sin recompilar: palabras en game:\l360_gfx.txt (una o varias):
- *   no_canvas      setCanvas no hace nada y dibujar un canvas tampoco: todo va directo a la pantalla
- *   no_shaders     todo con l360_default.psu/.vsu (como L360_SHADERS 0)
- *   no_literals   no carga los literales de los shaders de XNA (como antes de arreglarlo)
- *   no_batching       un draw por cada submit, sin juntar los que comparten estado
- * Los shaders de xost (tools/shaders/build_shaders.py) y los de XNA van juntos en game:\shaders\: cada .psu/.vsu
- * se reconoce por su cabecera (L3X1 = xost). El interruptor shaders_xost ya no hace falta. */
+/* Test switches, no recompile needed: words in game:\l360_gfx.txt (one or more):
+ *   no_canvas      setCanvas does nothing and drawing a canvas does nothing either: everything goes straight to the screen
+ *   no_shaders     everything with l360_default.psu/.vsu (like L360_SHADERS 0)
+ *   no_literals   does not load the literals of the XNA shaders (like before the fix)
+ *   no_batching       one draw per submit, without joining the ones that share state
+ * The xost shaders (tools/shaders/build_shaders.py) and the XNA ones go together in game:\shaders\: each .psu/.vsu
+ * is recognized by its header (L3X1 = xost). The shaders_xost switch is no longer needed. */
 static int opt_no_canvas, opt_no_shaders, opt_no_batching;
-/* para el registro cada 300 frames */
+/* for the log, every 300 frames */
 static long st_canvas_resolves, st_screen_resolves, st_last_draws, st_last_submits;
 
 #pragma GCC diagnostic push
@@ -73,16 +73,16 @@ static long st_canvas_resolves, st_screen_resolves, st_last_draws, st_last_submi
 
 #include "l360_gfx.h"
 
-/* ---------- dispositivo ---------- */
+/* ---------- device ---------- */
 
 enum {
-    BEGIN_TIMEOUT_MS = 5000,     /* la primera apertura de la Guia retuvo un frame 2,7 s (xsdk) */
+    BEGIN_TIMEOUT_MS = 5000,     /* the first opening of the Guide held a frame for 2.7 s (xsdk) */
     FENCE_TIMEOUT_MS = 1000,
 };
 
 static int W, H;
 static float proj[16];
-static int gpu_ok;               /* 0 si la GPU se colgo: los dibujos se descartan */
+static int gpu_ok;               /* 0 if the GPU hung: draws are discarded */
 static void (*log_cb)(const char *);
 
 static void gfx_log(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
@@ -103,7 +103,7 @@ static double now_ms(void)
     return (double)t.tv_sec * 1000.0 + (double)t.tv_nsec / 1e6;
 }
 
-/* Textura de xsdk y su filtro (libXenon lo guardaba en la superficie) */
+/* xsdk texture and its filter (libXenon stored it in the surface) */
 typedef struct {
     XsdkTexture t;
     int linear;
@@ -118,7 +118,7 @@ typedef struct {
     float r, g, b, a;
 } vertex_t;                                     /* 40 bytes = 10 dwords */
 
-/* La misma disposicion que el vbf de libXenon: posicion, uv y color en el stream 0 */
+/* Same layout as the libXenon vbf: position, uv and color in stream 0 */
 static const XsdkVertexElement layout[] = {
     {.usage = XSDK_USAGE_POSITION, .format = XSDK_VERTEX_FLOAT4, .offset_bytes = 0},
     {.usage = XSDK_USAGE_TEXCOORD, .format = XSDK_VERTEX_FLOAT2, .offset_bytes = 16},
@@ -126,8 +126,8 @@ static const XsdkVertexElement layout[] = {
 };
 static const uint32_t layout_stride[] = {sizeof(vertex_t)};
 
-/* Un solo bloque de memoria de GPU con dos mitades: un frame escribe una mientras la GPU puede
- * estar leyendo la otra (el fence de cada mitad dice cuando la GPU termino con ella). */
+/* One GPU memory block with two halves: a frame writes one while the GPU may be reading the other
+ * (each half's fence says when the GPU is done with it). */
 #define VB_VERTS 120000
 #define VB_BYTES (VB_VERTS * (uint32_t)sizeof(vertex_t))
 static volatile uint32_t *vb_mem;
@@ -137,14 +137,14 @@ static int vb_pending[2];
 static vertex_t *vb_base;
 static int vb_cur, vb_index;
 
-/* La memoria de GPU se escribe con el memcpy de xsdk (stores de 32 bits) o con stores volatile,
- * nunca con stores comunes (docs/PITFALLS.md de xsdk). Por puntero volatile: con un tamano fijo
- * (6 vertices de emit_quad) GCC podria cambiar la llamada por stores propios de 64 bits. */
+/* GPU memory is written with xsdk's memcpy (32-bit stores) or with volatile stores, never with
+ * plain stores (xsdk's docs/PITFALLS.md). Through a volatile pointer: with a fixed size
+ * (6 vertices of emit_quad) GCC could replace the call with its own 64-bit stores. */
 static void *(*volatile gpu_memcpy)(void *, const void *, size_t) = memcpy;
 
 l360_gfx_stats_t l360_gfx_stats;
 
-/* ---------- estado de LOVE ---------- */
+/* ---------- LOVE state ---------- */
 
 typedef struct { float a, b, c, d, e, f; } mat_t;   /* x' = a x + c y + e ; y' = b x + d y + f */
 #define STACK_MAX 128
@@ -199,22 +199,22 @@ typedef struct {
 
 static shader_ud *cur_shader;
 
-/* ---------- texturas ---------- */
+/* ---------- textures ---------- */
 
 #define TEX_IMAGE  1
 #define TEX_CANVAS 2
 typedef struct {
     int kind;
-    surf_t *s;                  /* NULL: todavia sin textura (paso 2a) */
+    surf_t *s;                  /* NULL: no texture yet (step 2a) */
     float w, h, dpi;
     char path[64];
 } tex_ud;
 
 typedef struct { float x, y, w, h, sw, sh; } quad_ud;
 
-static tex_ud *cur_canvas;      /* canvas activo o NULL = pantalla */
+static tex_ud *cur_canvas;      /* active canvas, or NULL = screen */
 
-/* ---------- utilidades ---------- */
+/* ---------- utilities ---------- */
 
 static void build_ortho(void)
 {
@@ -229,22 +229,22 @@ static void build_ortho(void)
 
 static int shaders_loaded, shaders_missing, shaders_bad, shaders_lits, shaders_xost;
 
-/* Literales de los shaders de XNA: los numeros fijos del HLSL (0.5, 2.0...) no van en el
- * microcodigo, van en la tabla de definiciones del contenedor (palabra 5 de la cabecera) y hay que
- * cargarlos en las constantes cada vez que se pone el shader. libXenon lo hace en
- * Xe_pUploadShaderConstants; xsdk_shader_load no (solo conoce las de xost, que tienen
- * xsdk_built_shader_set_literals). Sin esto los shaders leen basura. */
-#define LIT_MAX 64               /* los de xost vienen de a un registro: se juntan los seguidos */
-typedef struct { uint32_t first, count; const float *v; } lit_t;   /* count en grupos de 4 floats */
+/* XNA shader literals: the fixed HLSL numbers (0.5, 2.0...) are not in the microcode, they are in
+ * the container's definition table (word 5 of the header) and must be loaded into the constants
+ * every time the shader is set. libXenon does it in Xe_pUploadShaderConstants; xsdk_shader_load
+ * does not (it only knows the xost ones, which have xsdk_built_shader_set_literals). Without this
+ * the shaders read garbage. */
+#define LIT_MAX 64               /* xost ones come one register at a time: consecutive ones are merged */
+typedef struct { uint32_t first, count; const float *v; } lit_t;   /* count in groups of 4 floats */
 typedef struct {
-    XsdkShader sh;               /* primero: el XsdkShader * de las tablas apunta tambien aca */
+    XsdkShader sh;               /* first: the XsdkShader * in the tables also points here */
     int pixel;
     int nlit;
     lit_t lit[LIT_MAX];
-    uint32_t vmin;               /* la constante de vertice mas baja que pisa un literal */
+    uint32_t vmin;               /* the lowest vertex constant that a literal overwrites */
     uint32_t bools[8], bool_mask;
     uint32_t loops[32], loop_mask;
-    float hi[4 * 4];             /* c252-c255 de pixel (XNA pone los literales arriba de todo) */
+    float hi[4 * 4];             /* pixel c252-c255 (XNA puts the literals at the very top) */
     int has_hi;
 } shader_t;
 
@@ -254,14 +254,14 @@ static uint32_t be16(const uint8_t *p) { return (uint32_t)p[0] << 8 | p[1]; }
 static void parse_literals(shader_t *s, const uint8_t *c, uint32_t n, const char *name)
 {
     s->vmin = 0xFFFFFFFFu;
-    s->hi[12] = s->hi[13] = 0.5f;                /* c255 como lo deja xsdk si el shader no la usa */
+    s->hi[12] = s->hi[13] = 0.5f;                /* c255 as xsdk leaves it if the shader does not use it */
     if (n < 0x24)
         return;
     uint32_t off = be32(c + 0x14), base = be32(c + 4);
     if (!off || off > n)
         return;
-    uint32_t p = off + 20;                       /* 16 bytes y el tamano, como libXenon */
-    for (;;) {                                   /* floats: inicio, cantidad de floats, offset */
+    uint32_t p = off + 20;                       /* 16 bytes and the size, as in libXenon */
+    for (;;) {                                   /* floats: start, float count, offset */
         if (p + 4 > n) return;
         uint32_t start = be16(c + p), count = be16(c + p + 2);
         p += 4;
@@ -286,7 +286,7 @@ static void parse_literals(shader_t *s, const uint8_t *c, uint32_t n, const char
             gfx_log(" [shader] %s: literals c%u..c%u out of range", name, (unsigned)reg, (unsigned)(reg + groups - 1));
             continue;
         }
-        /* las de pixel desde c252 van aparte, en put_hi_constants */
+        /* the pixel ones from c252 go separately, in put_hi_constants */
         if (s->pixel && reg + groups > XSDK_PIXEL_CONSTANTS) {
             uint32_t from = reg > XSDK_PIXEL_CONSTANTS ? reg : XSDK_PIXEL_CONSTANTS;
             for (uint32_t r = from; r < reg + groups; r++)
@@ -308,13 +308,13 @@ static void parse_literals(shader_t *s, const uint8_t *c, uint32_t n, const char
         s->lit[s->nlit++] = (lit_t){reg, groups, v};
         if (!s->pixel && reg < s->vmin) s->vmin = reg;
     }
-    for (;;) {                                   /* enteros: booleanos y contadores de bucles */
+    for (;;) {                                   /* ints: booleans and loop counters */
         if (p + 4 > n) return;
         uint32_t start = be16(c + p), count = be16(c + p + 2);
         p += 4;
         if (!count) break;
         if (start < 0x2300 || count * 4 > n - p) return;
-        uint32_t idx = (start - 0x2300) / 4;     /* 0-7: palabras de booleanos; 8-39: bucles */
+        uint32_t idx = (start - 0x2300) / 4;     /* 0-7: boolean words; 8-39: loops */
         for (uint32_t k = 0; k < count; k++) {
             uint32_t i = idx + k, w = be32(c + p + k * 4);
             if (i < 8) { s->bools[i] = w; s->bool_mask |= 1u << i; }
@@ -326,11 +326,11 @@ static void parse_literals(shader_t *s, const uint8_t *c, uint32_t n, const char
 
 static int opt_no_literals;
 
-/* c252-c255 de pixel: xsdk_gpu_set_pixel_constants no llega (assert), porque xsdk usa c255 para el
- * gl_FragCoord de los shaders de xost. Love360 no usa esos shaders ni los pases en bandas, asi que
- * el grupo se escribe con un paquete propio, como set_floats de xsdk (src/gpu_constants.c): NOPs
- * hasta que los valores empiecen en 16 bytes, la cabecera tipo 0 y los 16 floats. xsdk vuelve a
- * poner c255 cuando XAM dibuja (Guia) y ahi frame_state hace que se escriba de nuevo. */
+/* Pixel c252-c255: xsdk_gpu_set_pixel_constants does not work (assert), because xsdk uses c255 for
+ * the gl_FragCoord of the xost shaders. Love360 does not use those shaders or the band passes, so
+ * the group is written with its own packet, like xsdk's set_floats (src/gpu_constants.c): NOPs
+ * until the values start at 16 bytes, the type-0 header and the 16 floats. xsdk puts c255 back
+ * when XAM draws (Guide), and then frame_state makes it be written again. */
 #define PS_CONST_252 (0x4400u + 252u * 4u)
 static void put_hi_constants(const float *v)
 {
@@ -367,10 +367,10 @@ static void apply_literals(const XsdkShader *x)
             xsdk_gpu_set_loop_constants(l, &s->loops[l], 1);
 }
 
-/* Los de xost (tools/shaders/build_shaders.py): "L3X1", cantidad de literales y por literal el
- * registro y 4 floats, despues el contenedor de xost. xost pone cada literal en un registro que el
- * shader no usa (los register(cN) del HLSL quedan donde dicen, como en D3D9), asi que van con
- * apply_literals igual que los de XNA; nunca en c252-c255. Devuelve el tamano de la cabecera o 0. */
+/* The xost ones (tools/shaders/build_shaders.py): "L3X1", the number of literals, and for each
+ * literal its register and 4 floats, then the xost container. xost puts each literal in a register
+ * the shader does not use (the HLSL register(cN) stay where they say, as in D3D9), so they go
+ * through apply_literals like the XNA ones; never in c252-c255. Returns the header size, or 0. */
 static uint32_t parse_xost(shader_t *s, const uint8_t *c, uint32_t n, const char *name)
 {
     s->vmin = 0xFFFFFFFFu;
@@ -416,9 +416,9 @@ static uint32_t parse_xost(shader_t *s, const uint8_t *c, uint32_t n, const char
     return hdr;
 }
 
-/* game:\shaders\<name>: el de XNA (10_compilar_todo.bat) o el de xost (build_shaders.py, empieza con
- * L3X1), el que haya dejado el instalador. El contenedor queda en memoria: xsdk lee de el las tablas
- * del shader mientras exista. */
+/* game:\shaders\<name>: either the XNA one (10_compilar_todo.bat) or the xost one (build_shaders.py,
+ * starts with L3X1), whichever the installer left. The container stays in memory: xsdk reads the
+ * shader's tables from it for as long as it exists. */
 static XsdkShader *load_shader(const char *name, int vertex)
 {
     char path[96];
@@ -481,7 +481,7 @@ static XsdkShader *load_shader(const char *name, int vertex)
     return sh;
 }
 
-/* Pixel shaders: uno por archivo (l360_love.psu is shared by the shaders with only a vertex stage) */
+/* Pixel shaders: one per file (l360_love.psu is shared by the shaders with only a vertex stage) */
 #define PS_CACHE (PROG_MAX + 2)
 static struct { char name[32]; XsdkShader *sh; } ps_cache[PS_CACHE];
 
@@ -498,10 +498,10 @@ static XsdkShader *load_ps(const char *name)
     return sh;
 }
 
-/* Vertex shader enlazado a un pixel shader. HLSL: las salidas del vertex shader van a las entradas
- * del pixel shader por semantica, como en D3D9 (libXenon no enlazaba: andaba porque estaban en el
- * mismo orden). xsdk_shader_link cambia el microcodigo del vertex shader para ese pixel shader, asi
- * que un .vsu que usan varios .psu (l360_love.vsu) se carga una vez por cada uno. */
+/* Vertex shader linked to a pixel shader. HLSL: the vertex shader outputs go to the pixel shader
+ * inputs by semantic, as in D3D9 (libXenon did not link: it worked because they were in the same
+ * order). xsdk_shader_link rewrites the vertex shader's microcode for that pixel shader, so a .vsu
+ * that several .psu files use (l360_love.vsu) is loaded once for each of them. */
 static XsdkShader *vs_for(const char *name, XsdkShader *ps)
 {
     if (!ps)
@@ -515,13 +515,13 @@ static XsdkShader *vs_for(const char *name, XsdkShader *ps)
     return vs;
 }
 
-/* Textura de 32 bits desde el RGBA de stb_image. XSDK_FORMAT_A8R8G8B8 toma palabras 0xAARRGGBB en
- * el orden de la CPU (texture.h); xsdk hace el mosaico de Xenos, que libXenon hacia a mano. */
+/* 32-bit texture from the RGBA of stb_image. XSDK_FORMAT_A8R8G8B8 takes 0xAARRGGBB words in CPU
+ * order (texture.h); xsdk does the Xenos tiling, which libXenon did by hand. */
 static surf_t *upload_rgba(const unsigned char *rgba, int w, int h)
 {
     surf_t *s = calloc(1, sizeof(*s));
     NTSTATUS st = xsdk_texture_create(&s->t, XSDK_FORMAT_A8R8G8B8, (uint32_t)w, (uint32_t)h, 1, true);
-    enum { BAND = 32 };          /* filas por llamada: cada xsdk_texture_upload_rows termina en un sync */
+    enum { BAND = 32 };          /* rows per call: each xsdk_texture_upload_rows ends in a sync */
     uint32_t *band = NT_SUCCESS(st) ? malloc((size_t)w * 4 * BAND) : NULL;
     if (!band) {
         gfx_log(" [texture] %dx%d could not be created: 0x%08X", w, h, (unsigned)st);
@@ -543,24 +543,24 @@ static surf_t *upload_rgba(const unsigned char *rgba, int w, int h)
     return s;
 }
 
-/* ---------- emision de dibujos ---------- */
+/* ---------- draw emission ---------- */
 
 static XsdkShader *bound_ps, *bound_vs;
 static surf_t *bound_tex;
 static int bound_linear;
-static int need_state = 1;       /* despues de un resolve: target, blend, shaders y textura de nuevo */
-static int guide_open;           /* la Guia (o un dialogo de XAM) abierta: no se dibuja, solo present */
-static int need_vconst = 1;      /* c0-c4 (proyeccion y pantalla): la pantalla de texto los pisa */
+static int need_state = 1;       /* after a resolve: target, blend, shaders and texture again */
+static int guide_open;           /* the Guide (or a XAM dialog) is open: nothing is drawn, only present */
+static int need_vconst = 1;      /* c0-c4 (projection and screen): the text screen overwrites them */
 
-/* Lo que un resolve deshace (docs/GUIDE.md de xsdk): el target, el blend, los shaders y el slot 0.
- * Las constantes quedan. Sin cull ni Z: xsdk_gpu_set_target los deja apagados. */
+/* What a resolve undoes (xsdk's docs/GUIDE.md): the target, the blend, the shaders and slot 0.
+ * The constants stay. No cull or Z: xsdk_gpu_set_target leaves them off. */
 static void frame_state(void)
 {
     xsdk_gpu_set_target((uint32_t)W, (uint32_t)H);
     xsdk_gpu_set_blend(&blend_alpha);
     bound_ps = bound_vs = NULL;
     bound_tex = NULL;
-    need_vconst = 1;              /* con la Guia abierta XAM dibuja entre frames y pisa constantes */
+    need_vconst = 1;              /* with the Guide open, XAM draws between frames and overwrites constants */
     need_state = 0;
 }
 
@@ -573,8 +573,8 @@ void l360_gfx_forget_state(void)
     need_vconst = 1;
 }
 
-/* Antes de escribir en la mitad del buffer de vertices de este frame: la GPU tiene que haber
- * terminado el frame que la uso (dos frames atras). */
+/* Before writing to this frame's half of the vertex buffer: the GPU must have finished the frame
+ * that used it (two frames back). */
 static void wait_vb(void)
 {
     if (!vb_pending[vb_index])
@@ -589,22 +589,22 @@ static void wait_vb(void)
     }
 }
 
-/* Lotes: los triangulos seguidos que comparten textura (y filtro), shaders y constantes van en un
- * solo draw. Los vertices ya estan en pixeles de pantalla y con su color, asi que juntar no cambia lo
- * que se ve ni el orden: solo cuantas veces se arma el estado y se llama a xsdk_gpu_draw. El lote
- * pendiente se dibuja (flush) antes de lo que cambia el estado de afuera: un resolve (setCanvas,
- * present), un send (cambia las constantes que el lote todavia no subio) y la pantalla de texto.
- * "no_batching" en l360_gfx.txt dibuja cada submit por separado, como antes. */
+/* Batches: consecutive triangles that share texture (and filter), shaders and constants go in one
+ * draw. The vertices are already in screen pixels with their color, so joining them does not change
+ * what is seen or the order: it only reduces how often the state is set up and xsdk_gpu_draw is
+ * called. The pending batch is drawn (flush) before anything that changes outside state: a resolve
+ * (setCanvas, present), a send (changes the constants the batch has not uploaded yet), and the text
+ * screen. "no_batching" in l360_gfx.txt draws each submit separately, as before. */
 static struct {
-    int n;                       /* vertices en el lote; 0 = no hay lote */
-    int first;                   /* primer vertice en la mitad actual del buffer */
+    int n;                       /* vertices in the batch; 0 = no batch */
+    int first;                   /* first vertex in the current half of the buffer */
     surf_t *tex;
     int linear;
     shader_ud *sh;
     prog_t *p;
     XsdkShader *ps, *vs;
 } pend;
-static long st_submits;          /* para el registro: submits contra draws de verdad */
+static long st_submits;          /* for the log: submits vs. real draws */
 
 static void flush(void)
 {
@@ -631,7 +631,7 @@ static void flush(void)
         lits_dirty = 1;
     }
 
-    /* constantes de a 4 floats (xsdk); las de pixel 252-255 son de xsdk y la tabla no llega */
+    /* constants in groups of 4 floats (xsdk); pixel 252-255 belong to xsdk and the table does not reach them */
     float screen[4] = {(float)W, (float)H, 0, 0};
     if (need_vconst) {
         float vc[5 * 4];
@@ -656,13 +656,13 @@ static void flush(void)
         }
         lits_dirty = 1;
     }
-    /* los literales van despues de las constantes del juego, como en libXenon (las sube al dibujar):
-     * si comparten un registro que el shader no declara, gana el literal */
+    /* the literals go after the game's constants, as in libXenon (they are uploaded when drawing):
+     * if they share a register the shader does not declare, the literal wins */
     if (lits_dirty && !opt_no_literals) {
         apply_literals(vs);
         apply_literals(ps);
         if (((const shader_t *)vs)->vmin < 5)
-            need_vconst = 1;             /* piso c0-c4: el proximo draw las vuelve a poner */
+            need_vconst = 1;             /* floor c0-c4: the next draw puts them back */
     }
     surf_t *t = pend.tex;
     if (t != bound_tex || pend.linear != bound_linear) {
@@ -675,8 +675,8 @@ static void flush(void)
     l360_gfx_stats.draws++;
 }
 
-/* Agrega triangulos (ya en pixeles de pantalla) con el shader actual: al lote pendiente si comparten
- * el estado, si no en uno nuevo. */
+/* Adds triangles (already in screen pixels) with the current shader: to the pending batch if they
+ * share the state, otherwise to a new one. */
 static void submit(surf_t *tex, vertex_t *v, int nverts)
 {
     if (vb_cur + nverts > VB_VERTS || !gpu_ok) {
@@ -709,7 +709,7 @@ static void submit(surf_t *tex, vertex_t *v, int nverts)
     pend.n += nverts;
     st_submits++;
     if (opt_no_batching)
-        flush();                  /* como antes de los lotes: cada submit se dibuja en el momento */
+        flush();                  /* as before batching: each submit is drawn right away */
 }
 
 static inline void xf(const mat_t *m, float x, float y, float *ox, float *oy)
@@ -726,7 +726,7 @@ static inline void set_vert(vertex_t *v, const mat_t *m, float x, float y, float
     v->r = color[0]; v->g = color[1]; v->b = color[2]; v->a = color[3];
 }
 
-/* quad local (x0,y0)-(x1,y1) con uv, transformado por m */
+/* local quad (x0,y0)-(x1,y1) with uv, transformed by m */
 static void emit_quad(surf_t *tex, const mat_t *m,
                       float x0, float y0, float x1, float y1,
                       float u0, float v0, float u1, float v1)
@@ -753,12 +753,12 @@ static void mat_mul(mat_t *r, const mat_t *m, const mat_t *n)   /* r = m * n */
     *r = t;
 }
 
-/* transformacion local de love.graphics.draw: T(x,y) R(r) S(sx,sy) K(kx,ky) T(-ox,-oy) */
+/* local transform of love.graphics.draw: T(x,y) R(r) S(sx,sy) K(kx,ky) T(-ox,-oy) */
 static void local_transform(mat_t *out, float x, float y, float r, float sx, float sy,
                             float ox, float oy, float kx, float ky)
 {
     float c = cosf(r), s = sinf(r);
-    /* igual que love::Matrix4::setTransformation */
+    /* same as love::Matrix4::setTransformation */
     out->a = c * sx - ky * s * sy;
     out->b = s * sx + ky * c * sy;
     out->c = kx * c * sx - s * sy;
@@ -767,7 +767,7 @@ static void local_transform(mat_t *out, float x, float y, float r, float sx, flo
     out->f = y - ox * out->b - oy * out->d;
 }
 
-/* ---------- metatablas ---------- */
+/* ---------- metatables ---------- */
 
 #define MT_TEX    "L360.Tex"
 #define MT_QUAD   "L360.Quad"
@@ -778,7 +778,7 @@ void l360_gfx_set_missing_cb(void (*cb)(const char *)) { missing_cb = cb; }
 
 static int nop(lua_State *L) { (void)L; return 0; }
 
-/* __index: metodo conocido, o nop (y se anota que falta) */
+/* __index: known method, or nop (and it is logged as missing) */
 static int ud_index(lua_State *L)
 {
     lua_getmetatable(L, 1);
@@ -895,7 +895,7 @@ static int shader_send(lua_State *L)
         }
         return 0;
     }
-    flush();                      /* el lote pendiente sube las constantes de ahora, no las nuevas */
+    flush();                      /* the pending batch uploads the constants from now, not the new ones */
     if (u->sampler) {
         tex_ud *t = to_tex(L, 3);
         sh->tex[u->sampler] = t ? t->s : NULL;
@@ -963,10 +963,10 @@ static void make_mt(lua_State *L, const char *name, const luaL_Reg *methods)
     lua_pop(L, 1);
 }
 
-/* ---------- funciones de love.graphics ---------- */
+/* ---------- love.graphics functions ---------- */
 
 
-/* ---------- fuentes y texto (stb_truetype) ---------- */
+/* ---------- fonts and text (stb_truetype) ---------- */
 
 #define MT_FONT "L360.Font"
 #define MT_TEXT "L360.Text"
@@ -980,9 +980,9 @@ typedef struct font_data {
     char path[64];
     unsigned char *ttf;
     stbtt_fontinfo info;
-    float ascent, descent, linegap;   /* en unidades de la fuente */
-    float upm_scale;                  /* escala de unidades a 1 px de em */
-    surf_t *atlas;                    /* NULL sin texturas (paso 2a) */
+    float ascent, descent, linegap;   /* in font units */
+    float upm_scale;                  /* scale from units to 1 px of em */
+    surf_t *atlas;                    /* NULL without textures (step 2a) */
     glyph_t g[256];
     struct font_data *next;
 } font_data;
@@ -1040,7 +1040,7 @@ static font_data *font_load(const char *path, const char *ttf, size_t len)
     fd->upm_scale = stbtt_ScaleForMappingEmToPixels(&fd->info, 1.0f);
 
 #if L360_TEXTURAS
-    /* atlas con ASCII y Latin-1, rasterizado a RASTER_PX */
+    /* atlas with ASCII and Latin-1, rasterized at RASTER_PX */
     unsigned char *rgba = calloc(ATLAS_W * ATLAS_H, 4);
     float sc = fd->upm_scale * RASTER_PX;
     int pen_x = 1, pen_y = 1, row_h = 0;
@@ -1167,7 +1167,7 @@ static int text_gc(lua_State *L)
     return 0;
 }
 
-/* newText(font, texto) */
+/* newText(font, text) */
 static int g_newText(lua_State *L)
 {
     font_ud *f = to_font(L, 1);
@@ -1209,11 +1209,11 @@ static vertex_t text_verts[TEXT_VERTS];
 static void draw_text(text_ud *t, const mat_t *m)
 {
     font_data *fd = t->font.fd;
-    if (!fd->atlas) {                   /* sin texturas (paso 2a) */
+    if (!fd->atlas) {                   /* without textures (step 2a) */
         l360_gfx_stats.skipped++;
         return;
     }
-    float k = t->font.size / RASTER_PX;              /* de px de rasterizado a px de la fuente */
+    float k = t->font.size / RASTER_PX;              /* from rasterized px to font px */
     float base = fd->ascent * px_scale(fd, t->font.size);
     float pen = 0;
     int nv = 0;
@@ -1248,7 +1248,7 @@ static void draw_text(text_ud *t, const mat_t *m)
 
 static int g_newImage(lua_State *L)
 {
-    /* newImage(path, png_bytes, dpiscale) - el Lua ya leyo el archivo */
+    /* newImage(path, png_bytes, dpiscale) - the Lua side already read the file */
     const char *path = luaL_checkstring(L, 1);
     size_t len = 0;
     const char *png = lua_tolstring(L, 2, &len);
@@ -1266,7 +1266,7 @@ static int g_newImage(lua_State *L)
         }
     }
 #else
-    /* paso 2a: solo el tamano (ancho y alto big-endian de la cabecera IHDR, bytes 16 a 23) */
+    /* step 2a: only the size (big-endian width and height from the IHDR header, bytes 16 to 23) */
     if (png && len >= 24 && !memcmp(png + 1, "PNG", 3)) {
         const unsigned char *u = (const unsigned char *)png;
         w = (int)((uint32_t)u[16] << 24 | (uint32_t)u[17] << 16 | (uint32_t)u[18] << 8 | u[19]);
@@ -1306,7 +1306,7 @@ static int g_newCanvas(lua_State *L)
     int w = (int)luaL_optnumber(L, 1, W), h = (int)luaL_optnumber(L, 2, H);
     if (w != W || h != H)
         gfx_log(" [warning] canvas %dx%d differs from the screen (%dx%d)", w, h, W, H);
-    /* textura del tamano de la pantalla, tiled (un resolve solo escribe texturas tiled) */
+    /* texture the size of the screen, tiled (a resolve only writes tiled textures) */
     surf_t *s = calloc(1, sizeof(*s));
     NTSTATUS st = xsdk_texture_create(&s->t, XSDK_FORMAT_A8R8G8B8, (uint32_t)W, (uint32_t)H, 1, true);
     if (!NT_SUCCESS(st)) {
@@ -1353,7 +1353,7 @@ static int meta_int(lua_State *L, int t, const char *key, int def)
     return v;
 }
 
-/* A .psu/.vsu file name of the metadata: a plain name, inside shaders\ */
+/* A .psu/.vsu file name in the metadata: a plain name, inside shaders\ */
 static int meta_file(lua_State *L, int t, const char *key, char *dst, size_t size)
 {
     lua_getfield(L, t, key);
@@ -1562,7 +1562,7 @@ static int g_draw(lua_State *L)
     tex_ud *t = to_tex(L, 1);
     text_ud *tx = t ? NULL : luaL_testudata(L, 1, MT_TEXT);
     if ((!t && !tx) || (t && !t->s) || (t && t->kind == TEX_CANVAS && opt_no_canvas)) {
-        l360_gfx_stats.skipped++;        /* Video y otros: todavia no; texturas desde el paso 2b */
+        l360_gfx_stats.skipped++;        /* Video and others: not yet; textures from step 2b */
         return 0;
     }
     int a = 2;
@@ -1643,7 +1643,7 @@ static int g_polygon(lua_State *L)
         if (np >= 3) {
             static vertex_t v[POLY_MAX * 3];
             int k = 0;
-            for (int i = 1; i + 1 < np; i++) {       /* abanico desde el primer vertice */
+            for (int i = 1; i + 1 < np; i++) {       /* fan from the first vertex */
                 set_vert(&v[k++], m, pts[0], pts[1], 0, 0);
                 set_vert(&v[k++], m, pts[i * 2], pts[i * 2 + 1], 0, 0);
                 set_vert(&v[k++], m, pts[i * 2 + 2], pts[i * 2 + 3], 0, 0);
@@ -1661,8 +1661,8 @@ static int g_polygon(lua_State *L)
 
 static int g_skip(lua_State *L) { (void)L; l360_gfx_stats.skipped++; return 0; }
 
-/* color de limpieza de la EDRAM en ARGB: un resolve copia y despues limpia, asi que vale para el
- * frame siguiente (como Xe_SetClearColor + Xe_Resolve) */
+/* EDRAM clear color in ARGB: a resolve copies and then clears, so it applies to the next frame
+ * (like Xe_SetClearColor + Xe_Resolve) */
 static uint32_t clear_argb(void)
 {
     uint32_t c[4];
@@ -1673,9 +1673,9 @@ static uint32_t clear_argb(void)
     return c[3] << 24 | c[0] << 16 | c[1] << 8 | c[2];
 }
 
-/* Termina el canvas: lo dibujado en la EDRAM pasa a su textura y la EDRAM queda limpia (como
- * Xe_ResolveInto). El resolve deshace target, blend, shaders y slot 0: frame_state los vuelve a
- * poner antes del proximo draw. */
+/* Ends the canvas: what was drawn in the EDRAM goes to its texture and the EDRAM is left clean (like
+ * Xe_ResolveInto). The resolve undoes target, blend, shaders and slot 0: frame_state puts them back
+ * before the next draw. */
 static void resolve_to_canvas(tex_ud *c)
 {
     flush();
@@ -1714,13 +1714,13 @@ static int g_getWidth(lua_State *L) { lua_pushnumber(L, W); return 1; }
 static int g_getHeight(lua_State *L) { lua_pushnumber(L, H); return 1; }
 static int g_setDefaultFilter(lua_State *L) { default_linear = strcmp(luaL_optstring(L, 1, "linear"), "nearest") != 0; return 0; }
 
-/* present: termina el frame. xsdk_present_begin espera que se libere un buffer de pantalla (el
- * frame se arma antes, mientras se ve el anterior), el resolve copia la EDRAM ahi y la limpia, y
- * present_end lo muestra en el proximo vblank en que la GPU haya terminado. */
+/* present: ends the frame. xsdk_present_begin waits until a screen buffer is free (the frame is
+ * built before, while the previous one is shown), the resolve copies the EDRAM there and clears it,
+ * and present_end shows it at the next vblank once the GPU has finished. */
 static int g_present(lua_State *L)
 {
     (void)L;
-    flush();                     /* lo pendiente cuenta como draw, no como present */
+    flush();                     /* pending work counts as a draw, not a present */
     l360_gfx_stats.present_at = now_ms();
     if (cur_canvas) {
         resolve_to_canvas(cur_canvas);
@@ -1744,8 +1744,8 @@ static int g_present(lua_State *L)
         }
     }
     l360_gfx_stats.frames++;
-    /* Guia: XAM dibuja cada frame debajo de ella y deja la GPU como quiere (xsdk la vuelve a armar).
-     * Mientras esta abierta se sigue presentando (si no, la Guia no se ve) pero sin dibujar. */
+    /* Guide: XAM draws each frame under it and leaves the GPU as it likes (xsdk rebuilds it).
+     * While it is open, presenting continues (otherwise the Guide would not be seen) but nothing is drawn. */
     int ui = xsdk_system_ui_open();
     if (ui != guide_open) {
         XsdkPresentStats ps;
@@ -1763,7 +1763,7 @@ static int g_present(lua_State *L)
         st_last_submits = st_submits;
         st_canvas_resolves = st_screen_resolves = 0;
     }
-    /* siguiente frame: la otra mitad del buffer de vertices */
+    /* next frame: the other half of the vertex buffer */
     vb_index ^= 1;
     vb_base = (vertex_t *)(uintptr_t)(vb_mem + vb_index * (VB_BYTES / 4));
     vb_cur = 0;
@@ -1773,8 +1773,8 @@ static int g_present(lua_State *L)
     return 0;
 }
 
-/* sync: antes de dibujar el frame, espera a que la GPU termine con su mitad del buffer de vertices
- * (la usaba el frame de hace dos; libXenon esperaba el frame anterior entero) */
+/* sync: before drawing the frame, waits for the GPU to finish with its half of the vertex buffer
+ * (the one used two frames ago; libXenon waited for the whole previous frame) */
 static int g_sync(lua_State *L)
 {
     (void)L;
@@ -1806,7 +1806,7 @@ static const luaL_Reg gfx_funcs[] = {
     {"setDefaultFilter", g_setDefaultFilter}, {"getStats", g_getStats},
     {NULL, NULL}};
 
-/* ---------- inicio ---------- */
+/* ---------- startup ---------- */
 
 static void read_options(void)
 {
@@ -1836,7 +1836,7 @@ int l360_gfx_init(uint32_t w, uint32_t h, void (*log)(const char *))
     H = (int)h;
     build_ortho();
     read_options();
-    (void)xsdk_system_ui_open();     /* la primera llamada empieza a escuchar a XAM */
+    (void)xsdk_system_ui_open();     /* the first call starts listening to XAM */
 
     /* The default program. The game's are registered by newShader, from their metadata. */
     snprintf(progs[0].name, sizeof(progs[0].name), "default");
@@ -1857,7 +1857,7 @@ int l360_gfx_init(uint32_t w, uint32_t h, void (*log)(const char *))
     xsdk_texture_sampler_state(&samp_linear, &sampler);
     sampler.mag_filter = sampler.min_filter = XSDK_FILTER_POINT;
     xsdk_texture_sampler_state(&samp_point, &sampler);
-    /* como libXenon: color SRCALPHA / INVSRCALPHA, alfa ONE / INVSRCALPHA */
+    /* as in libXenon: color SRCALPHA / INVSRCALPHA, alpha ONE / INVSRCALPHA */
     XsdkBlend blend = {
         .color_source = XSDK_BLEND_SRC_ALPHA, .color_dest = XSDK_BLEND_ONE_MINUS_SRC_ALPHA,
         .color_op = XSDK_BLEND_OP_ADD,
