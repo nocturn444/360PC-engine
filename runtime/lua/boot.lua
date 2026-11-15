@@ -916,6 +916,7 @@ end
 -- default_font. Without a TTF the font only measures (roughly).
 local c_newFont, c_newText = gfx.newFont, gfx.newText
 local font_files = {}
+local drawable_fonts = setmetatable({}, { __mode = "k" })  -- the fonts gfx.print can draw with
 local function real_font(path, size)
   if type(path) ~= "string" then path, size = game.default_font, path end
   size = tonumber(size) or 12
@@ -930,13 +931,36 @@ local function real_font(path, size)
     font_files[path] = ttf
     if not ttf then log("  [missing font] " .. path) end
   end
-  return ttf and c_newFont(path, ttf, size) or new_font(nil, size)
+  local font = ttf and c_newFont(path, ttf, size)
+  if not font then return new_font(nil, size) end
+  drawable_fonts[font] = true
+  return font
 end
-local default_font
+local default_font, current_font
 local background = { 0, 0, 0, 1 }
 G_.newFont = real_font
-G_.setNewFont = real_font
-G_.getFont = function() default_font = default_font or real_font(12); return default_font end
+G_.getFont = function()
+  if current_font then return current_font end
+  default_font = default_font or real_font(12)
+  return default_font
+end
+G_.setFont = function(font) current_font = font end
+G_.setNewFont = function(...) current_font = real_font(...); return current_font end
+-- print(text, x, y, r, sx, sy, ox, oy, kx, ky) and printf(text, x, y, limit, align, r, sx, ...),
+-- or with a font before x. A font without a TTF only measures: gfx.print counts it as not drawn.
+local c_print, c_printf = gfx.print, gfx.printf
+local function print_font(font)
+  font = font or current_font or G_.getFont()
+  return drawable_fonts[font] and font or nil
+end
+G_.print = function(text, x, ...)
+  if x ~= nil and type(x) ~= "number" then return c_print(print_font(x), text, ...) end
+  return c_print(print_font(), text, x, ...)
+end
+G_.printf = function(text, x, ...)
+  if x ~= nil and type(x) ~= "number" then return c_printf(print_font(x), text, ...) end
+  return c_printf(print_font(), text, x, ...)
+end
 G_.newText = function(font, s)
   if type(font) == "userdata" then return c_newText(font, s) end
   return new_text(font, s)
@@ -954,7 +978,6 @@ G_.setLineStyle = nop
 G_.setBlendMode = nop
 G_.getBlendMode = function() return "alpha", "alphamultiply" end
 G_.setScissor = nop
-G_.setFont = nop
 G_.reset = nop
 G_.setStencilTest = nop
 G_.setColorMask = nop
@@ -991,11 +1014,30 @@ love.thread = module("love.thread", {
   newThread = new_thread,
   getChannel = get_channel, newChannel = new_channel,
 })
+-- love.timer, as in LÖVE: step measures the time since the last step (the main loop calls it once
+-- per frame; a game may call it again after a long load so the next dt does not include it), and
+-- the FPS and the average delta are taken over the last second or so.
+local timer_last, fps, average_dt = now(), 0, DT
+local fps_frames, fps_since = 0, timer_last
+local function timer_step()
+  local t = now()
+  local dt = math.min(t - timer_last, 0.1)
+  timer_last = t
+  if dt > 0 then last_dt = dt end
+  fps_frames = fps_frames + 1
+  local span = t - fps_since
+  if span > 1 then
+    fps = math.floor(fps_frames / span + 0.5)
+    average_dt = span / fps_frames
+    fps_since, fps_frames = t, 0
+  end
+  return last_dt
+end
 love.timer = module("love.timer", {
-  getTime = now, step = function() return last_dt end,
+  getTime = now, step = timer_step,
   sleep = function() if current_thread then coroutine.yield() end end,
-  getFPS = function() return math.floor(1 / last_dt + 0.5) end, getDelta = function() return last_dt end,
-  getAverageDelta = function() return last_dt end,
+  getFPS = function() return fps end, getDelta = function() return last_dt end,
+  getAverageDelta = function() return average_dt end,
 })
 love.event = module("love.event", {
   pump = nop, poll = function() return nop end, clear = nop,
@@ -1119,12 +1161,10 @@ log(string.format("love.load: %.0f ms (%.1f s since the program started)", (now(
 l360.start_render()
 l360.set_context(title)
 local frame = 0
-local last = now()
+timer_last, fps_since = now(), now()
 while true do
   local t0 = now()
-  local dt = math.min(t0 - last, 0.1)
-  last = t0
-  if dt > 0 then last_dt = dt end
+  timer_step()
   frame = frame + 1
   if frame % 300 == 0 then
     local used, arena = 0, 0

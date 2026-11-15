@@ -53,7 +53,7 @@
  * is recognized by its header (L3X1 = xost). The shaders_xost switch is no longer needed. */
 static int opt_no_canvas, opt_no_shaders, opt_no_batching;
 /* for the log, every 300 frames */
-static long st_canvas_resolves, st_screen_resolves, st_last_draws, st_last_submits;
+static long st_canvas_resolves, st_screen_resolves, st_last_draws, st_last_submits, st_last_verts;
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-function"
@@ -604,7 +604,6 @@ static struct {
     prog_t *p;
     XsdkShader *ps, *vs;
 } pend;
-static long st_submits;          /* for the log: submits vs. real draws */
 
 static void flush(void)
 {
@@ -707,7 +706,8 @@ static void submit(surf_t *tex, vertex_t *v, int nverts)
     gpu_memcpy(vb_base + vb_cur, v, (uint32_t)nverts * sizeof(vertex_t));
     vb_cur += nverts;
     pend.n += nverts;
-    st_submits++;
+    l360_gfx_stats.submits++;
+    l360_gfx_stats.verts += nverts;
     if (opt_no_batching)
         flush();                  /* as before batching: each submit is drawn right away */
 }
@@ -767,11 +767,17 @@ static void local_transform(mat_t *out, float x, float y, float r, float sx, flo
     out->f = y - ox * out->b - oy * out->d;
 }
 
+/* Vertices of one text, line, shape or SpriteBatch chunk before they are copied to the GPU's
+ * memory. A multiple of 6 (quads) and of 3 (fans). */
+#define SCRATCH_VERTS 3060
+static vertex_t scratch[SCRATCH_VERTS];
+
 /* ---------- metatables ---------- */
 
 #define MT_TEX    "L360.Tex"
 #define MT_QUAD   "L360.Quad"
 #define MT_SHADER "L360.Shader"
+#define MT_BATCH  "L360.SpriteBatch"
 
 static void (*missing_cb)(const char *);
 void l360_gfx_set_missing_cb(void (*cb)(const char *)) { missing_cb = cb; }
@@ -1007,8 +1013,12 @@ static int utf8_next(const unsigned char **p)
     return c;
 }
 
+/* Advance of a character at this size: from the atlas table (Latin-1), otherwise from the font.
+ * Control characters take no room. */
 static float glyph_adv(font_data *fd, int cp, float size)
 {
+    if (cp < 32) return 0;
+    if (cp < 256 && fd->g[cp].ok) return fd->g[cp].adv * (size / RASTER_PX);
     int adv, lsb;
     stbtt_GetCodepointHMetrics(&fd->info, cp, &adv, &lsb);
     return adv * px_scale(fd, size);
@@ -1102,31 +1112,141 @@ static int g_newFont(lua_State *L)
 
 static font_ud *to_font(lua_State *L, int i) { return luaL_testudata(L, i, MT_FONT); }
 
+static float font_height(const font_ud *f)
+{
+    return floorf((f->fd->ascent - f->fd->descent + f->fd->linegap) * px_scale(f->fd, f->size) + 0.5f);
+}
+
+/* The text of print, printf, getWidth and getWrap: one buffer for the whole program (no heap use
+ * per call), with the colours of a coloured text ({color, "str", ...}) and the lines it was split
+ * into. Longer texts are cut. */
+#define PRINT_MAX 4096
+#define PRINT_RUNS 32
+#define PRINT_LINES 256
+typedef struct { int start, end, spaces; float width; } line_t;
+static struct {
+    char buf[PRINT_MAX];
+    int len, nruns, nlines;
+    struct { int start; float col[4]; } run[PRINT_RUNS];
+    line_t line[PRINT_LINES];
+    float width;                 /* of the widest line */
+} pr;
+
+static void pr_append(const char *s, size_t n, const float *col)
+{
+    if (!s || pr.nruns == PRINT_RUNS) return;
+    if (n > (size_t)(PRINT_MAX - 1 - pr.len)) n = (size_t)(PRINT_MAX - 1 - pr.len);
+    pr.run[pr.nruns].start = pr.len;
+    memcpy(pr.run[pr.nruns].col, col, 4 * sizeof(float));
+    pr.nruns++;
+    memcpy(pr.buf + pr.len, s, n);
+    pr.len += (int)n;
+    pr.buf[pr.len] = 0;
+}
+
+/* A string, a number or a coloured text table at idx */
+static void pr_read(lua_State *L, int idx)
+{
+    float col[4] = {1, 1, 1, 1};
+    size_t n;
+    pr.len = pr.nruns = 0;
+    pr.buf[0] = 0;
+    if (lua_istable(L, idx)) {
+        int len = (int)lua_objlen(L, idx);
+        for (int i = 1; i <= len; i++) {
+            lua_rawgeti(L, idx, i);
+            if (lua_istable(L, -1)) {
+                for (int k = 0; k < 4; k++) {
+                    lua_rawgeti(L, -1, k + 1);
+                    col[k] = lua_isnumber(L, -1) ? (float)lua_tonumber(L, -1) : 1.0f;
+                    lua_pop(L, 1);
+                }
+            } else if (lua_isstring(L, -1)) {
+                const char *s = lua_tolstring(L, -1, &n);
+                pr_append(s, n, col);
+            }
+            lua_pop(L, 1);
+        }
+    } else if (lua_isstring(L, idx)) {
+        const char *s = lua_tolstring(L, idx, &n);
+        pr_append(s, n, col);
+    }
+}
+
+static void pr_line(int start, int end, float w)
+{
+    if (pr.nlines == PRINT_LINES) return;
+    int spaces = 0;
+    for (int i = start; i < end; i++) spaces += pr.buf[i] == ' ';
+    pr.line[pr.nlines++] = (line_t){start, end, spaces, w};
+    if (w > pr.width) pr.width = w;
+}
+
+/* Splits the text into lines, as LOVE does: at each \n, and (with limit >= 0) before the character
+ * that would go past the limit, back at the last space of the line if it has one. */
+static void pr_wrap(const font_ud *f, float limit)
+{
+    const unsigned char *s = (const unsigned char *)pr.buf;
+    int i = 0;
+    pr.nlines = 0;
+    pr.width = 0;
+    for (;;) {
+        int start = i, space = -1;
+        float w = 0, w_space = 0;
+        while (i < pr.len && s[i] != '\n') {
+            const unsigned char *p = s + i;
+            int cp = utf8_next(&p);
+            float adv = glyph_adv(f->fd, cp, f->size);
+            if (limit >= 0 && w + adv > limit && cp != ' ' && i > start) {
+                if (space >= 0) {
+                    pr_line(start, space, w_space);
+                    i = space + 1;
+                } else {
+                    pr_line(start, i, w);
+                }
+                start = i;
+                space = -1;
+                w = 0;
+                continue;
+            }
+            if (cp == ' ') { space = i; w_space = w; }
+            w += adv;
+            i = (int)(p - s);
+        }
+        pr_line(start, i, w);
+        if (i >= pr.len) break;
+        i++;                     /* the \n */
+    }
+}
+
+enum { ALIGN_LEFT, ALIGN_CENTER, ALIGN_RIGHT, ALIGN_JUSTIFY };
+
 static int font_getWidth(lua_State *L)
 {
     font_ud *f = to_font(L, 1);
-    lua_pushnumber(L, str_width(f->fd, luaL_optstring(L, 2, ""), f->size));
+    pr_read(L, 2);
+    pr_wrap(f, -1);
+    lua_pushnumber(L, pr.width);
     return 1;
 }
-static int font_getHeight(lua_State *L)
-{
-    font_ud *f = to_font(L, 1);
-    lua_pushnumber(L, floorf((f->fd->ascent - f->fd->descent + f->fd->linegap) * px_scale(f->fd, f->size) + 0.5f));
-    return 1;
-}
+static int font_getHeight(lua_State *L) { lua_pushnumber(L, font_height(to_font(L, 1))); return 1; }
 static int font_getAscent(lua_State *L) { font_ud *f = to_font(L, 1); lua_pushnumber(L, f->fd->ascent * px_scale(f->fd, f->size)); return 1; }
 static int font_getDescent(lua_State *L) { font_ud *f = to_font(L, 1); lua_pushnumber(L, f->fd->descent * px_scale(f->fd, f->size)); return 1; }
 static int font_getLineHeight(lua_State *L) { lua_pushnumber(L, to_font(L, 1)->line_height); return 1; }
 static int font_setLineHeight(lua_State *L) { to_font(L, 1)->line_height = (float)luaL_checknumber(L, 2); return 0; }
 static int font_hasGlyphs(lua_State *L) { lua_pushboolean(L, 1); return 1; }
+/* font:getWrap(text, limit): the width of the widest line and the lines */
 static int font_getWrap(lua_State *L)
 {
     font_ud *f = to_font(L, 1);
-    const char *s = lua_isstring(L, 2) ? lua_tostring(L, 2) : "";
-    lua_pushnumber(L, str_width(f->fd, s, f->size));
-    lua_newtable(L);
-    lua_pushstring(L, s);
-    lua_rawseti(L, -2, 1);
+    pr_read(L, 2);
+    pr_wrap(f, (float)luaL_optnumber(L, 3, -1));
+    lua_pushnumber(L, pr.width);
+    lua_createtable(L, pr.nlines, 0);
+    for (int i = 0; i < pr.nlines; i++) {
+        lua_pushlstring(L, pr.buf + pr.line[i].start, (size_t)(pr.line[i].end - pr.line[i].start));
+        lua_rawseti(L, -2, i + 1);
+    }
     return 2;
 }
 
@@ -1203,9 +1323,6 @@ static int textm_getDimensions(lua_State *L)
 static int textm_set(lua_State *L) { text_set(L, luaL_checkudata(L, 1, MT_TEXT), 2); return 0; }
 static int textm_clear(lua_State *L) { text_ud *t = luaL_checkudata(L, 1, MT_TEXT); lua_pushnil(L); text_set(L, t, 3); return 0; }
 
-#define TEXT_VERTS 6 * 512
-static vertex_t text_verts[TEXT_VERTS];
-
 static void draw_text(text_ud *t, const mat_t *m)
 {
     font_data *fd = t->font.fd;
@@ -1227,10 +1344,10 @@ static void draw_text(text_ud *t, const mat_t *m)
             int cp = utf8_next(&p);
             glyph_t *gl = (cp > 0 && cp < 256) ? &fd->g[cp] : NULL;
             if (!gl || !gl->ok) { pen += glyph_adv(fd, cp, t->font.size); continue; }
-            if (gl->x1 > gl->x0 && nv + 6 <= TEXT_VERTS) {
+            if (gl->x1 > gl->x0 && nv + 6 <= SCRATCH_VERTS) {
                 float x0 = pen + gl->x0 * k, x1 = pen + gl->x1 * k;
                 float y0 = base + gl->y0 * k, y1 = base + gl->y1 * k;
-                vertex_t *v = text_verts + nv;
+                vertex_t *v = scratch + nv;
                 set_vert(&v[0], m, x0, y0, gl->u0, gl->v0);
                 set_vert(&v[1], m, x1, y0, gl->u1, gl->v0);
                 set_vert(&v[2], m, x0, y1, gl->u0, gl->v1);
@@ -1243,7 +1360,61 @@ static void draw_text(text_ud *t, const mat_t *m)
         }
     }
     memcpy(color, saved, sizeof(saved));
-    if (nv) submit(fd->atlas, text_verts, nv);
+    if (nv) submit(fd->atlas, scratch, nv);
+}
+
+/* Draws the lines of pr with their alignment inside `limit` */
+static void pr_draw(const font_ud *f, const mat_t *m, float limit, int align)
+{
+    font_data *fd = f->fd;
+    if (!fd->atlas) {                   /* without textures (step 2a) */
+        l360_gfx_stats.skipped++;
+        return;
+    }
+    float k = f->size / RASTER_PX;
+    float base = fd->ascent * px_scale(fd, f->size);
+    float step = floorf(font_height(f) * f->line_height + 0.5f);
+    float saved[4];
+    memcpy(saved, color, sizeof(saved));
+    int nv = 0, run = 0, applied = -1;
+    for (int li = 0; li < pr.nlines; li++) {
+        const line_t *ln = &pr.line[li];
+        float pen = 0, extra = 0;
+        if (align == ALIGN_CENTER) pen = floorf((limit - ln->width) / 2);
+        else if (align == ALIGN_RIGHT) pen = floorf(limit - ln->width);
+        else if (align == ALIGN_JUSTIFY && ln->spaces && ln->width < limit) extra = (limit - ln->width) / ln->spaces;
+        float y = base + li * step;
+        const unsigned char *p = (const unsigned char *)pr.buf + ln->start;
+        const unsigned char *end = (const unsigned char *)pr.buf + ln->end;
+        while (p < end) {
+            int at = (int)(p - (const unsigned char *)pr.buf);
+            while (run + 1 < pr.nruns && pr.run[run + 1].start <= at) run++;
+            if (run != applied) {
+                for (int c = 0; c < 4; c++) color[c] = saved[c] * pr.run[run].col[c];
+                applied = run;
+            }
+            int cp = utf8_next(&p);
+            glyph_t *gl = (cp >= 32 && cp < 256) ? &fd->g[cp] : NULL;
+            if (!gl || !gl->ok) { pen += glyph_adv(fd, cp, f->size); continue; }
+            if (gl->x1 > gl->x0) {
+                if (nv + 6 > SCRATCH_VERTS) { submit(fd->atlas, scratch, nv); nv = 0; }
+                float x0 = pen + gl->x0 * k, x1 = pen + gl->x1 * k;
+                float y0 = y + gl->y0 * k, y1 = y + gl->y1 * k;
+                vertex_t *v = scratch + nv;
+                set_vert(&v[0], m, x0, y0, gl->u0, gl->v0);
+                set_vert(&v[1], m, x1, y0, gl->u1, gl->v0);
+                set_vert(&v[2], m, x0, y1, gl->u0, gl->v1);
+                v[3] = v[1];
+                set_vert(&v[4], m, x1, y1, gl->u1, gl->v1);
+                v[5] = v[2];
+                nv += 6;
+            }
+            pen += gl->adv * k;
+            if (cp == ' ') pen += extra;
+        }
+    }
+    memcpy(color, saved, sizeof(saved));
+    if (nv) submit(fd->atlas, scratch, nv);
 }
 
 static int g_newImage(lua_State *L)
@@ -1556,24 +1727,208 @@ static int g_shear(lua_State *L)
     return 0;
 }
 
+/* The arguments x, y (at xy) and r, sx, sy, ox, oy, kx, ky (at rest) as a local transform */
+static void arg_local(lua_State *L, int xy, int rest, mat_t *lt)
+{
+    float sx = num_or(L, rest + 1, 1);
+    local_transform(lt, num_or(L, xy, 0), num_or(L, xy + 1, 0), num_or(L, rest, 0),
+                    sx, num_or(L, rest + 2, sx),
+                    num_or(L, rest + 3, 0), num_or(L, rest + 4, 0), num_or(L, rest + 5, 0), num_or(L, rest + 6, 0));
+}
+
+/* ---------- SpriteBatch ---------- */
+
+/* The sprites keep their vertices ready (position in the batch's own space, uv and colour): add
+ * and set do the work once, and drawing the batch only moves them by the current transform and
+ * copies them to the vertex buffer in chunks, which the batching joins into a single GPU draw.
+ * The buffer grows when it is full, as in LOVE 11. */
+typedef struct {
+    tex_ud *tex;                 /* kept alive by the userdata's environment table */
+    vertex_t *v;                 /* 6 per sprite */
+    int count, cap;
+    float col[4];
+} batch_ud;
+
+static batch_ud *to_batch(lua_State *L, int i) { return luaL_checkudata(L, i, MT_BATCH); }
+
+static void batch_set_tex(lua_State *L, batch_ud *b, int idx)
+{
+    tex_ud *t = to_tex(L, idx);
+    if (!t) luaL_argerror(L, idx, "Image or Canvas expected");
+    lua_createtable(L, 1, 0);
+    lua_pushvalue(L, idx);
+    lua_rawseti(L, -2, 1);
+    lua_setfenv(L, 1);
+    b->tex = t;
+}
+
+/* newSpriteBatch(image, maxsprites, usage) */
+static int g_newSpriteBatch(lua_State *L)
+{
+    if (!to_tex(L, 1)) luaL_argerror(L, 1, "Image or Canvas expected");
+    int cap = (int)luaL_optnumber(L, 2, 1000);
+    if (cap < 1) cap = 1;
+    batch_ud *b = lua_newuserdata(L, sizeof(batch_ud));
+    memset(b, 0, sizeof(*b));
+    b->col[0] = b->col[1] = b->col[2] = b->col[3] = 1;
+    luaL_getmetatable(L, MT_BATCH);
+    lua_setmetatable(L, -2);
+    lua_insert(L, 1);            /* the batch first, the image second */
+    batch_set_tex(L, b, 2);
+    b->v = malloc((size_t)cap * 6 * sizeof(vertex_t));
+    if (!b->v) return luaL_error(L, "newSpriteBatch: no memory for %d sprites", cap);
+    b->cap = cap;
+    lua_settop(L, 1);
+    return 1;
+}
+
+static int batch_gc(lua_State *L)
+{
+    batch_ud *b = to_batch(L, 1);
+    free(b->v);
+    b->v = NULL;
+    b->count = b->cap = 0;
+    return 0;
+}
+
+/* ([quad], x, y, r, sx, sy, ox, oy, kx, ky) from argument a: the 6 vertices of a sprite */
+static void batch_sprite(lua_State *L, batch_ud *b, vertex_t *v, int a)
+{
+    quad_ud *q = luaL_testudata(L, a, MT_QUAD);
+    float w = b->tex->w, h = b->tex->h, u0 = 0, v0 = 0, u1 = 1, v1 = 1;
+    if (q) {
+        a++;
+        w = q->w; h = q->h;
+        u0 = q->x / q->sw; v0 = q->y / q->sh;
+        u1 = (q->x + q->w) / q->sw; v1 = (q->y + q->h) / q->sh;
+    }
+    mat_t lt;
+    arg_local(L, a, a + 2, &lt);
+    const float px[4] = {0, w, 0, w}, py[4] = {0, 0, h, h};
+    const float pu[4] = {u0, u1, u0, u1}, pv[4] = {v0, v0, v1, v1};
+    static const int order[6] = {0, 1, 2, 1, 3, 2};
+    for (int i = 0; i < 6; i++) {
+        int c = order[i];
+        xf(&lt, px[c], py[c], &v[i].x, &v[i].y);
+        v[i].z = 0; v[i].w = 1;
+        v[i].u = pu[c]; v[i].v = pv[c];
+        v[i].r = b->col[0]; v[i].g = b->col[1]; v[i].b = b->col[2]; v[i].a = b->col[3];
+    }
+}
+
+static int batch_add(lua_State *L)
+{
+    batch_ud *b = to_batch(L, 1);
+    if (b->count == b->cap) {
+        int cap = b->cap * 2;
+        vertex_t *v = realloc(b->v, (size_t)cap * 6 * sizeof(vertex_t));
+        if (!v) return luaL_error(L, "SpriteBatch:add: no memory for %d sprites", cap);
+        b->v = v;
+        b->cap = cap;
+    }
+    batch_sprite(L, b, b->v + b->count * 6, 2);
+    lua_pushinteger(L, ++b->count);
+    return 1;
+}
+static int batch_set(lua_State *L)
+{
+    batch_ud *b = to_batch(L, 1);
+    int id = (int)luaL_checkinteger(L, 2);
+    if (id < 1 || id > b->count) return luaL_error(L, "SpriteBatch:set: no sprite %d (the batch has %d)", id, b->count);
+    batch_sprite(L, b, b->v + (id - 1) * 6, 3);
+    return 0;
+}
+static int batch_clear(lua_State *L) { to_batch(L, 1)->count = 0; return 0; }
+static int batch_getCount(lua_State *L) { lua_pushinteger(L, to_batch(L, 1)->count); return 1; }
+static int batch_getBufferSize(lua_State *L) { lua_pushinteger(L, to_batch(L, 1)->cap); return 1; }
+/* setColor(r, g, b, a): the colour of the sprites added or set from now on; setColor(): white */
+static int batch_setColor(lua_State *L) { read_color(L, 2, to_batch(L, 1)->col); return 0; }
+static int batch_getColor(lua_State *L)
+{
+    batch_ud *b = to_batch(L, 1);
+    for (int i = 0; i < 4; i++) lua_pushnumber(L, b->col[i]);
+    return 4;
+}
+static int batch_setTexture(lua_State *L) { batch_set_tex(L, to_batch(L, 1), 2); return 0; }
+static int batch_getTexture(lua_State *L)
+{
+    to_batch(L, 1);
+    lua_getfenv(L, 1);
+    lua_rawgeti(L, -1, 1);
+    return 1;
+}
+static int batch_type(lua_State *L) { lua_pushliteral(L, "SpriteBatch"); return 1; }
+static int batch_typeOf(lua_State *L)
+{
+    const char *n = luaL_checkstring(L, 2);
+    lua_pushboolean(L, !strcmp(n, "SpriteBatch") || !strcmp(n, "Drawable") || !strcmp(n, "Object"));
+    return 1;
+}
+
+/* Sprites that end up wholly outside the screen (or the canvas, which has its size) are left out,
+ * so a batch with a whole map costs what the visible part costs. Not with a game shader active:
+ * its vertex stage may move them. */
+static void draw_batch(const batch_ud *b, const mat_t *m)
+{
+    surf_t *s = b->tex->s;
+    if (!s || (b->tex->kind == TEX_CANVAS && opt_no_canvas)) {
+        l360_gfx_stats.skipped++;
+        return;
+    }
+    const shader_ud *sh = (L360_SHADERS && !opt_no_shaders) ? cur_shader : NULL;
+    const int cull = !sh || !sh->prog;
+    const int tinted = color[0] != 1 || color[1] != 1 || color[2] != 1 || color[3] != 1;
+    const float w = (float)W, h = (float)H;
+    const vertex_t *src = b->v;
+    int n = 0;
+    for (int i = 0; i < b->count; i++, src += 6) {
+        /* the corners are vertices 0, 1, 2 and 4; 3 and 5 repeat 1 and 2 */
+        float x0, y0, x1, y1, x2, y2, x3, y3;
+        xf(m, src[0].x, src[0].y, &x0, &y0);
+        xf(m, src[1].x, src[1].y, &x1, &y1);
+        xf(m, src[2].x, src[2].y, &x2, &y2);
+        xf(m, src[4].x, src[4].y, &x3, &y3);
+        if (cull && ((x0 < 0 && x1 < 0 && x2 < 0 && x3 < 0) || (x0 > w && x1 > w && x2 > w && x3 > w) ||
+                     (y0 < 0 && y1 < 0 && y2 < 0 && y3 < 0) || (y0 > h && y1 > h && y2 > h && y3 > h)))
+            continue;
+        if (n == SCRATCH_VERTS) {
+            submit(s, scratch, n);
+            n = 0;
+        }
+        vertex_t *v = scratch + n;
+        memcpy(v, src, 6 * sizeof(vertex_t));
+        v[0].x = x0; v[0].y = y0;
+        v[1].x = v[3].x = x1; v[1].y = v[3].y = y1;
+        v[2].x = v[5].x = x2; v[2].y = v[5].y = y2;
+        v[4].x = x3; v[4].y = y3;
+        if (tinted)
+            for (int k = 0; k < 6; k++) {
+                v[k].r *= color[0]; v[k].g *= color[1]; v[k].b *= color[2]; v[k].a *= color[3];
+            }
+        n += 6;
+    }
+    if (n) submit(s, scratch, n);
+}
+
 /* draw(drawable, [quad], x, y, r, sx, sy, ox, oy, kx, ky) */
 static int g_draw(lua_State *L)
 {
     tex_ud *t = to_tex(L, 1);
     text_ud *tx = t ? NULL : luaL_testudata(L, 1, MT_TEXT);
-    if ((!t && !tx) || (t && !t->s) || (t && t->kind == TEX_CANVAS && opt_no_canvas)) {
+    batch_ud *sb = (t || tx) ? NULL : luaL_testudata(L, 1, MT_BATCH);
+    if ((!t && !tx && !sb) || (t && !t->s) || (t && t->kind == TEX_CANVAS && opt_no_canvas)) {
         l360_gfx_stats.skipped++;        /* Video and others: not yet; textures from step 2b */
         return 0;
     }
     int a = 2;
-    quad_ud *q = luaL_testudata(L, 2, MT_QUAD);
+    quad_ud *q = sb ? NULL : luaL_testudata(L, 2, MT_QUAD);
     if (q) a = 3;
     mat_t lt, m;
-    local_transform(&lt, num_or(L, a, 0), num_or(L, a + 1, 0), num_or(L, a + 2, 0),
-                    num_or(L, a + 3, 1), lua_isnumber(L, a + 4) ? (float)lua_tonumber(L, a + 4) : num_or(L, a + 3, 1),
-                    num_or(L, a + 5, 0), num_or(L, a + 6, 0), num_or(L, a + 7, 0), num_or(L, a + 8, 0));
+    arg_local(L, a, a + 2, &lt);
     mat_mul(&m, &mstack[msp], &lt);
-    if (tx) {
+    if (sb) {
+        draw_batch(sb, &m);
+    } else if (tx) {
         draw_text(tx, &m);
     } else if (q) {
         emit_quad(t->s, &m, 0, 0, q->w, q->h,
@@ -1584,19 +1939,235 @@ static int g_draw(lua_State *L)
     return 0;
 }
 
-static void emit_line(const mat_t *m, float x0, float y0, float x1, float y1)
+/* print(font, text, x, y, r, sx, sy, ox, oy, kx, ky): boot.lua adds the current font */
+static int g_print(lua_State *L)
 {
-    float dx = x1 - x0, dy = y1 - y0, len = sqrtf(dx * dx + dy * dy);
-    if (len < 1e-6f) return;
-    float nx = -dy / len * line_width * 0.5f, ny = dx / len * line_width * 0.5f;
-    vertex_t v[6];
-    set_vert(&v[0], m, x0 + nx, y0 + ny, 0, 0);
-    set_vert(&v[1], m, x1 + nx, y1 + ny, 0, 0);
-    set_vert(&v[2], m, x0 - nx, y0 - ny, 0, 0);
-    v[3] = v[1];
-    set_vert(&v[4], m, x1 - nx, y1 - ny, 0, 0);
-    v[5] = v[2];
-    submit(NULL, v, 6);
+    font_ud *f = to_font(L, 1);
+    if (!f) {
+        l360_gfx_stats.skipped++;        /* no TTF: the font only measures */
+        return 0;
+    }
+    mat_t lt, m;
+    arg_local(L, 3, 5, &lt);
+    mat_mul(&m, &mstack[msp], &lt);
+    pr_read(L, 2);
+    pr_wrap(f, -1);
+    pr_draw(f, &m, 0, ALIGN_LEFT);
+    return 0;
+}
+
+/* printf(font, text, x, y, limit, align, r, sx, sy, ox, oy, kx, ky) */
+static int g_printf(lua_State *L)
+{
+    static const char *const aligns[] = {"left", "center", "right", "justify", NULL};
+    font_ud *f = to_font(L, 1);
+    if (!f) {
+        l360_gfx_stats.skipped++;
+        return 0;
+    }
+    float limit = (float)luaL_checknumber(L, 5);
+    int align = luaL_checkoption(L, 6, "left", aligns);
+    mat_t lt, m;
+    arg_local(L, 3, 7, &lt);
+    mat_mul(&m, &mstack[msp], &lt);
+    pr_read(L, 2);
+    pr_wrap(f, limit < 0 ? 0 : limit);
+    pr_draw(f, &m, limit, align);
+    return 0;
+}
+
+/* ---------- lines and shapes ---------- */
+
+/* Shapes are drawn without the game's shader, like rectangle and polygon since Love360. */
+
+#define LINE_PTS 510             /* 6 vertices per segment in scratch */
+static float line_pts[LINE_PTS * 2], line_off[LINE_PTS * 2];
+
+/* Numbers from argument `first` on, or from the table there: how many were read (at most max) */
+static int read_numbers(lua_State *L, int first, float *dst, int max)
+{
+    int n = 0;
+    if (lua_istable(L, first)) {
+        int len = (int)lua_objlen(L, first);
+        for (int i = 1; i <= len && n < max; i++) {
+            lua_rawgeti(L, first, i);
+            dst[n++] = (float)lua_tonumber(L, -1);
+            lua_pop(L, 1);
+        }
+    } else {
+        int top = lua_gettop(L);
+        for (int i = first; i <= top && n < max; i++) dst[n++] = (float)lua_tonumber(L, i);
+    }
+    return n;
+}
+
+/* A line of the current width through the np points of line_pts (changed here), closed or not,
+ * with miter joins: each point is moved to both sides along the bisector of its two segments, so
+ * the segments share their corners and nothing is drawn twice (it matters with alpha). Very sharp
+ * corners are cut short. */
+static void emit_polyline(const mat_t *m, int np, int closed)
+{
+    float *p = line_pts, *o = line_off;
+    int n = 0;
+    for (int i = 0; i < np; i++) {               /* drop repeated points */
+        if (n && p[i * 2] == p[n * 2 - 2] && p[i * 2 + 1] == p[n * 2 - 1]) continue;
+        p[n * 2] = p[i * 2]; p[n * 2 + 1] = p[i * 2 + 1];
+        n++;
+    }
+    if (closed && n > 2 && p[0] == p[n * 2 - 2] && p[1] == p[n * 2 - 1]) n--;
+    if (n < 2) return;
+    if (n == 2) closed = 0;
+    const float hw = line_width * 0.5f;
+    for (int i = 0; i < n; i++) {
+        int a = i - 1, b = i + 1;
+        if (a < 0) a = closed ? n - 1 : i;
+        if (b >= n) b = closed ? 0 : i;
+        /* normals of the segment that arrives and of the one that leaves */
+        float ax = p[i * 2] - p[a * 2], ay = p[i * 2 + 1] - p[a * 2 + 1];
+        float bx = p[b * 2] - p[i * 2], by = p[b * 2 + 1] - p[i * 2 + 1];
+        float al = sqrtf(ax * ax + ay * ay), bl = sqrtf(bx * bx + by * by);
+        if (al < 1e-12f) { ax = bx; ay = by; al = bl; }
+        if (bl < 1e-12f) { bx = ax; by = ay; bl = al; }
+        float n1x = -ay / al, n1y = ax / al, n2x = -by / bl, n2y = bx / bl;
+        float mx = n1x + n2x, my = n1y + n2y, ml = sqrtf(mx * mx + my * my);
+        if (ml < 1e-4f) {                        /* it turns back on itself */
+            o[i * 2] = n1x * hw; o[i * 2 + 1] = n1y * hw;
+            continue;
+        }
+        mx /= ml; my /= ml;
+        float d = mx * n1x + my * n1y;
+        if (d < 0.25f) d = 0.25f;
+        o[i * 2] = mx * hw / d; o[i * 2 + 1] = my * hw / d;
+    }
+    int segs = closed ? n : n - 1, k = 0;
+    for (int i = 0; i < segs; i++) {
+        int j = i + 1 == n ? 0 : i + 1;
+        vertex_t *v = scratch + k;
+        set_vert(&v[0], m, p[i * 2] + o[i * 2], p[i * 2 + 1] + o[i * 2 + 1], 0, 0);
+        set_vert(&v[1], m, p[j * 2] + o[j * 2], p[j * 2 + 1] + o[j * 2 + 1], 0, 0);
+        set_vert(&v[2], m, p[i * 2] - o[i * 2], p[i * 2 + 1] - o[i * 2 + 1], 0, 0);
+        v[3] = v[1];
+        set_vert(&v[4], m, p[j * 2] - o[j * 2], p[j * 2 + 1] - o[j * 2 + 1], 0, 0);
+        v[5] = v[2];
+        k += 6;
+    }
+    shader_ud *saved = cur_shader;
+    cur_shader = NULL;
+    submit(NULL, scratch, k);
+    cur_shader = saved;
+}
+
+/* line(x1, y1, x2, y2, ...) | line({x1, y1, ...}); a line that ends where it starts is closed */
+static int g_line(lua_State *L)
+{
+    int np = read_numbers(L, 1, line_pts, LINE_PTS * 2) / 2;
+    int closed = np >= 3 && line_pts[0] == line_pts[np * 2 - 2] && line_pts[1] == line_pts[np * 2 - 1];
+    emit_polyline(&mstack[msp], np, closed);
+    return 0;
+}
+
+/* The ellipse with radii rx, ry around (x, y), in `segs` segments (0 = as many as LOVE picks) */
+static void draw_ellipse(const char *mode, float x, float y, float rx, float ry, int segs)
+{
+    if (segs <= 0) {
+        segs = (int)sqrtf((fabsf(rx) + fabsf(ry)) * 0.5f * 20.0f);
+        if (segs < 8) segs = 8;
+    }
+    if (segs < 3) segs = 3;
+    if (segs > LINE_PTS) segs = LINE_PTS;
+    const mat_t *m = &mstack[msp];
+    const float step = 6.28318530718f / (float)segs;
+    for (int i = 0; i < segs; i++) {
+        line_pts[i * 2] = x + cosf(step * i) * rx;
+        line_pts[i * 2 + 1] = y + sinf(step * i) * ry;
+    }
+    if (mode[0] != 'f') {
+        emit_polyline(m, segs, 1);
+        return;
+    }
+    int k = 0;
+    for (int i = 0; i < segs; i++) {             /* fan from the centre */
+        int j = i + 1 == segs ? 0 : i + 1;
+        set_vert(&scratch[k++], m, x, y, 0, 0);
+        set_vert(&scratch[k++], m, line_pts[i * 2], line_pts[i * 2 + 1], 0, 0);
+        set_vert(&scratch[k++], m, line_pts[j * 2], line_pts[j * 2 + 1], 0, 0);
+    }
+    shader_ud *saved = cur_shader;
+    cur_shader = NULL;
+    submit(NULL, scratch, k);
+    cur_shader = saved;
+}
+
+/* circle(mode, x, y, radius, segments) */
+static int g_circle(lua_State *L)
+{
+    float r = num_or(L, 4, 0);
+    draw_ellipse(luaL_checkstring(L, 1), num_or(L, 2, 0), num_or(L, 3, 0), r, r, (int)num_or(L, 5, 0));
+    return 0;
+}
+/* ellipse(mode, x, y, radiusx, radiusy, segments) */
+static int g_ellipse(lua_State *L)
+{
+    draw_ellipse(luaL_checkstring(L, 1), num_or(L, 2, 0), num_or(L, 3, 0), num_or(L, 4, 0), num_or(L, 5, 0),
+                 (int)num_or(L, 6, 0));
+    return 0;
+}
+
+static float point_size = 1.0f;
+static int g_setPointSize(lua_State *L) { point_size = num_or(L, 1, 1); return 0; }
+static int g_getPointSize(lua_State *L) { lua_pushnumber(L, point_size); return 1; }
+
+/* points(x, y, ...) | points({x, y, ...}) | points({{x, y, r, g, b, a}, ...}): squares of the
+ * point size in screen pixels (the transform moves them, it does not scale them) */
+static int g_points(lua_State *L)
+{
+    static const mat_t ident = {1, 0, 0, 1, 0, 0};
+    const mat_t *m = &mstack[msp];
+    const float h = point_size * 0.5f;
+    int coloured = 0, np, k = 0;
+    if (lua_istable(L, 1)) {
+        lua_rawgeti(L, 1, 1);
+        coloured = lua_istable(L, -1);
+        lua_pop(L, 1);
+    }
+    np = coloured ? (int)lua_objlen(L, 1) : read_numbers(L, 1, line_pts, LINE_PTS * 2) / 2;
+    if (np > LINE_PTS) np = LINE_PTS;
+    float saved[4];
+    memcpy(saved, color, sizeof(saved));
+    for (int i = 0; i < np; i++) {
+        float x, y;
+        if (coloured) {
+            float c[6] = {0, 0, 1, 1, 1, 1};
+            lua_rawgeti(L, 1, i + 1);
+            if (lua_istable(L, -1))
+                for (int j = 0; j < 6; j++) {
+                    lua_rawgeti(L, -1, j + 1);
+                    if (lua_isnumber(L, -1)) c[j] = (float)lua_tonumber(L, -1);
+                    lua_pop(L, 1);
+                }
+            lua_pop(L, 1);
+            for (int j = 0; j < 4; j++) color[j] = saved[j] * c[2 + j];
+            xf(m, c[0], c[1], &x, &y);
+        } else {
+            xf(m, line_pts[i * 2], line_pts[i * 2 + 1], &x, &y);
+        }
+        vertex_t *v = scratch + k;
+        set_vert(&v[0], &ident, x - h, y - h, 0, 0);
+        set_vert(&v[1], &ident, x + h, y - h, 0, 0);
+        set_vert(&v[2], &ident, x - h, y + h, 0, 0);
+        v[3] = v[1];
+        set_vert(&v[4], &ident, x + h, y + h, 0, 0);
+        v[5] = v[2];
+        k += 6;
+    }
+    memcpy(color, saved, sizeof(saved));
+    if (k) {
+        shader_ud *sh = cur_shader;
+        cur_shader = NULL;
+        submit(NULL, scratch, k);
+        cur_shader = sh;
+    }
+    return 0;
 }
 
 static int g_rectangle(lua_State *L)
@@ -1608,10 +2179,9 @@ static int g_rectangle(lua_State *L)
     if (mode[0] == 'f') {
         emit_quad(NULL, &mstack[msp], x, y, x + w, y + h, 0, 0, 1, 1);
     } else {
-        emit_line(&mstack[msp], x, y, x + w, y);
-        emit_line(&mstack[msp], x + w, y, x + w, y + h);
-        emit_line(&mstack[msp], x + w, y + h, x, y + h);
-        emit_line(&mstack[msp], x, y + h, x, y);
+        const float pts[8] = {x, y, x + w, y, x + w, y + h, x, y + h};
+        memcpy(line_pts, pts, sizeof(pts));
+        emit_polyline(&mstack[msp], 4, 1);
     }
     cur_shader = saved;
     return 0;
@@ -1651,15 +2221,12 @@ static int g_polygon(lua_State *L)
             submit(NULL, v, k);
         }
     } else {
-        for (int i = 0; i + 1 < np; i++)
-            emit_line(m, pts[i * 2], pts[i * 2 + 1], pts[i * 2 + 2], pts[i * 2 + 3]);
-        emit_line(m, pts[(np - 1) * 2], pts[(np - 1) * 2 + 1], pts[0], pts[1]);
+        memcpy(line_pts, pts, (size_t)np * 2 * sizeof(float));
+        emit_polyline(m, np, 1);
     }
     cur_shader = saved;
     return 0;
 }
-
-static int g_skip(lua_State *L) { (void)L; l360_gfx_stats.skipped++; return 0; }
 
 /* EDRAM clear color in ARGB: a resolve copies and then clears, so it applies to the next frame
  * (like Xe_SetClearColor + Xe_Resolve) */
@@ -1756,11 +2323,13 @@ static int g_present(lua_State *L)
         need_state = 1;
     }
     if (l360_gfx_stats.frames % 300 == 0) {
-        gfx_log("[gfx] frame %ld: %ld draws/frame (%ld submits), resolves canvas %ld screen %ld, %ld skipped",
-                l360_gfx_stats.frames, (l360_gfx_stats.draws - st_last_draws) / 300, (st_submits - st_last_submits) / 300,
+        gfx_log("[gfx] frame %ld: %ld draws/frame (%ld submits, %ld vertices), resolves canvas %ld screen %ld, %ld skipped",
+                l360_gfx_stats.frames, (l360_gfx_stats.draws - st_last_draws) / 300,
+                (l360_gfx_stats.submits - st_last_submits) / 300, (l360_gfx_stats.verts - st_last_verts) / 300,
                 st_canvas_resolves, st_screen_resolves, l360_gfx_stats.skipped);
         st_last_draws = l360_gfx_stats.draws;
-        st_last_submits = st_submits;
+        st_last_submits = l360_gfx_stats.submits;
+        st_last_verts = l360_gfx_stats.verts;
         st_canvas_resolves = st_screen_resolves = 0;
     }
     /* next frame: the other half of the vertex buffer */
@@ -1799,7 +2368,9 @@ static const luaL_Reg gfx_funcs[] = {
     {"push", g_push}, {"pop", g_pop}, {"origin", g_origin}, {"translate", g_translate},
     {"scale", g_scale}, {"rotate", g_rotate}, {"shear", g_shear},
     {"draw", g_draw}, {"rectangle", g_rectangle}, {"polygon", g_polygon},
-    {"print", g_skip}, {"printf", g_skip}, {"line", g_skip}, {"circle", g_skip}, {"ellipse", g_skip}, {"points", g_skip},
+    {"newSpriteBatch", g_newSpriteBatch}, {"print", g_print}, {"printf", g_printf},
+    {"line", g_line}, {"circle", g_circle}, {"ellipse", g_ellipse}, {"points", g_points},
+    {"setPointSize", g_setPointSize}, {"getPointSize", g_getPointSize},
     {"setCanvas", g_setCanvas}, {"present", g_present}, {"sync", g_sync},
     {"getDimensions", g_getDimensions}, {"getPixelDimensions", g_getDimensions},
     {"getWidth", g_getWidth}, {"getHeight", g_getHeight},
@@ -1916,6 +2487,17 @@ void l360_gfx_register(lua_State *L)
     static const luaL_Reg text_m[] = {
         {"getWidth", textm_getWidth}, {"getHeight", textm_getHeight}, {"getDimensions", textm_getDimensions},
         {"set", textm_set}, {"setf", textm_set}, {"clear", textm_clear}, {NULL, NULL}};
+    static const luaL_Reg batch_m[] = {
+        {"add", batch_add}, {"set", batch_set}, {"clear", batch_clear}, {"flush", nop},
+        {"getCount", batch_getCount}, {"getBufferSize", batch_getBufferSize},
+        {"setColor", batch_setColor}, {"getColor", batch_getColor},
+        {"setTexture", batch_setTexture}, {"getTexture", batch_getTexture},
+        {"type", batch_type}, {"typeOf", batch_typeOf}, {NULL, NULL}};
+    make_mt(L, MT_BATCH, batch_m);
+    luaL_getmetatable(L, MT_BATCH);
+    lua_pushcfunction(L, batch_gc);
+    lua_setfield(L, -2, "__gc");
+    lua_pop(L, 1);
     make_mt(L, MT_FONT, font_m);
     make_mt(L, MT_TEXT, text_m);
     luaL_getmetatable(L, MT_TEXT);

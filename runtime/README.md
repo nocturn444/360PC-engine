@@ -15,8 +15,8 @@ it is generic: the `.xex` runs the LÖVE game in its own folder (`game.lua`, `co
 declares its own in `game.lua`, and they are compiled on PC and registered at run time from
 their metadata ([../docs/SHADERS.md](../docs/SHADERS.md)). Still to do:
 
-- `print`, `printf`, `line`, `circle`, `ellipse` and `points` draw nothing; no SpriteBatch
-  (objective 4). There is no built-in font: `newFont(size)` needs `default_font` in `game.lua`.
+- There is no built-in font: `newFont(size)` needs `default_font` in `game.lua`; without it text
+  is measured roughly and not drawn.
 - No keyboard/pad action mapping yet (objective 4); the pad reaches the game as a LÖVE gamepad.
 - `love.thread` threads run as coroutines on the main thread, one turn per frame.
 - `love.filesystem.getDirectoryItems` does not list saves written in earlier runs.
@@ -36,6 +36,28 @@ Source comments are still partly in Spanish; they are translated to English as e
   `lua/save.lua`: saves with two slots per file.
 - `lua/l360_gfx_stub.lua`: the same `l360.gfx` API without drawing (PC tests and GPU fallback).
 - `third_party/stb/`: stb_image v2.30 and stb_truetype v1.26.
+
+## Implemented love.graphics functions
+
+Drawing is done in `l360_gfx.c`; `lua/boot.lua` adds what needs no GPU. Everything is transformed
+on the CPU and batched: consecutive draws that share texture, filter and shader become one GPU
+draw. `l360.gfxstats()` has the totals: `draws` (GPU draw calls), `submits` (draws, shapes and
+texts that reached the vertex buffer), `verts`, `skipped` (asked and not drawn) and `dropped`
+(vertex buffer full: 120000 vertices, 20000 quads, per frame).
+
+| Functions | Limits |
+|---|---|
+| `draw(image or canvas, [quad], x, y, r, sx, sy, ox, oy, kx, ky)`, `newImage`, `newQuad`, `newCanvas`, `setCanvas` | PNG only. Canvases have the screen's size. No Mesh, Video or ParticleSystem. |
+| `newSpriteBatch(image, maxsprites, usage)`; `add`, `set`, `clear`, `getCount`, `getBufferSize`, `setColor`, `getColor`, `setTexture`, `getTexture`, `flush`; `draw(batch, ...)` | Vertices are computed on `add`/`set`; a draw copies them once and is one GPU draw. The buffer grows when full. Sprites wholly off screen are left out, unless a game shader is active. `usage` is ignored. No `addLayer`, `attachAttribute` or `setDrawRange`. |
+| `print(text, [font], x, y, r, sx, sy, ox, oy, kx, ky)`, `printf(text, [font], x, y, limit, align, r, sx, ...)`, `newFont`, `setFont`, `getFont`, `setNewFont`, `newText`; Font `getWidth`, `getHeight`, `getWrap`, `getAscent`, `getDescent`, `getBaseline`, `getLineHeight`, `setLineHeight` | TTF only, glyphs 32-255 (Latin-1) from one atlas rasterized at 64 px; other characters take room and draw nothing. No kerning, no tabs. Aligns `left`, `center`, `right`, `justify`; wraps at spaces and `\n`. Coloured text tables work. At most 4095 bytes, 256 lines and 32 colour runs per call. Text objects are one line. |
+| `rectangle`, `polygon`, `line`, `circle`, `ellipse`, `points`, `setLineWidth`, `getLineWidth`, `setPointSize`, `getPointSize` | `"fill"` and `"line"`. Outlines and lines have miter joins (cut short on very sharp corners), no smoothing, no line styles. At most 510 points per line, 128 per polygon, 510 segments per circle. No rounded rectangles, no `arc`. Filled polygons must be convex. Shapes ignore the game's shader. |
+| `setColor`, `getColor`, `setBackgroundColor`, `clear`, `push`, `pop`, `origin`, `translate`, `scale`, `rotate`, `shear`, `setDefaultFilter`, `getDimensions`, `getWidth`, `getHeight`, `getStats` | `clear` only sets the colour of the next frame. `push` takes no argument. |
+| `newShader`, `setShader`, Shader `send`, `sendColor`, `hasUniform` | [../docs/SHADERS.md](../docs/SHADERS.md). |
+| `setBlendMode`, `setScissor`, `setStencilTest`, `setColorMask`, `setLineStyle`, `reset` | Accepted, do nothing: blending is always alpha. |
+
+`love.timer`: `getTime` (high resolution), `getDelta`, `getFPS` and `getAverageDelta` (over the
+last second, as in LÖVE), `step`, `sleep` (only yields inside a `love.thread`). The loop runs at
+30 FPS and `dt` is capped at 0.1 s.
 
 ## Console folder
 

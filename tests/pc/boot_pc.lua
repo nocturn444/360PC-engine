@@ -1,7 +1,8 @@
 -- PC check of the console boot (runtime/lua/boot.lua) against tests/fixtures/minimal_game.
 -- Builds the l360 table like runtime/main.c and runtime/l360_sys.c do (files from disk, saves in
 -- memory, a fake controller), runs runtime/lua/l360_gfx_stub.lua and then boot.lua for FRAMES
--- frames, and checks that the game was loaded and run the way LÖVE would. The fixture's shader
+-- frames, and checks that the game was loaded and run the way LÖVE would, and that what it drew
+-- (SpriteBatch, text, lines, shapes) reached l360.gfx with the expected vertices. The fixture's shader
 -- metadata (shaders/*.meta.lua) is generated first with tools/shaders/build_shaders.py --hlsl-only
 -- (needs python3), as the shader build would leave it in the console folder.
 -- Usage, from the repository root: luajit -joff tests/pc/boot_pc.lua [game folder]
@@ -37,6 +38,7 @@ local function game_file(path)
   if built_shaders and path:match('^shaders/[%w_]+%.meta%.lua$') then
     return read_file(built_shaders .. '/' .. path:match('[^/]+$'))
   end
+  if own_game and path == 'test_font.ttf' then return 'not a real TTF: the stub only measures' end
   local own = path:match('^l360/(.*)$')
   if own then return read_file('runtime/lua/' .. own) or read_file('tests/console/' .. own) end
   return read_file(root .. '/' .. path)
@@ -183,6 +185,73 @@ function finish()
     check(logged('minimal_game: love.load, run 1, window 1280x720'), 'love.load ran, with print in the log')
     check(logged('minimal_game: frame 60'), 'love.update ran on every frame')
     check(st.draws >= FRAMES - 1, 'love.draw drew a rectangle per frame: ' .. st.draws)
+    -- Each frame of the fixture: 2 rectangles, a 40x4 tile SpriteBatch, a line of 4 points, a
+    -- circle outline (24 segments for radius 30) and a filled one of 16; print and printf are not
+    -- drawn, because the fixture has no default_font
+    local drawn = st.draws / 6
+    check(drawn >= FRAMES - 1 and drawn == math.floor(drawn), 'six submits per frame: ' .. st.draws)
+    check(st.submits == st.draws, 'the stub counts one draw per submit')
+    check(st.verts == drawn * (6 + 6 + 40 * 4 * 6 + 3 * 6 + 24 * 6 + 16 * 3), 'vertices per frame: ' .. st.verts / drawn)
+    check(st.skipped == 2 * drawn, 'print and printf without a font are counted as not drawn: ' .. st.skipped)
+    check(logged('[missing] default font'), 'the missing default font is logged')
+
+    -- love.graphics, called directly
+    local g = love.graphics
+    local function verts(f) local a = l360.gfxstats().verts; f(); return l360.gfxstats().verts - a end
+    local function skipped(f) local a = l360.gfxstats().skipped; f(); return l360.gfxstats().skipped - a end
+    -- SpriteBatch
+    local img = g.newImage('tiles.png')
+    check(img:getWidth() == 32 and img:getHeight() == 16, 'tiles.png size')
+    local quad = g.newQuad(0, 0, 16, 16, img)
+    local batch = g.newSpriteBatch(img, 2, 'static')
+    check(batch:getCount() == 0 and batch:getBufferSize() == 2, 'a new SpriteBatch is empty')
+    check(batch:add(quad, 0, 0) == 1 and batch:add(16, 0) == 2 and batch:add(quad, 32, 0, 0, 2, 2) == 3,
+      'SpriteBatch:add returns the sprite number')
+    check(batch:getCount() == 3 and batch:getBufferSize() >= 3, 'the SpriteBatch grows when full')
+    batch:set(2, quad, 5, 5)
+    check(not pcall(batch.set, batch, 4, quad, 0, 0), 'SpriteBatch:set of a sprite that is not there fails')
+    batch:setColor(1, 0, 0, 0.5)
+    local r, _, _, a = batch:getColor()
+    check(r == 1 and a == 0.5 and batch:getTexture() == img, 'SpriteBatch colour and texture')
+    batch:flush()
+    check(verts(function() g.draw(batch, 10, 10, 0, 2, 2) end) == 18, 'drawing a SpriteBatch sends its 3 sprites')
+    batch:clear()
+    check(batch:getCount() == 0 and verts(function() g.draw(batch) end) == 0, 'SpriteBatch:clear')
+    check(not pcall(g.newSpriteBatch, 'tiles.png'), 'newSpriteBatch needs an Image')
+    -- Text: a font with a file can draw (the stub measures 0.44 of the size per byte)
+    local font = g.newFont('test_font.ttf', 20)
+    g.setFont(font)
+    check(g.getFont() == font and font:getHeight() == 20, 'setFont and getFont')
+    check(math.abs(font:getWidth('abcd') - 4 * 8.8) < 1e-9 and math.abs(font:getWidth('a\nabc') - 3 * 8.8) < 1e-9,
+      'Font:getWidth, with lines')
+    local w, lines = font:getWrap('aaa bbb ccc\nd', 7 * 8.8 + 1)
+    check(#lines == 3 and lines[1] == 'aaa bbb' and lines[2] == 'ccc' and lines[3] == 'd'
+      and math.abs(w - 7 * 8.8) < 1e-9, 'Font:getWrap: ' .. table.concat(lines, '|'))
+    check(verts(function() g.print('ab c', 10, 10) end) == 18, 'print sends a quad per character')
+    check(verts(function() g.print('ab', font, 10, 10, 0, 2, 2) end) == 12, 'print with a font argument')
+    check(verts(function() g.print({ { 1, 0, 0, 1 }, 'ab', { 0, 1, 0, 1 }, 'cd' }, 0, 0) end) == 24, 'coloured text')
+    check(verts(function() g.printf('aaa bbb ccc', 0, 0, 7 * 8.8 + 1, 'center') end) == 54, 'printf')
+    check(verts(function() g.printf('aaa bbb', font, 0, 0, 100) end) == 36, 'printf with a font, default align')
+    check(not pcall(g.printf, 'x', 0, 0, 100, 'middle'), 'printf rejects an unknown align')
+    g.setFont(g.newFont(14))
+    check(skipped(function() g.print('abc', 0, 0) end) == 1, 'a font without a file does not draw')
+    g.setFont(font)
+    -- Lines and shapes
+    check(verts(function() g.line(0, 0, 10, 0, 10, 10) end) == 12, 'line: a quad per segment')
+    check(verts(function() g.line({ 0, 0, 10, 0 }) end) == 6, 'line with a table')
+    check(verts(function() g.rectangle('line', 0, 0, 10, 10) end) == 24, 'rectangle outline')
+    check(verts(function() g.circle('fill', 0, 0, 10, 12) end) == 36, 'filled circle with 12 segments')
+    check(verts(function() g.circle('line', 0, 0, 30) end) == 144, 'circle outline, default segments')
+    check(verts(function() g.ellipse('fill', 0, 0, 20, 10) end) == 51, 'filled ellipse, default segments')
+    check(verts(function() g.points(1, 1, 2, 2) end) == 12, 'points')
+    check(verts(function() g.points({ { 1, 1, 1, 0, 0, 1 } }) end) == 6, 'coloured points')
+    g.setPointSize(4)
+    check(g.getPointSize() == 4, 'setPointSize')
+    -- love.timer: the frames last 1/30 s here
+    check(love.timer.getFPS() == 30, 'getFPS is averaged over a second: ' .. love.timer.getFPS())
+    check(math.abs(love.timer.getAverageDelta() - 1 / 30) < 1e-6 and math.abs(love.timer.getDelta() - 1 / 30) < 1e-6,
+      'getAverageDelta and getDelta')
+    check(love.timer.getTime() == t and type(love.timer.step()) == 'number', 'getTime and step')
     check(logged('minimal_game: gamepadpressed a'), 'the controller reached love.gamepadpressed')
     check(love.window.getTitle() == 'Minimal Game' and love.filesystem.getIdentity() == 'minimal_game',
       'title and identity')
@@ -217,8 +286,8 @@ function finish()
     check(not quit_called, 'nobody asked to quit')
   end
   if built_shaders then os.execute('rm -rf ' .. built_shaders) end
-  raw_print(string.format('OK: %d checks; love.load and %d frames; %d draws, %d not drawn; %d files (%d KB)',
-    checks, frames, st.draws, st.skipped, files, bytes / 1024))
+  raw_print(string.format('OK: %d checks; love.load and %d frames; %d draws (%d vertices), %d not drawn; %d files (%d KB)',
+    checks, frames, st.draws, st.verts, st.skipped, files, bytes / 1024))
   os.exit(0)
 end
 
