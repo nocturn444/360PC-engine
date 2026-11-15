@@ -12,6 +12,8 @@ Reference and usage example: [docs/ENGINE.md](../docs/ENGINE.md).
 | `camera.lua` | Camera: follow, room bounds, room transitions, shake, world/screen conversion. |
 | `pixel.lua` | Low-resolution drawing scaled by a whole number, with bars. |
 | `layers.lua` | Sprites made of named layers drawn in a fixed order. |
+| `entity.lua` | Entities made of components, cached queries, tags and ordered systems. |
+| `modifiers.lua` | Modifiers as data: stats evaluated in a fixed order, events, stacking, timers, save state. |
 | `anim.lua` | Animations with anim8 (`lib/anim8`). |
 | `modules/` | Optional, genre-specific modules (objective 7). |
 
@@ -20,4 +22,4 @@ Plain Lua 5.1: no FFI, no `goto`, only the LÖVE functions in
 needs `engine/` (and `lib/anim8/` for animations) in its folder. Tests:
 `luajit -joff tests/engine/run.lua`.
 
-Not here yet: entities (with objective 7) and saves (`engine/save.lua`, with the game tools).
+Not here yet: saves (`engine/save.lua`, with the game tools).

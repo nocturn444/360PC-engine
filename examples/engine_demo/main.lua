@@ -1,7 +1,8 @@
 -- Engine demo: the smallest game that uses every module of engine/ (docs/ENGINE.md).
 -- A menu, a play state and a pause state; a sprite made of layers that moves with actions
 -- (keyboard or controller) through two rooms, with a camera that follows it, slides from room
--- to room and shakes; all drawn at 320x180 and scaled to the screen.
+-- to room and shakes; all drawn at 320x180 and scaled to the screen. The sprite is an entity
+-- with two modifiers on its speed: one that stays and one that lasts two seconds.
 -- Needs engine/ and lib/ next to this file (copies or links of the repository's folders).
 local engine = require("engine")
 
@@ -10,10 +11,19 @@ local ROOMS = {                      -- x, y, w, h and a colour
   { 0, 0, 480, 270, { 0.16, 0.20, 0.30 } },
   { 480, 0, 400, 180, { 0.30, 0.18, 0.16 } },
 }
-local SPEED = 90                     -- pixels per second
+local SPEED = 90                     -- pixels per second, before the modifiers
 
 local camera, sprite, anims, tiles
-local player = { x = 100, y = 100, px = 100, py = 100, room = 1, facing = 1 }
+local world = engine.entity.new()
+local mods = engine.modifiers.new()
+mods:defineAll({
+  { id = "light_feet", name = "Light feet", stats = { { "speed", "mul_base", 0.25 } } },
+  { id = "dash", name = "Dash", stats = { { "speed", "add", 60 } }, stacking = "refresh", duration = 2 },
+})
+local player = world:add({ x = 100, y = 100, px = 100, py = 100, room = 1, facing = 1 }, { "player" })
+world:set(player, "mods", mods:attach(player, { speed = SPEED }))
+player.mods:add("light_feet")
+world:addSystem(engine.modifiers.system())           -- runs the modifiers' timers each step
 
 local function room_at(x)
   return x < ROOMS[2][1] and 1 or 2
@@ -41,17 +51,20 @@ function play:input(input)
   if input:pressed("action") then
     sprite:setVisible("held", not sprite:get("held").visible)
     camera:shake(3, 0.25)
+    player.mods:add("dash")
   end
 end
 
 function play:update(dt)
   local input = engine.controls
+  world:update(dt)
+  local speed = player.mods:get("speed")
   player.px, player.py = player.x, player.y
   local mx, my = input:axis("move_x"), input:axis("move_y")
   if mx ~= 0 then player.facing = mx < 0 and -1 or 1 end
   local r = ROOMS[player.room]
-  player.x = math.max(8, math.min(ROOMS[2][1] + ROOMS[2][3] - 8, player.x + mx * SPEED * dt))
-  player.y = math.max(r[2] + 16, math.min(r[2] + r[4], player.y + my * SPEED * dt))
+  player.x = math.max(8, math.min(ROOMS[2][1] + ROOMS[2][3] - 8, player.x + mx * speed * dt))
+  player.y = math.max(r[2] + 16, math.min(r[2] + r[4], player.y + my * speed * dt))
   local now = room_at(player.x)
   if now ~= player.room then
     player.room = now
@@ -85,6 +98,7 @@ function play:draw(alpha)
   sprite:draw(math.floor(x + 0.5), math.floor(y + 0.5), 0, player.facing, 1, 8, 16)
   camera:detach()
   camera:drawFade(0, 0, 0)
+  g.print("speed " .. player.mods:get("speed"), 4, 16)
   g.print("room " .. player.room, 4, 4)
 end
 

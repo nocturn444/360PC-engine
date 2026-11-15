@@ -46,7 +46,7 @@ A fuller one, with every module: [examples/engine_demo](../examples/engine_demo)
 | `engine.run(config)` | Sets `love.load`, `love.update`, `love.draw`, `love.resize` and the input callbacks. Callbacks the game already defined still run, first. `love.run` is not touched (the console ignores it). |
 | `engine.init(config)`, `engine.update(dt)`, `engine.draw()` | The same three steps, to call from the game's own callbacks instead of `run`. |
 | `engine.time`, `engine.states`, `engine.controls`, `engine.screen` | The Timestep, the state Machine, the Input (if `config.input`) and the Pixel (if `config.pixel`), once `love.load` ran. |
-| `engine.state`, `.timestep`, `.input`, `.camera`, `.pixel`, `.layers`, `.anim` | The modules. `engine.anim` loads anim8 on first use. |
+| `engine.state`, `.timestep`, `.input`, `.camera`, `.pixel`, `.layers`, `.entity`, `.modifiers`, `.anim` | The modules. `engine.anim` loads anim8 on first use. |
 
 Config: `rate` (Hz, 60), `max_steps` (5), `max_frame` (0.25 s), `input`, `pixel`, `states`
 (`name = table`), `load` (`function(engine)`, runs in `love.load` before the first state is
@@ -182,6 +182,197 @@ any other layer, in the order they were first added. Replacing a layer keeps its
   visible ones (`sx = -1` to face the other way). Tints multiply the current colour.
 
 It does not know about entities: an entity keeps a set and draws it at its position.
+
+## engine.entity
+
+`world = entity.new()`. An entity is a plain table and its components are its fields
+(`e.pos = { x = 1, y = 2 }`: plain data). The world owns three more fields: `e.id` (a number,
+counted from 1 and never reused in that world), `e.alive` and `e.tags` (a set:
+`e.tags.enemy == true`).
+
+```lua
+local world = engine.entity.new()
+local moving = world:query("pos", "vel")           -- ask once, keep it
+world:addSystem({
+  name = "move", order = 10, query = { "pos", "vel" },
+  process = function(self, e, dt, world)           -- each fixed step, each live entity
+    e.pos.x = e.pos.x + e.vel.x * dt
+    if e.pos.x > 500 then world:remove(e) end      -- safe: the list does not move until the flush
+  end,
+})
+world:add({ pos = { x = 0, y = 0 }, vel = { x = 60, y = 0 } }, { "enemy" })
+-- in a state: world:update(dt) in update, world:draw(alpha) in draw
+```
+
+- `world:add(table [, tags])` returns the table, now an entity. `world:remove(e or id)`,
+  `world:get(id)`, `world:count()`, `world:clear()`, `world.entities` / `world.all.n`.
+- `world:set(e, name [, data])`, `world:unset(e, name)`, `world:tag(e, tag)`,
+  `world:untag(e, tag)`. Use these instead of writing `e.vel = nil`: the lists have to know.
+  Changing what is *inside* a component needs no call.
+- `q = world:query("a", "b")` or `world:query({ "a", "b", tags = { "enemy" }, without = { "frozen" } })`:
+  entities with every component and tag named and none of the components or tags in `without`.
+  The same question gives the same object. `q.list[1..q.n]`, `for i, e in q:each() do` (skips the
+  dead, allocates nothing), `q:first()`, `q:contains(e)`, `q:count()`.
+- **When changes show.** Data changes at once; lists change at `world:flush()`, which
+  `world:update` runs before the first system and after each one (and which you may call
+  yourself, outside a loop over a list):
+
+  | Call | At once | At the flush |
+  |---|---|---|
+  | `add` | `e.id`, `e.alive`, `world:get(id)` | joins the lists |
+  | `remove` | `e.alive = false`, `world:get(id)` is nil | leaves the lists (`each` and systems skip it meanwhile) |
+  | `set` | the component | joins / leaves lists |
+  | `unset` | nothing: the component stays | the component goes, and the lists follow |
+  | `tag`, `untag` | `e.tags` | joins / leaves lists |
+
+  A list keeps the order in which entities joined it (for entities that do not change, the
+  order they were added in), so a run is the same every time.
+- Systems: `world:addSystem(sys)`, `world:removeSystem(sys)`, `world:getSystem(name)`. Every
+  field is optional:
+
+  | Field | |
+  |---|---|
+  | `order` | A number, default 0. Systems update lowest first; equal orders run as they were added. `draw_order` is the same for drawing (default: `order`). |
+  | `query` | What `world:query` takes. The query is then `sys.entities`. |
+  | `update(self, dt, world)` | Once per fixed step. |
+  | `process(self, e, dt, world)` | Once per fixed step for each live entity of the query. |
+  | `draw(self, alpha, world)`, `draw_entity(self, e, alpha, world)` | Once per frame (`world:draw(alpha)` flushes nothing). |
+  | `added(self, e, world)`, `removed(self, e, world)` | An entity joined or left the query, at a flush (to create or free what goes with it). |
+  | `enabled` | `false` to skip it. |
+
+- `world.tick` counts the updates; `world.next_id` is the next id (a save keeps both).
+- Drawing is the game's: a system with `draw_entity` that draws `e.sprite` (an `engine.layers`
+  set, for instance) at `e.pos`.
+
+## engine.modifiers
+
+Modifiers are data. A registry holds the definitions; each entity that can have modifiers keeps
+a set (usually as its `mods` component). Nothing in it knows what a stat or an event means.
+
+```lua
+local mods = engine.modifiers.new()                 -- the registry
+mods:stat("speed", { base = 90, min = 0 })          -- optional: default base, hard limits
+mods:define({
+  id = "thorns", name = "Thorns", tags = { "mutation" },
+  priority = 0,                                     -- higher hears events first
+  stacking = "stack", max_stacks = 5,               -- "unique" (default), "stack", "refresh"
+  duration = nil,                                   -- seconds; nil: it stays
+  stats = { { "armor", "add", 1 }, { "speed", "mul_base", -0.05 } },
+  events = {
+    on_damaged = function(entity, ctx, modifier)    -- modifier: read-only view of this one
+      modifier.state.hits = (modifier.state.hits or 0) + 1
+      return ctx.amount - modifier.stacks           -- on_damaged is a chain on ctx.amount
+    end,
+  },
+})
+e.mods = mods:attach(e, { speed = 100 })            -- owner, base stats
+e.mods:add("thorns")
+local speed = e.mods:get("speed")
+local dealt = e.mods:emit("on_damaged", { amount = 10, source = other })
+world:addSystem(engine.modifiers.system())          -- calls e.mods:update(dt) each step
+```
+
+### Stats: the evaluation order
+
+`set:get(stat)` always evaluates in this order, whatever the order the modifiers were acquired in:
+
+| # | Phase | Rule |
+|---|---|---|
+| 1 | base | `set:setBase(stat, v)` (or the table given to `attach`), else the base declared with `mods:stat`, else 0 |
+| 2 | `add` | `base + Σ (value × stacks)` |
+| 3 | `mul_base` | `× (1 + Σ (value × stacks))`: percentages add up with each other |
+| 4 | `mul` | `× Π (value ^ stacks)`: each one multiplies the result |
+| 5 | `set` | replaces the result of 1 to 4. With several: the modifier with the highest `priority`, then the largest value |
+| 6 | `min`, `max` | raised to the largest `min`, then lowered to the smallest `max` (so `max` wins a conflict) |
+| 7 | declared limits | the `min` and `max` given to `mods:stat`, last |
+
+Within a phase the result does not depend on the order: sums and products are taken in the
+set's fixed order (priority, then acquisition), so the floating-point result is the same on every
+run and on both platforms.
+
+Worked example, base speed 100, declared `max = 300`, with these modifiers:
+
+| Modifier | Entry | Stacks |
+|---|---|---|
+| boots | `{ "speed", "add", 20 }` | 2 |
+| wind | `{ "speed", "mul_base", 0.5 }` | 1 |
+| gale | `{ "speed", "mul_base", 0.25 }` | 1 |
+| rage | `{ "speed", "mul", 2 }` | 1 |
+| mud | `{ "speed", "max", 400 }` | 1 |
+
+1. base: 100
+2. add: 100 + 20 × 2 = 140
+3. mul_base: 140 × (1 + 0.5 + 0.25) = 245
+4. mul: 245 × 2 = 490
+5. set: none, still 490 (a `{ "speed", "set", 10 }` would make it 10 here)
+6. min, max: mud's 400 → 400
+7. declared limit 300 → **300**
+
+Values are cached per stat: a stat is computed on the first `get` and kept until a modifier is
+added or removed, a stack count changes, a timer runs out or a base changes. `set.version` goes up
+at each such change (compare it to know when to refresh what depends on the stats);
+`set:setBase`, `set:getBase`.
+
+### Stacking and durations
+
+| `stacking` | Adding it again |
+|---|---|
+| `"unique"` (default) | Nothing: `add` returns false. |
+| `"stack"` | Adds stacks, up to `max_stacks`. Stacks multiply `add` and `mul_base` values and raise `mul` values to their power; handlers run once and read `modifier.stacks`. |
+| `"refresh"` | One stack; its timer starts again. |
+
+`set:add(id [, stacks [, duration]])`, `set:remove(id [, stacks])`, `set:removeTagged(tag)`,
+`set:has(id)`, `set:stacks(id)`, `set:timeLeft(id)`, `set:hasTag(tag)`, `set:count()`, `set:ids()`.
+
+A modifier with a `duration` has one timer for all its stacks; adding a `"stack"` or
+`"refresh"` modifier again restarts it. `set:update(dt)`, once per fixed step, runs the timers
+and then sends `on_update`: a 0.5 s modifier at 60 Hz is there for exactly 30 steps. When the time
+is up the whole modifier goes.
+
+### Events
+
+`set:emit(name, ctx)` calls `handler(entity, ctx, modifier)` on every modifier of the set that
+has a handler of that name: **higher `priority` first, then the order they were acquired in**.
+`ctx` is the game's table for that event (reuse one to allocate nothing). The game emits the
+events: the engine only sends `on_update`, `on_add` and `on_remove` itself.
+
+| Event | Combination | `emit` returns |
+|---|---|---|
+| `on_jump`, `on_attack`, `on_kill` | none | nil |
+| `on_update` | none; `ctx.dt` | nil |
+| `on_hit` (the owner hits something) | chain on `ctx.amount`, minimum 0 | the final amount |
+| `on_damaged` (the owner is hit) | chain on `ctx.amount`, minimum 0 | the final amount |
+| `on_add`, `on_remove` | only the modifier itself hears them; `ctx.reason` is `"new"`, `"stack"`, `"refresh"` / `"remove"`, `"expire"`; `ctx.stacks` | |
+| any other name | none, unless declared | |
+
+A game declares its own with `mods:event(name, { combine = ..., field = ..., min = ..., max = ... })`:
+
+| `combine` | |
+|---|---|
+| `"none"` | Returns are ignored. |
+| `"chain"` | `ctx[field]` goes through the handlers in order: a return that is not nil replaces it, and the next handler sees the new value. `emit` returns the last value, kept within `min` and `max`. |
+| `"sum"` | The sum of the numbers returned. |
+| `"any"` | True if a handler returned a true value. |
+| `"all"` | False if a handler returned false. |
+
+Damage example: with `frail` (priority 2, `return ctx.amount * 2`) and `armor` (priority 1,
+`return ctx.amount - 3`), `emit("on_damaged", { amount = 10 })` gives 10 × 2 = 20, then 20 − 3 = **17**.
+
+**A modifier never rewrites another.** A handler gets the entity, the event's `ctx` and
+`modifier`, a read-only view of its own instance: `id`, `name`, `stacks`, `time` (seconds left),
+`duration` and `state`, a table of its own for counters and the like (plain data: it is saved).
+Writing to the view is an error, no call returns another modifier's instance or state, and the
+set only answers `has`, `stacks`, `timeLeft` and `hasTag` about the others. Modifiers affect each
+other only through stats and through `ctx`. A handler may call `set:add` / `set:remove`: it
+returns nil and is done when the event is over, so the list never changes under a dispatch.
+Nothing here draws random numbers: a handler that needs them takes the game's seeded generator
+from `ctx` or the entity.
+
+### Saving
+
+`data = set:serialize()` is a plain table (`base`, and for each modifier `id`, `stacks`, `time`,
+`duration`, `seq`, `state`); `set:restore(data)` puts it back without sending `on_add`, keeps the
+event order, and returns the list of ids that are not defined any more (skipped), or nil.
 
 ## engine.anim
 

@@ -12,6 +12,8 @@ local engine = {
   camera = require(prefix .. "camera"),
   pixel = require(prefix .. "pixel"),
   layers = require(prefix .. "layers"),
+  entity = require(prefix .. "entity"),
+  modifiers = require(prefix .. "modifiers"),
   -- set by init():
   config = nil,
   time = nil,      -- the Timestep

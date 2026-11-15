@@ -21,7 +21,7 @@ function T.no_new_globals(before)
 end
 
 local names = { "state_test", "timestep_test", "input_test", "camera_test", "pixel_test",
-  "layers_test", "anim_test", "engine_test", "demo_test" }
+  "layers_test", "anim_test", "entity_test", "modifiers_test", "engine_test", "demo_test" }
 if arg[1] then names = { unpack(arg) } end
 
 local failed = 0
