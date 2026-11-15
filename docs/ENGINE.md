@@ -690,6 +690,10 @@ Optional, loaded by the game that wants them; nothing above requires one.
   invulnerability frames, knockback, hitstop, and a state machine with enemy behaviours. It needs
   no other module. Reference:
   [engine/modules/combat/README.md](../engine/modules/combat/README.md).
+- `engine/modules/procgen`: maps of hand-made rooms joined by their exits, zones locked by
+  ability tags (keys always before their locks), validation by breadth-first search, minimap
+  data, a layout hash that is the same on PC and console, and generation spread over frames.
+  Reference: [engine/modules/procgen/README.md](../engine/modules/procgen/README.md).
 
 ```lua
 local platformer = require("engine.modules.platformer")

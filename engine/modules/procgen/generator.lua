@@ -1,0 +1,348 @@
+-- procgen.generator: builds a map from room templates, one room at a time, so the work can be
+-- spread over frames. generator.generate(opts) runs it to the end in one call; both give the
+-- same map for the same rng state, because the budget only decides where the work pauses.
+--
+-- opts:
+--   templates  array of templates (procgen.templates) or a set from templates.new
+--   rng        an engine.rng generator (for a run: streams:get("level")); or seed = number/string
+--   rooms      rooms in the map, start and boss included (default 12)
+--   abilities  array of ability tags, in the order the player finds them (default none).
+--              The map is cut into #abilities + 1 zones; the door into zone k needs abilities[k],
+--              and the item of abilities[k] is in a zone before it.
+--   types      optional { type = weight }: how often each room type is picked for the filler
+--              rooms (then a template of that type by its weight). Default: every template that
+--              is not "start", "boss" or an item room, by its weight.
+--   loops      true (default): neighbour rooms of the same zone whose exits face each other are
+--              joined, which makes loops; false keeps the map a tree.
+--   attempts   tries before giving up (default 50); each try goes on drawing from the same rng.
+--   check      optional function(map) -> true or false, message: the game's own rule; a map it
+--              refuses is thrown away and tried again.
+--
+-- generator.new(opts) -> gen. gen:step(ops) does at most `ops` operations (one operation is one
+-- room placed or tried) and returns true when finished. Then gen.map is the map, or nil and
+-- gen.error says why. gen.ops counts the operations done.
+local templates = require((...):gsub("generator$", "templates"))
+local graph = require((...):gsub("generator$", "graph"))
+local map_mod = require((...):gsub("generator$", "map"))
+local Rng = require("engine.rng")
+
+local type, floor, sort = type, math.floor, table.sort
+local co_create, co_resume, co_yield, co_status = coroutine.create, coroutine.resume, coroutine.yield, coroutine.status
+
+local M = {}
+
+local OFF, SPAN = 4096, 8192
+local function key(x, y) return (x + OFF) * SPAN + (y + OFF) end
+
+-- The tags a door needs: those of both exits and the zone lock, sorted, without repeats
+local function door_tags(e1, e2, lock)
+  local list, seen = {}, {}
+  local function add(t)
+    if not seen[t] then seen[t] = true; list[#list + 1] = t end
+  end
+  for i = 1, #e1.requires do add(e1.requires[i]) end
+  if e2 then for i = 1, #e2.requires do add(e2.requires[i]) end end
+  if lock then add(lock) end
+  sort(list)
+  return list
+end
+
+local function pools(set, opts)
+  local start, boss, item, filler, by_type = {}, {}, {}, {}, {}
+  for i = 1, #set.list do
+    local t = set.list[i]
+    if t.weight > 0 then
+      if t.type == "start" then start[#start + 1] = t
+      elseif t.type == "boss" then boss[#boss + 1] = t
+      elseif t.item then item[#item + 1] = t
+      else
+        filler[#filler + 1] = t
+        local bt = by_type[t.type]
+        if not bt then bt = {}; by_type[t.type] = bt end
+        bt[#bt + 1] = t
+      end
+    end
+  end
+  local types
+  if opts.types then
+    types = {}
+    for i = 1, #set.types do                 -- in the order of the templates, never pairs()
+      local name = set.types[i]
+      local w = opts.types[name]
+      if w and w > 0 and by_type[name] then types[#types + 1] = { name = name, weight = w } end
+    end
+    if #types == 0 then error("procgen: no template has a type of opts.types", 3) end
+  end
+  return { start = start, boss = boss, item = item, filler = filler, by_type = by_type, types = types }
+end
+
+-- One try. Returns the map, or nil and why.
+local function attempt(g)
+  local opts, set, P, rng = g.opts, g.set, g.pools, g.rng
+  local abilities = g.abilities
+  local zones = #abilities + 1
+  local rooms, doors, cells, frontier = {}, {}, {}, {}
+  local m = map_mod.new(rooms, doors, abilities)
+
+  local function tick()
+    g.ops = g.ops + 1
+    g.budget = g.budget - 1
+    if g.budget <= 0 then co_yield() end
+  end
+
+  local function fits(tpl, x, y)
+    for cx = x, x + tpl.w - 1 do
+      for cy = y, y + tpl.h - 1 do
+        if cells[key(cx, cy)] then return false end
+      end
+    end
+    return true
+  end
+
+  local function add_room(tpl, x, y, zone)
+    local room = { index = #rooms + 1, id = tpl.id, template = tpl, x = x, y = y, w = tpl.w, h = tpl.h,
+      type = tpl.type, zone = zone, doors = {}, closed = {} }
+    rooms[room.index] = room
+    for e = 1, #tpl.exits do room.doors[e] = false end
+    for cx = x, x + tpl.w - 1 do
+      for cy = y, y + tpl.h - 1 do cells[key(cx, cy)] = room.index end
+    end
+    for e = 1, #tpl.exits do
+      frontier[#frontier + 1] = { room = room.index, exit = e, zone = zone, open = true }
+    end
+    return room
+  end
+
+  -- The cell an exit leads to
+  local function target(room, e)
+    local ex = room.template.exits[e]
+    local ox, oy = templates.exit_cell(room.template, ex)
+    return room.x + ox + templates.dx[ex.side], room.y + oy + templates.dy[ex.side], ex
+  end
+
+  -- The ways a template of the pool can be put behind a frontier entry
+  local function candidates(pool, f)
+    local room = rooms[f.room]
+    local tx, ty, ex = target(room, f.exit)
+    if cells[key(tx, ty)] then f.open = false; return nil end
+    local want = templates.opposite[ex.side]
+    local list = {}
+    for i = 1, #pool do
+      local tpl = pool[i]
+      for e = 1, #tpl.exits do
+        local e2 = tpl.exits[e]
+        if e2.side == want then
+          local ox, oy = templates.exit_cell(tpl, e2)
+          local x, y = tx - ox, ty - oy
+          if fits(tpl, x, y) then list[#list + 1] = { tpl = tpl, exit = e, x = x, y = y, weight = tpl.weight } end
+        end
+      end
+    end
+    return list
+  end
+
+  -- Places one room of the pool behind an open exit of a room whose zone passes zone_ok.
+  -- pool: an array of templates, or "filler" (a type by opts.types first, then a template).
+  local function place(pool, zone_ok, zone, lock)
+    local open = {}
+    for i = 1, #frontier do
+      local f = frontier[i]
+      if f.open and zone_ok(f.zone) then open[#open + 1] = f end
+    end
+    while #open > 0 do
+      tick()
+      local f, fi = rng:pick(open)
+      local p = pool
+      if p == "filler" then
+        p = P.types and P.by_type[rng:weighted(P.types).name] or P.filler
+      end
+      local list = candidates(p, f)
+      if list and #list > 0 then
+        local c = rng:weighted(list)
+        local from = rooms[f.room]
+        local room = add_room(c.tpl, c.x, c.y, zone)
+        local e1, e2 = from.template.exits[f.exit], c.tpl.exits[c.exit]
+        local door = { index = #doors + 1, a = from.index, b = room.index, ea = f.exit, eb = c.exit,
+          requires = door_tags(e1, e2, lock), lock = lock }
+        doors[door.index] = door
+        from.doors[f.exit] = door.index
+        room.doors[c.exit] = door.index
+        f.open = false
+        for i = #frontier, 1, -1 do    -- the new room's own exit back to `from` is taken
+          local g2 = frontier[i]
+          if g2.room == room.index and g2.exit == c.exit then g2.open = false end
+        end
+        return room
+      end
+      if not list then
+        -- the exit is blocked for good
+      elseif pool ~= "filler" then
+        -- nothing of this pool fits here; the exit stays open for others
+      else
+        f.open = false
+      end
+      open[fi] = open[#open]
+      open[#open] = nil
+    end
+    return nil
+  end
+
+  tick()
+  if #P.start == 0 then return nil, "no template has type \"start\"" end
+  local start = rng:weighted(P.start)
+  add_room(start, 0, 0, 0)
+  m.start = 1
+
+  -- How many filler rooms each zone gets
+  local fill = opts.rooms - 1 - (#P.boss > 0 and 1 or 0) - (#P.item > 0 and #abilities or 0)
+  if fill < zones - 1 then return nil, "too few rooms for the abilities", true end
+  local base, extra = floor(fill / zones), fill % zones
+
+  for z = 0, zones - 1 do
+    local count = base + (z < extra and 1 or 0)
+    if z > 0 then
+      local lock = abilities[z]
+      local entry = place("filler", function(fz) return fz < z end, z, lock)
+      if not entry then return nil, "no room for the door into zone " .. z end
+      count = count - 1
+    end
+    for _ = 1, count do
+      if not place("filler", function(fz) return fz == z end, z) then
+        return nil, "zone " .. z .. " ran out of exits"
+      end
+    end
+    if z < zones - 1 then
+      local tag = abilities[z + 1]
+      if #P.item > 0 then
+        local r = place(P.item, function(fz) return fz == z end, z)
+        if not r then return nil, "no room for the item of " .. tag end
+        r.grants = tag
+      else
+        local holder                         -- the newest room of the zone without an item
+        for i = #rooms, 1, -1 do
+          if rooms[i].zone == z and not rooms[i].grants then holder = rooms[i]; break end
+        end
+        holder.grants = tag
+      end
+    end
+  end
+  if #P.boss > 0 then
+    local r = place(P.boss, function(fz) return fz == zones - 1 end, zones - 1)
+    if not r then return nil, "no room for the boss" end
+    m.boss = r.index
+  end
+
+  -- Loops: facing exits of neighbour rooms of the same zone (never the boss room)
+  if opts.loops ~= false then
+    for i = 1, #rooms do
+      local room = rooms[i]
+      for e = 1, #room.template.exits do
+        if not room.doors[e] then
+          local tx, ty, ex = target(room, e)
+          local j = cells[key(tx, ty)]
+          local other = j and rooms[j]
+          if other and other.zone == room.zone and i ~= m.boss and j ~= m.boss then
+            local back = templates.opposite[ex.side]
+            local ox, oy = templates.exit_cell(room.template, ex)
+            for e2 = 1, #other.template.exits do
+              local x2 = other.template.exits[e2]
+              if x2.side == back and not other.doors[e2] then
+                local bx, by = target(other, e2)
+                if bx == room.x + ox and by == room.y + oy then
+                  local door = { index = #doors + 1, a = i, b = j, ea = e, eb = e2,
+                    requires = door_tags(ex, x2), loop = true }
+                  doors[door.index] = door
+                  room.doors[e] = door.index
+                  other.doors[e2] = door.index
+                  break
+                end
+              end
+            end
+          end
+        end
+      end
+    end
+  end
+  for i = 1, #rooms do
+    local room = rooms[i]
+    for e = 1, #room.doors do
+      if not room.doors[e] then room.closed[#room.closed + 1] = e end
+    end
+  end
+
+  tick()
+  local ok, why = graph.validate(m)
+  if not ok then return nil, why end
+  if opts.check then
+    ok, why = opts.check(m)
+    if not ok then return nil, "check: " .. tostring(why) end
+  end
+  return m
+end
+
+local function run(g)
+  local why, final
+  for n = 1, g.opts.attempts do
+    local m
+    m, why, final = attempt(g)
+    if m then
+      m.attempts = n
+      g.map = m
+      return
+    end
+    if final then break end
+  end
+  g.error = "procgen: no map after " .. g.opts.attempts .. " attempts (last: " .. tostring(why) .. ")"
+end
+
+local Gen = {}
+Gen.__index = Gen
+
+function M.new(opts)
+  if type(opts) ~= "table" then error("procgen: generator.new needs an options table", 2) end
+  local set = templates.new(opts.templates)
+  local rng = opts.rng
+  if rng == nil then
+    if opts.seed == nil then error("procgen: give rng (an engine.rng generator) or seed", 2) end
+    rng = Rng.new(opts.seed)
+  end
+  local o = { rooms = opts.rooms or 12, attempts = opts.attempts or 50, types = opts.types,
+    loops = opts.loops, check = opts.check }
+  if type(o.rooms) ~= "number" or o.rooms < 1 or o.rooms ~= floor(o.rooms) then
+    error("procgen: rooms is a whole number >= 1", 2)
+  end
+  local abilities = {}
+  local seen = {}
+  for i = 1, #(opts.abilities or {}) do
+    local t = opts.abilities[i]
+    if type(t) ~= "string" or seen[t] then error("procgen: abilities is an array of distinct strings", 2) end
+    seen[t] = true
+    abilities[i] = t
+  end
+  local g = setmetatable({ opts = o, set = set, rng = rng, abilities = abilities, ops = 0, budget = 0,
+    done = false }, Gen)
+  g.pools = pools(set, o)
+  g.co = co_create(function() run(g) end)
+  return g
+end
+
+function Gen:step(ops)
+  if self.done then return true end
+  self.budget = ops or 1
+  local ok, err = co_resume(self.co)
+  if not ok then
+    self.done = true
+    error(err, 0)
+  end
+  if co_status(self.co) == "dead" then self.done = true end
+  return self.done
+end
+
+-- generator.generate(opts) -> map, or nil and the reason
+function M.generate(opts)
+  local g = M.new(opts)
+  g:step(math.huge)
+  return g.map, g.error
+end
+
+return M
