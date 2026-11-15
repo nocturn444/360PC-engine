@@ -1,0 +1,21 @@
+# Build output
+build/
+runtime/build/
+*.xex
+*.o
+*.a
+
+# Third-party trees fetched by toolchain scripts
+third_party/luajit_xsdk/
+
+# Compiled shaders (generated per game)
+*.psu
+*.vsu
+
+# Packaging output
+dist/
+
+# Logs and local state
+*.log
+.DS_Store
+Thumbs.db
