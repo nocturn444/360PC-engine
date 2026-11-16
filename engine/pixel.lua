@@ -8,7 +8,8 @@
 --   "direct": the game is drawn straight to the screen under a translate + scale. Every game
 --             pixel is still scale x scale screen pixels as long as things are drawn at whole
 --             coordinates (camera snap); rotated or scaled sprites show screen-sized pixels.
--- mode "auto" (the default) is "direct" on the console and "canvas" elsewhere.
+-- mode "auto" (the default) is "direct" everywhere, so PC shows what the console shows
+-- (owner's decision, 2026-11-16); "canvas" stays available on PC by asking for it.
 local floor, min = math.floor, math.min
 
 local M = {}
@@ -36,9 +37,9 @@ function M.new(opts)
   self.bg_r, self.bg_g, self.bg_b = bg[1] or 0, bg[2] or 0, bg[3] or 0
   self.bar_r, self.bar_g, self.bar_b = bars[1] or 0, bars[2] or 0, bars[3] or 0
   local mode = opts.mode or "auto"
-  if mode == "auto" then
-    local console = love.system and love.system.getOS() == "Xbox 360"
-    mode = console and "direct" or "canvas"
+  if mode == "auto" then mode = "direct" end
+  if mode == "canvas" and love.system and love.system.getOS() == "Xbox 360" then
+    mode = "direct"            -- no small canvases on the console (docs/API_SUBSET.md)
   end
   assert(mode == "canvas" or mode == "direct", "pixel mode must be auto, canvas or direct")
   self.mode = mode
@@ -106,6 +107,14 @@ function Pixel:finish()
   end
   g.pop()
   g.setColor(self.cr, self.cg, self.cb, self.ca)
+end
+
+-- pixel.snap(x [, y]): to the nearest whole game pixel (halves go up), what "direct" mode needs
+-- for crisp pixels. The camera does it for its translation (snap, on by default); use it for
+-- anything placed at fractional positions.
+function M.snap(x, y)
+  if y == nil then return floor(x + 0.5) end
+  return floor(x + 0.5), floor(y + 0.5)
 end
 
 -- Screen (window) pixels to game pixels; the third result says whether the point is in the game area.
