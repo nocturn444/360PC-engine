@@ -16,6 +16,7 @@ local engine = {
   modifiers = require(prefix .. "modifiers"),
   rng = require(prefix .. "rng"),
   save = require(prefix .. "save"),
+  level = require(prefix .. "level"),
   ui = require(prefix .. "ui"),
   -- set by init():
   config = nil,

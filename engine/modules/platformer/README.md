@@ -2,8 +2,8 @@
 
 Genre module (objective 12): tile collisions with [bump.lua](../../../lib/bump) v3.1.7, one-way
 platforms, a character controller, and the reach of its jump for level generation. Nothing in
-`engine/` requires it; it knows nothing about a game or about a level file format (the Tiled /
-LDtk loader is objective 11: it only has to hand over a grid, below).
+`engine/` requires it; it knows nothing about a game or about a level file format (the LDtk
+loader, `engine/level.lua`, hands over a grid as below: [docs/LEVELS.md](../../../docs/LEVELS.md)).
 
 A game needs `engine/modules/platformer/` and `lib/bump/` in its folder.
 Tests: `tests/engine/platformer_test.lua`.

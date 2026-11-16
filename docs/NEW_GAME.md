@@ -86,7 +86,7 @@ python base/tools/package.py . --xex base/runtime/build/game.xex --shaders build
 This writes `dist/<identity>/`, the folder that goes on the console, and `dist/<identity>.zip`:
 
 - `default.xex`, the game's files (without development files: dot files, `*.md`, `dist/`,
-  `build/`, `tests/`, `tools/`, `docs/`, the `base/` submodule, saves, logs, art sources);
+  `build/`, `tests/`, `tools/`, `docs/`, the `base/` submodule, saves, logs, art sources, LDtk projects);
 - `engine/` (the core, plus the modules the game's Lua mentions) and the `lib/` libraries it
   uses, with their licenses;
 - `l360/` (the runtime's Lua) and `shaders/` (the compiled shaders);
@@ -132,6 +132,18 @@ Aurora first.
 - Hold Back for 3 seconds to leave the game.
 - The log is `<folder>\default.log`; saves are in `<folder>\save\`. Fetch the log with any FTP
   client when something goes wrong.
+
+## Levels (LDtk)
+
+Levels are made in LDtk and converted on PC before packaging:
+
+```sh
+python base/tools/ldtk_convert.py levels/world.ldtk -o levels/world.lvl --root .
+```
+
+The game loads `levels/world.lvl` with `engine.level.load`; the `.ldtk` project stays out of
+the console folder. The project conventions (layer, entity and field names, the map cell) and
+the loader are in [LEVELS.md](LEVELS.md).
 
 ## Debug mode
 

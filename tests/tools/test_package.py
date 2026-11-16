@@ -52,6 +52,8 @@ class PackageCase(unittest.TestCase):
         # development files and the console's own
         write(g / "README.md"); write(g / ".gitignore"); write(g / ".git" / "config")
         write(g / "assets" / "hero.aseprite"); write(g / "notes" / "todo.md")
+        write(g / "levels" / "world.ldtk"); write(g / "levels" / "world" / "Start.ldtkl")
+        write(g / "levels" / "world.lvl")
         write(g / "saves" / "run.sav"); write(g / "default.log"); write(g / "default.xex", b"old")
         write(g / "dist" / "old" / "main.lua"); write(g / "tests" / "t.lua"); write(g / "build.bat")
         # the base as a submodule
@@ -137,9 +139,11 @@ class TestPackage(PackageCase):
         self.assertEqual((self.out / "default.xex").read_bytes()[:4], b"XEX2")
         # no development files, nothing of the console's, no whole base, no unused modules or libs
         for f in files:
-            self.assertFalse(f.endswith((".md", ".aseprite", ".bat", ".hlsl", ".log")), f)
+            self.assertFalse(f.endswith((".md", ".aseprite", ".bat", ".hlsl", ".log", ".ldtk", ".ldtkl")), f)
             self.assertFalse(f.split("/")[0] in ("saves", "save", "dist", "tests", "base", ".git", "notes"), f)
             self.assertFalse(f.startswith(("engine/modules/combat", "engine/modules/procgen", "lib/anim8")), f)
+        # the converted level file ships; the LDtk project does not
+        self.assertIn("levels/world.lvl", files)
         # every engine and runtime file is the base's, byte for byte
         self.assertEqual((self.out / "l360/boot.lua").read_bytes(), (ROOT / "runtime/lua/boot.lua").read_bytes())
         self.assertEqual({f for f in files if f.startswith("l360/")},

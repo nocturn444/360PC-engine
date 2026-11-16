@@ -34,10 +34,12 @@ function loading:update(dt)
 end
 ```
 
-## Room templates (what the level loader must produce)
+## Room templates (what the level loader produces)
 
-The level file format is objective 11, and Tiled vs LDtk is still open. This module only reads
-plain tables, and whichever loader is chosen has to produce them:
+Levels are made in LDtk (objective 11): `tools/ldtk_convert.py` converts the project and
+`engine.level.load` returns its levels as room templates, grid included
+([docs/LEVELS.md](../../../docs/LEVELS.md)). This module only reads plain tables, so templates
+written by hand work too:
 
 | Field | Meaning |
 |---|---|

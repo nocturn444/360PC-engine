@@ -16,6 +16,7 @@ Reference and usage example: [docs/ENGINE.md](../docs/ENGINE.md).
 | `modifiers.lua` | Modifiers as data: stats evaluated in a fixed order, events, stacking, timers, save state. |
 | `rng.lua` | Seeded random numbers, identical on PC and console: xoshiro128**, named streams, save state, seed codes. |
 | `save.lua` | Saves: the run in progress and the permanent progress, versioned files with a checksum, migrations, a serializer and a parser that never runs code. |
+| `level.lua` | Levels: reads the file `tools/ldtk_convert.py` writes from an LDtk project into rooms (collision grid, exits, items, entities, tile layers as SpriteBatches), ready for `modules/procgen` (objective 11). Reference: [docs/LEVELS.md](../docs/LEVELS.md). |
 | `ui.lua` | Controller-first menus: focus and spatial navigation, widgets, stacks, themes as data, a pick-1-of-N screen. |
 | `anim.lua` | Animations with anim8 (`lib/anim8`). |
 | `debug.lua` | Debug mode for development builds, off by default: seed code display and entry, a list that grants modifiers, a hitbox overlay fed by the game or a combat world (objective 17). |

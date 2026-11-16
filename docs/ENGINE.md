@@ -47,7 +47,7 @@ A fuller one, with every module: [examples/engine_demo](../examples/engine_demo)
 | `engine.run(config)` | Sets `love.load`, `love.update`, `love.draw`, `love.resize` and the input callbacks. Callbacks the game already defined still run, first. `love.run` is not touched (the console ignores it). |
 | `engine.init(config)`, `engine.update(dt)`, `engine.draw()` | The same three steps, to call from the game's own callbacks instead of `run`. |
 | `engine.time`, `engine.states`, `engine.controls`, `engine.screen` | The Timestep, the state Machine, the Input (if `config.input`) and the Pixel (if `config.pixel`), once `love.load` ran. |
-| `engine.state`, `.timestep`, `.input`, `.camera`, `.pixel`, `.layers`, `.entity`, `.modifiers`, `.rng`, `.save`, `.ui`, `.anim`, `.debug` | The modules. `engine.anim` loads anim8 on first use; `engine.debug` is loaded on first use too. |
+| `engine.state`, `.timestep`, `.input`, `.camera`, `.pixel`, `.layers`, `.entity`, `.modifiers`, `.rng`, `.save`, `.level`, `.ui`, `.anim`, `.debug` | The modules. `engine.anim` loads anim8 on first use; `engine.debug` is loaded on first use too. |
 
 Config: `rate` (Hz, 60), `max_steps` (5), `max_frame` (0.25 s), `input`, `pixel`, `states`
 (`name = table`), `load` (`function(engine)`, runs in `love.load` before the first state is
@@ -551,6 +551,14 @@ file runs the chain up to the current version; the file is rewritten at the next
   the new file is written to `.tmp` and renamed. On the console the runtime keeps two slots
   per file and reads the newest valid one, so `engine.save` writes once and keeps no `.bak`.
 - The checksum catches accidents (a cut write, a bad sector, a careless edit), not cheating.
+
+## engine.level
+
+Levels made in LDtk: `tools/ldtk_convert.py` converts the project on the development PC into one
+data file, and `engine.level.load(path)` reads it (through `Save.parse`, never `load()`) into
+rooms with a collision grid, exits, entities and tile layers; `level.load_images` and
+`level.batches` build the SpriteBatches. The rooms are procgen room templates as they are. The
+LDtk conventions, the file and the API are in [LEVELS.md](LEVELS.md).
 
 ## engine.ui
 

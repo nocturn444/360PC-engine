@@ -30,6 +30,12 @@ Build, packaging and validation tools. The whole path from a new game to the con
   `X360_FTP_*` variables. Uploads only changed files (size, and CRC-32 against the manifest of
   the last install), never deletes anything, never touches saves or the log; `--dry-run`,
   `--force`. `python tools/install_ftp.py dist/<identity> --host <console IP>`.
+- `ldtk_convert.py`: converts an LDtk project (`.ldtk`, with its `.ldtkl` files when levels are
+  saved separately) into the level file `engine/level.lua` reads: rooms with collisions, exits,
+  items, entities and tile layers, as sorted data in the text format of `engine/save.lua`.
+  Python 3, standard library only, Windows and Linux.
+  `python tools/ldtk_convert.py levels/world.ldtk -o levels/world.lvl --root <game> [--cell WxH]`
+  ([../docs/LEVELS.md](../docs/LEVELS.md)).
 - `seed_validator.lua`: bulk seed validation for games with procedural levels
   (`engine/modules/procgen`). `luajit tools/seed_validator.lua <game> <spec module> --count N
   [--out level_hashes.txt]` generates N seeds from the spec the game provides and reports

@@ -1,0 +1,83 @@
+{
+ "__header__": { "fileType": "LDtk Project JSON", "app": "LDtk", "doc": "https://ldtk.io/json", "schema": "https://ldtk.io/files/JSON_SCHEMA.json", "appAuthor": "Sebastien 'deepnight' Benard", "appVersion": "1.5.3", "url": "https://ldtk.io" },
+ "iid": "project-1",
+ "jsonVersion": "1.5.3",
+ "appBuildId": 473703,
+ "nextUid": 200,
+ "identifierStyle": "Free",
+ "worldLayout": "Free",
+ "worldGridWidth": 160,
+ "worldGridHeight": 96,
+ "defaultLevelWidth": 160,
+ "defaultLevelHeight": 96,
+ "defaultGridSize": 16,
+ "defaultEntityWidth": 16,
+ "defaultEntityHeight": 16,
+ "bgColor": "#1A1A2E",
+ "externalLevels": true,
+ "minifyJson": false,
+ "defs": {
+  "layers": [
+   { "__type": "Entities", "identifier": "Entities", "type": "Entities", "uid": 3, "gridSize": 16, "intGridValues": [], "tilesetDefUid": null },
+   {
+    "__type": "IntGrid",
+    "identifier": "Collision",
+    "type": "IntGrid",
+    "uid": 2,
+    "gridSize": 16,
+    "intGridValues": [
+     { "value": 1, "identifier": "solid", "color": "#C0C0C0", "tile": null, "groupUid": 0 },
+     { "value": 2, "identifier": "One_Way", "color": "#80C080", "tile": null, "groupUid": 0 },
+     { "value": 3, "identifier": "water", "color": "#4060FF", "tile": null, "groupUid": 0 }
+    ],
+    "tilesetDefUid": 10
+   },
+   { "__type": "Tiles", "identifier": "Background", "type": "Tiles", "uid": 1, "gridSize": 16, "intGridValues": [], "tilesetDefUid": 10 }
+  ],
+  "entities": [
+   { "identifier": "Exit", "uid": 20, "width": 16, "height": 16, "pivotX": 0, "pivotY": 0 },
+   { "identifier": "Item", "uid": 21, "width": 16, "height": 16, "pivotX": 0, "pivotY": 0 },
+   { "identifier": "Enemy", "uid": 22, "width": 16, "height": 16, "pivotX": 0.5, "pivotY": 1 }
+  ],
+  "tilesets": [
+   { "__cWid": 4, "__cHei": 2, "identifier": "Unused", "uid": 9, "relPath": "assets/unused.png", "embedAtlas": null, "pxWid": 64, "pxHei": 32, "tileGridSize": 16, "spacing": 0, "padding": 0 },
+   { "__cWid": 4, "__cHei": 2, "identifier": "Tiles", "uid": 10, "relPath": "assets/tiles.png", "embedAtlas": null, "pxWid": 64, "pxHei": 32, "tileGridSize": 16, "spacing": 0, "padding": 0 }
+  ],
+  "enums": [
+   {
+    "identifier": "RoomType",
+    "uid": 30,
+    "values": [
+     { "id": "Start" },
+     { "id": "Boss" },
+     { "id": "Shop" }
+    ]
+   }
+  ],
+  "externalEnums": [],
+  "levelFields": []
+ },
+ "levels": [
+  {
+   "identifier": "Vault",
+   "iid": "level-154",
+   "uid": 155,
+   "worldX": 0,
+   "worldY": 0,
+   "worldDepth": 0,
+   "pxWid": 160,
+   "pxHei": 96,
+   "__bgColor": "#1A1A2E",
+   "bgColor": null,
+   "useAutoIdentifier": false,
+   "bgRelPath": null,
+   "externalRelPath": "external/Vault.ldtkl",
+   "fieldInstances": [
+    { "__identifier": "type", "__type": "String", "__value": "shop", "__tile": null, "defUid": 151, "realEditorValues": [] }
+   ],
+   "layerInstances": null,
+   "__neighbours": []
+  }
+ ],
+ "worlds": []
+}

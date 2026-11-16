@@ -102,6 +102,15 @@ function F.install(opts)
     return { kind = "quad", x = x, y = y, w = w, h = h,
       getViewport = function(self) return self.x, self.y, self.w, self.h end }
   end
+  -- a SpriteBatch that keeps what was added: batch.sprites[i] = { quad, x, y, r, sx, sy, ox, oy }
+  function g.newSpriteBatch(image, size)
+    local b = object("spritebatch", image.w, image.h)
+    b.image, b.size, b.sprites = image, size, {}
+    function b:add(...) self.sprites[#self.sprites + 1] = { ... }; return #self.sprites end
+    function b:clear() self.sprites = {} end
+    function b:getCount() return #self.sprites end
+    return b
+  end
   love.graphics = g
   F.stack_depth = function() return #stack end
   F.reset_calls = function() F.calls = {} end

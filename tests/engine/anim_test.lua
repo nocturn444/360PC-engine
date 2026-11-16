@@ -68,7 +68,7 @@ T.check(table.concat(by.full, " ") == "love.graphics.newQuad" and table.concat(b
 T.check(status(data.types.Quad.getViewport) == "full", "and Quad:getViewport")
 
 found = {}
-for _, m in ipairs({ "init", "state", "timestep", "input", "camera", "pixel", "layers", "anim" }) do
+for _, m in ipairs({ "init", "state", "timestep", "input", "camera", "pixel", "layers", "anim", "level" }) do
   scan("engine/" .. m .. ".lua", found)
 end
 by = classify(found)

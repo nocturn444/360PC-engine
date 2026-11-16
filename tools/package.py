@@ -42,7 +42,7 @@ DEV_TITLE_ID = "0xFFFF0360"
 DEFAULT_EXCLUDES = [
     ".*", "*.md", "*.xex", "*.log", "*.zip", "*.psu", "*.vsu", "*.meta.lua", "*.hlsl",
     "*.py", "*.pyc", "*.bat", "*.sh", "*.cmd", "*.love", "*.exe", "*.dll",
-    "*.psd", "*.xcf", "*.kra", "*.aseprite", "*.ase", "*.tiled-session", "*.blend", "*.bak", "*.tmp",
+    "*.psd", "*.xcf", "*.kra", "*.aseprite", "*.ase", "*.tiled-session", "*.ldtk", "*.ldtkl", "*.blend", "*.bak", "*.tmp",
     "*.orig", "*~", "__pycache__", "Thumbs.db", "desktop.ini", MANIFEST,
 ]
 # Folders left out only at the top of the game folder.

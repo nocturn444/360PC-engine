@@ -1,6 +1,6 @@
 -- procgen.templates: the room template data shape, checked and indexed.
 --
--- A template is a plain table (what the level loader of objective 11 has to produce):
+-- A template is a plain table (what engine/level.lua produces from an LDtk project):
 --   id        unique string
 --   w, h      size in map cells (default 1, 1); a map cell is one screen of the minimap
 --   type      "start", "boss", "normal" or any string of the game's (default "normal")
