@@ -15,5 +15,7 @@ return {
   bench_quit = false,                     -- true: leave the game when the benchmark ends
   results_file = "perf_results.md",       -- written in the save folder
 
+  target_fps = 30,                        -- frames per second the test aims at, on PC and console alike
+                                          -- (the console's loop runs at 30); 0 leaves PC unpaced
   overlay_interval = 0.25,                -- seconds between refreshes of the overlay's numbers
 }

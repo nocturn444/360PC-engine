@@ -44,7 +44,25 @@ engine.run({
 -- and everything drawn (the pixel canvas or the bars included).
 local now = love.timer.getTime
 local engine_update, engine_draw = love.update, love.draw
+
+-- The target frame rate is the same on PC and console (settings.target_fps, 30). The console's
+-- runtime paces its loop itself (there love.timer.sleep returns at once, so this does nothing);
+-- on PC the frame waits here, before the timings start, so they measure only the work.
+local frame_period = (settings.target_fps or 0) > 0 and 1 / settings.target_fps or nil
+local next_frame
+local function pace()
+  if not frame_period or not love.timer.sleep then return end
+  local t = now()
+  if next_frame and next_frame > t then
+    love.timer.sleep(next_frame - t)
+    t = now()
+  end
+  if not next_frame or t - next_frame > frame_period then next_frame = t end   -- fell behind: restart
+  next_frame = next_frame + frame_period
+end
+
 function love.update(dt)
+  pace()
   local t0 = now()
   engine_update(dt)
   meter:updated(dt, t0, now())
