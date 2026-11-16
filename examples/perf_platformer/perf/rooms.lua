@@ -1,6 +1,6 @@
 -- The hand-made rooms the level is built from: procgen templates (engine/modules/procgen) with
--- their tiles as rows of strings, the form platformer.grid takes. They stay in code because
--- the level file format (objective 11) is not decided yet.
+-- their tiles as rows of strings, the form platformer.grid takes. They stay in code so the
+-- test needs no level file; LDtk levels read by engine.level (objective 11) give the same form.
 --
 -- A room is one map cell: 20 x 12 tiles of 16 pixels (320 x 192), a little more than a screen
 -- (320 x 180). "#" is solid, "=" a one-way platform, "." empty. Every room is closed by a

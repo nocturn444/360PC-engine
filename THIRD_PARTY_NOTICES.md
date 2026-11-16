@@ -16,8 +16,8 @@ The license texts below are **copied in full from their sources**, without abrid
 | 7 | anim8 `MIT-LICENSE.txt`, tag `v2.3.1`, commit `c1c12ec45fde28ffd2d6967675adcb3c3e501fa7` (https://github.com/kikito/anim8), copied to `lib/anim8/` |
 | 8 | bump.lua `MIT-LICENSE.txt`, tag `v3.1.7`, commit `72d6b13dfa525564f6e1a533d71eaa8235a5e96c` (https://github.com/kikito/bump.lua), copied to `lib/bump/` |
 
-Update these full texts when updating xsdk, LuaJIT, stb, the code adapted from LÖVE or a library in `lib/`. Other third-party Lua libraries in `lib/`
-will be added here as they are copied in (objective 8).
+Update these full texts when updating xsdk, LuaJIT, stb, the code adapted from LÖVE or a library in `lib/`. Each third-party Lua library in `lib/`
+is listed here with its pinned commit; `tools/check_libs.lua` checks it (objective 16).
 
 ## 1. 360PC-Engine (MIT)
 
