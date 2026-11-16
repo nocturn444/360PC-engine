@@ -83,7 +83,9 @@ known risks.
     - N enemies with combat (N = 0, 50, 100, 200).
     - 500, 1000 and 2000 particles.
     - A table for the owner's console measurements.
-    If it does not hold a steady 60 FPS with 50 enemies and 500 particles:
+    Target: 30 FPS on PC and console alike (decided 2026-11-16, to be
+    reviewed later). If it does not hold a steady 30 FPS with 50 enemies and
+    500 particles:
     measure what weighs most and propose what to move to C.
 19. **Semantic versioning.** `CHANGELOG.md` and tags.
 
