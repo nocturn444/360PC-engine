@@ -29,6 +29,12 @@ FTP (`tools/install_ftp.py`) and launch from Aurora. The tools are listed in
 the tests in [tests/README.md](tests/README.md). The performance test, with the table for the
 console's measurements, is [examples/perf_platformer](examples/perf_platformer/README.md).
 
+## Versions
+
+The base follows semantic versioning ([docs/VERSIONING.md](docs/VERSIONING.md)); the current
+version is in `VERSION` and the changes in [CHANGELOG.md](CHANGELOG.md). A game pins a tag and
+can check it with `require("engine").requires("0.1")`.
+
 ## Layout (planned)
 
 | Path | What it is |
