@@ -38,7 +38,8 @@ engine.run({
 })
 ```
 
-A fuller one, with every module: [examples/engine_demo](../examples/engine_demo).
+A fuller one, with every module: [examples/engine_demo](../examples/engine_demo). The genre modules
+together, under load: [examples/perf_platformer](../examples/perf_platformer/README.md).
 
 ## engine (`engine/init.lua`)
 
