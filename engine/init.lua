@@ -11,6 +11,7 @@ local engine = {
   input = require(prefix .. "input"),
   camera = require(prefix .. "camera"),
   pixel = require(prefix .. "pixel"),
+  pixelgrid = require(prefix .. "pixelgrid"),
   layers = require(prefix .. "layers"),
   entity = require(prefix .. "entity"),
   modifiers = require(prefix .. "modifiers"),

@@ -8,6 +8,15 @@ All notable changes to 360PC-Engine. The format follows
 
 ## [Unreleased]
 
+### Added
+- `engine.pixelgrid`: shapes rasterized each frame into a small colour grid and drawn as
+  pixel-aligned cells in one draw call.
+
+### Changed
+- `engine.pixel` uses `"direct"` mode by default on PC too, so PC shows what the console shows.
+  `"canvas"` is still available on PC when asked for.
+- The camera's `snap` is on by default.
+
 ## [0.1.0] - not tagged yet
 
 The first version of the base, objectives 1 to 19 of [docs/ROADMAP.md](docs/ROADMAP.md).

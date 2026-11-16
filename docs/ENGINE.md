@@ -171,6 +171,31 @@ sprites show screen-sized pixels in this mode.
 `screen.ox`, `screen.oy`, `pixel.fit(gw, gh, sw, sh, integer)`. For a world position under the
 mouse: `cam:toWorld(screen:getMouse())`.
 
+## engine.pixelgrid
+
+For shapes computed every frame and shown as pixel art: a soft body, a blob, a trail, a mask.
+The shape is rasterized into a small grid of colour indices, and the cells are drawn aligned to
+the game's pixel grid, which keeps them crisp in `"direct"` mode. Generic: it knows nothing about
+the shape.
+
+```lua
+local g = engine.pixelgrid.new(32, 32, { cell = 1, palette = { { 0.4, 0.9, 0.5 }, { 0.1, 0.3, 0.2 } } })
+g:batch(atlas, white_quad)            -- one draw call: a quad over a white area of an atlas
+-- every frame:
+g:clear()
+g:polygon(points, 1)                  -- { x1, y1, x2, y2, ... } in cells; concave shapes work too
+g:circle(cx, cy, r, 1); g:rect(x, y, w, h, 1); g:set(x, y, 1)
+g:outline(2)                          -- a one-cell border (4 neighbours; diagonal = true for 8)
+g:draw(x, y)                          -- top-left corner, rounded to whole game pixels
+```
+
+- **Values:** 0 is empty; 1..#palette are colours, `{ r, g, b [, a] }`.
+- **Coverage:** a cell is covered when its centre is strictly inside the shape.
+- **Draw calls:** with `g:batch` the grid is one SpriteBatch draw. Without it, each run of one
+  colour in a row is one rectangle.
+- **Allocation:** nothing is allocated per frame.
+- **Other calls:** `g:get(x, y)`, `g:filled()`, and `g.count` (the cells drawn last time).
+
 ## engine.layers
 
 A sprite made of named layers: `set = layers.new({ "body", "outfit", "held", "effect" })`.
