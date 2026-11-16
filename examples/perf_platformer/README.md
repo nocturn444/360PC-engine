@@ -131,7 +131,7 @@ Reading the numbers on the console:
 To be filled in by the owner from `perf_results.md` (console build, date and commit of the base
 on the first line).
 
-Build: 
+Build (platform, date, commit of the base): 
 
 | N enemies | Particles | FPS avg | FPS min | Update ms | Draw ms | Draw calls |
 |---|---|---|---|---|---|---|
@@ -150,12 +150,14 @@ Build:
 
 ## The rule
 
-**If the console does not hold a steady 60 FPS with 50 enemies and 500 particles, measure what
-weighs most and propose what to move to C.**
+**The target is 30 FPS on PC and on the console alike** (the owner's decision, 2026-11-16; to be
+reviewed later). The game aims at `target_fps = 30` (`perf_settings.lua`): the console's loop runs
+at 30 by itself, and on PC the frame waits before its timings start, so both show the same thing.
 
-While the runtime's loop is paced at 30 FPS, "holds 60 FPS" is read from the timings of the
-`50 | 500` row: half of Update ms (one fixed step) plus Draw ms has to stay under 16.6 ms, with
-no worst frame far above the average.
+**If it does not hold a steady 30 FPS with 50 enemies and 500 particles, measure what weighs most
+and propose what to move to C.** "Holds" is read from the `50 | 500` row: FPS avg 30, FPS min not
+far below it, and Update ms plus Draw ms under 33.3 ms (one frame), with room to spare for the game
+on top. A frame runs two fixed steps (logic at 60 Hz), so Update ms is the time of both.
 
 If it does not hold, find what weighs most before changing anything:
 

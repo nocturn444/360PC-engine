@@ -185,6 +185,7 @@ local settings = require("perf_settings")
 check(settings.benchmark == false and #settings.enemy_counts == 4 and #settings.particle_counts == 3
   and settings.enemy_counts[1] == 0 and settings.enemy_counts[4] == 200 and settings.particle_counts[3] == 2000,
   "the settings: N = 0, 50, 100, 200 and 500, 1000, 2000 particles")
+check(settings.target_fps == 30, "the target is 30 FPS on PC and console alike")
 settings.bench_seconds, settings.bench_warmup = 0.25, 0.1      -- short, for the test
 assert(loadfile(GAME .. "/main.lua"))()
 love.load()
