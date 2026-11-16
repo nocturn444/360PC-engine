@@ -8,7 +8,7 @@ Camera.__index = Camera
 
 -- opts: width, height (required), x, y, zoom (1), lerp (0 = follow at once; otherwise the speed,
 -- per second, at which the distance to the target shrinks), deadzone_w, deadzone_h (the target
--- moves freely inside this box at the centre), bounds = { x, y, w, h }, snap (whole pixels), seed
+-- moves freely inside this box at the centre), bounds = { x, y, w, h }, snap (whole pixels; default true), seed
 function M.new(opts)
   assert(opts and opts.width and opts.height, "camera needs width and height")
   local self = setmetatable({}, Camera)
@@ -19,7 +19,7 @@ function M.new(opts)
   self.zoom = opts.zoom or 1
   self.lerp = opts.lerp or 0
   self.deadzone_w, self.deadzone_h = opts.deadzone_w or 0, opts.deadzone_h or 0
-  self.snap = opts.snap and true or false
+  self.snap = opts.snap ~= false          -- on by default: "direct" pixel mode needs whole pixels
   self.bounded = false
   self.bx, self.by, self.bw, self.bh = 0, 0, 0, 0
   self.fade = 0                                -- 0..1 during a "fade" transition: draw it with drawFade
