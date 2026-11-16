@@ -308,7 +308,7 @@ check(type(results) == "string", "the results file is written")
 check(results:find("| N enemies | Particles | FPS avg | FPS min | Update ms | Draw ms | Draw calls |\n|---|---|---|---|---|---|---|\n", 1, true),
   "with the table's header")
 check(results:find("Seed 000AZJJ (360018), level hash " .. string.format("%08x", level.hash), 1, true)
-  and results:find("Platform: Linux, 1280x720, pixel mode canvas", 1, true), "and the run's description")
+  and results:find("Platform: Linux, 1280x720, pixel mode direct", 1, true), "and the run's description")
 local rows = {}
 for line in results:gmatch("[^\n]+") do
   local n, p, fps, fps_min, upd, drw, calls =
