@@ -140,7 +140,7 @@ input = Input.new({
 - `cam:shake(amplitude, duration)`: pixels, fading out. Its own random generator: the same shake
   on PC and console.
 - `cam:attach(alpha)` ... `cam:detach()`: draw in world coordinates in between (`push`,
-  `translate`, `scale`). `alpha` interpolates between the last two steps. `snap = true` rounds the
+  `translate`, `scale`). `alpha` interpolates between the last two steps. `snap` (on by default; `snap = false` turns it off) rounds the
   translation to whole pixels.
 - `cam:toWorld(sx, sy)`, `cam:toScreen(wx, wy)`, `cam:getViewport(alpha)` (the world rectangle in
   view, to skip what is outside), `cam:setPosition(x, y)`, `cam.zoom`.
@@ -155,11 +155,15 @@ for 320x180 on the console's 1280x720). `pixel.new` also sets nearest as the def
 
 | Mode | How | Where |
 |---|---|---|
-| `"canvas"` | Draws on a canvas of the game's size, then draws the canvas scaled, nearest. True low-resolution pixels, whatever is drawn. | PC. On the console a Canvas always has the screen's size. |
+| `"canvas"` | Draws on a canvas of the game's size, then draws the canvas scaled, nearest. True low-resolution pixels, whatever is drawn. | PC only, when asked for. On the console a Canvas always has the screen's size, so it falls back to `"direct"`. |
 | `"direct"` | Draws on the screen under a translate and a scale; the bars are drawn last. A game pixel is still scale x scale screen pixels for anything drawn at whole coordinates with no rotation or scaling (use the camera's `snap`). | Console and PC. |
-| `"auto"` | `"direct"` on the console, `"canvas"` elsewhere. | Default. |
+| `"auto"` | `"direct"` everywhere. | Default. |
 
-To see on PC exactly what the console shows, use `mode = "direct"`.
+`"direct"` is the default on both platforms, so PC shows exactly what the console shows (owner's
+decision, 2026-11-16; small canvases in the C runtime are left for later). Pixels stay crisp when
+positions are whole game pixels: the camera rounds its translation (`snap`, on by default), and
+`pixel.snap(x [, y])` rounds anything else placed at fractional positions. Rotated or scaled
+sprites show screen-sized pixels in this mode.
 
 `screen:toGame(sx, sy)` (returns x, y and whether the point is inside the game area),
 `screen:toScreen(gx, gy)`, `screen:getMouse()`, `screen:resize([w, h])`, `screen.scale`,
@@ -724,7 +728,7 @@ end
 ## What the console does differently
 
 - No keyboard or mouse: bind every action to the controller too.
-- No small canvases: `engine.pixel` draws in `"direct"` mode there.
+- No small canvases: `engine.pixel` draws in `"direct"` mode there (the default on PC too).
 - `love.keypressed`, `love.mousepressed`, `love.resize`, `love.textinput` and `love.focus` are
   never called there. `engine.run` defines them for PC, so `tools/compat_check.lua` lists them.
 - Saves go to `save_dir` with two slots per file; `engine.save` keeps no `.bak` there.

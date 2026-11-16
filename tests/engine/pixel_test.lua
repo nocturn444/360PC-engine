@@ -17,9 +17,11 @@ T.check(fit(320, 180, 160, 90) == "0.5 0 0", "a screen smaller than the game: sc
 
 -- canvas mode (PC)
 F.install({ width = 1366, height = 768 })
-local p = Pixel.new({ width = 320, height = 180, bars = { 0.1, 0.1, 0.1 } })
+T.check(Pixel.new({ width = 320, height = 180 }).mode == "direct" and #F.find("newCanvas") == 0,
+  "auto on PC is direct too: PC shows what the console shows")
+local p = Pixel.new({ width = 320, height = 180, mode = "canvas", bars = { 0.1, 0.1, 0.1 } })
 T.check(p.mode == "canvas" and p.canvas.w == 320 and p.canvas.h == 180 and p.canvas.filter == "nearest",
-  "auto on PC: a canvas of the game's size, nearest")
+  "canvas on PC when asked: a canvas of the game's size, nearest")
 T.check(F.find("setDefaultFilter")[1][2] == "nearest", "nearest is the default filter")
 T.check(p.scale == 4 and p.ox == 43 and p.oy == 24, "fitted to the window")
 F.reset_calls()
@@ -58,6 +60,9 @@ T.check(p.scale == 6 and p.ox == 0 and p.oy == 0, "resize")
 F.install({ width = 1280, height = 720, os = "Xbox 360" })
 p = Pixel.new({ width = 320, height = 180 })
 T.check(p.mode == "direct" and p.canvas == nil and #F.find("newCanvas") == 0, "auto on the console: no canvas")
+T.check(Pixel.new({ width = 320, height = 180, mode = "canvas" }).mode == "direct" and #F.find("newCanvas") == 0,
+  "canvas asked for on the console: direct, there are no small canvases")
+T.check(Pixel.snap(2.5) == 3 and Pixel.snap(-0.5) == 0 and select(2, Pixel.snap(1.2, 7.49)) == 7, "pixel.snap rounds to whole pixels")
 F.reset_calls()
 p:start()
 love.graphics.rectangle("fill", 10, 20, 5, 5)
