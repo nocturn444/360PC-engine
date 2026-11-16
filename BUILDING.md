@@ -3,7 +3,8 @@
 This page covers the console runtime (`.xex`). On PC, games run on the official LÖVE 11.x and
 need no build step. Shaders are built separately, on the developer's PC:
 [docs/SHADERS.md](docs/SHADERS.md). Packaging the console folder and installing it over FTP
-(`tools/package.py`, `tools/install_ftp.py`) are in [docs/NEW_GAME.md](docs/NEW_GAME.md).
+(`tools/package.py`, `tools/install_ftp.py`) are in [docs/NEW_GAME.md](docs/NEW_GAME.md); [docs/DEPLOY.md](docs/DEPLOY.md) runs
+the whole chain in one command.
 
 ## Layout
 

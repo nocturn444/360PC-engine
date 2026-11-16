@@ -43,7 +43,7 @@ DEFAULT_EXCLUDES = [
     ".*", "*.md", "*.xex", "*.log", "*.zip", "*.psu", "*.vsu", "*.meta.lua", "*.hlsl",
     "*.py", "*.pyc", "*.bat", "*.sh", "*.cmd", "*.love", "*.exe", "*.dll",
     "*.psd", "*.xcf", "*.kra", "*.aseprite", "*.ase", "*.tiled-session", "*.blend", "*.bak", "*.tmp",
-    "*.orig", "*~", "__pycache__", "Thumbs.db", "desktop.ini", MANIFEST,
+    "*.orig", "*~", "__pycache__", "Thumbs.db", "desktop.ini", "deploy.local.ini", MANIFEST,
 ]
 # Folders left out only at the top of the game folder.
 TOP_EXCLUDES = ["dist", "build", "tests", "tools", "docs"]

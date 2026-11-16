@@ -30,6 +30,10 @@ Build, packaging and validation tools. The whole path from a new game to the con
   `X360_FTP_*` variables. Uploads only changed files (size, and CRC-32 against the manifest of
   the last install), never deletes anything, never touches saves or the log; `--dry-run`,
   `--force`. `python tools/install_ftp.py dist/<identity> --host <console IP>`.
+- `deploy.py`: one command from a game folder to the console: builds the `.xex` (in WSL on
+  Windows), compiles the shaders, packages, uploads over FTP and optionally starts the game
+  through XBDM. Settings in an untracked `deploy.local.ini` (`deploy.example.ini` shows every
+  key). `python tools/deploy.py <game>`; see [../docs/DEPLOY.md](../docs/DEPLOY.md).
 - `seed_validator.lua`: bulk seed validation for games with procedural levels
   (`engine/modules/procgen`). `luajit tools/seed_validator.lua <game> <spec module> --count N
   [--out level_hashes.txt]` generates N seeds from the spec the game provides and reports

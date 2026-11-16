@@ -11,6 +11,8 @@ All notable changes to 360PC-Engine. The format follows
 ### Added
 - `engine.pixelgrid`: shapes rasterized each frame into a small colour grid and drawn as
   pixel-aligned cells in one draw call.
+- `tools/deploy.py`: build, shaders, package, FTP upload and optional XBDM launch in one
+  command, with the console's settings in an untracked `deploy.local.ini` (docs/DEPLOY.md).
 
 ### Changed
 - `engine.pixel` uses `"direct"` mode by default on PC too, so PC shows what the console shows.

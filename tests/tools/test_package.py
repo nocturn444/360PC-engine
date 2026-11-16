@@ -53,7 +53,7 @@ class PackageCase(unittest.TestCase):
         write(g / "README.md"); write(g / ".gitignore"); write(g / ".git" / "config")
         write(g / "assets" / "hero.aseprite"); write(g / "notes" / "todo.md")
         write(g / "saves" / "run.sav"); write(g / "default.log"); write(g / "default.xex", b"old")
-        write(g / "dist" / "old" / "main.lua"); write(g / "tests" / "t.lua"); write(g / "build.bat")
+        write(g / "dist" / "old" / "main.lua"); write(g / "tests" / "t.lua"); write(g / "build.bat"); write(g / "deploy.local.ini")
         # the base as a submodule
         write(g / "base" / "runtime" / "lua" / "boot.lua"); write(g / "base" / "engine" / "init.lua")
         self.xex = write(self.tmp / "game.xex", b"XEX2" + b"\0" * 60)
@@ -137,7 +137,7 @@ class TestPackage(PackageCase):
         self.assertEqual((self.out / "default.xex").read_bytes()[:4], b"XEX2")
         # no development files, nothing of the console's, no whole base, no unused modules or libs
         for f in files:
-            self.assertFalse(f.endswith((".md", ".aseprite", ".bat", ".hlsl", ".log")), f)
+            self.assertFalse(f.endswith((".md", ".aseprite", ".bat", ".hlsl", ".log", ".ini")), f)
             self.assertFalse(f.split("/")[0] in ("saves", "save", "dist", "tests", "base", ".git", "notes"), f)
             self.assertFalse(f.startswith(("engine/modules/combat", "engine/modules/procgen", "lib/anim8")), f)
         # every engine and runtime file is the base's, byte for byte
