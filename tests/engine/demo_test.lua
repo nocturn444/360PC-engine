@@ -13,7 +13,7 @@ local ok, err = pcall(function()
 end)
 print = real_print
 T.check(ok, "the demo loads: " .. tostring(err))
-T.check(printed[1] == "engine_demo: loaded, canvas mode, x4", "it reports its screen: " .. tostring(printed[1]))
+T.check(printed[1] == "engine_demo: loaded, direct mode, x4", "it reports its screen: " .. tostring(printed[1]))
 local engine = require("engine")
 local states = engine.states
 local function frames(n) for _ = 1, n do love.update(1 / 60); love.draw() end end
@@ -26,7 +26,7 @@ T.check(states:top() == states:get("play"), "confirm starts the game")
 tap("p")
 T.check(states:depth() == 2 and states:top() == states:get("pause"), "pause is pushed over play")
 F.reset_calls(); love.draw()
-T.check(#F.find("draw") >= 2, "the paused game is still drawn under the pause screen")
+T.check(#F.find("draw") >= 1, "the paused game is still drawn under the pause screen")
 local tick = engine.time.tick
 F.keys.right = true; frames(10); F.keys.right = nil
 T.check(engine.time.tick == tick + 10, "the steps go on while paused")
@@ -45,7 +45,7 @@ T.check(engine.controls:getDevice() == "gamepad", "the controller is the device 
 pad.axes.leftx = 0
 pad.buttons.x = true; frames(1); pad.buttons.x = nil; frames(1)
 F.reset_calls(); love.draw()
-T.check(#F.find("draw") == 3, "the action shows the second layer (two sprite layers and the canvas)")
+T.check(#F.find("draw") == 2, "the action shows the second layer (two sprite layers, drawn straight to the screen)")
 texts = F.find("print")
 T.check(texts[#texts - 1][2] == "speed 187.5", "an entity with two modifiers: (90 + 60) * 1.25: " .. tostring(texts[#texts - 1][2]))
 frames(121)
