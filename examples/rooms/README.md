@@ -11,6 +11,12 @@ with `engine/modules/rooms`, by the soft-body slime of [examples/slime](../slime
   is black, and the slime arrives inside the next room by the door it came through.
 - The door into the second zone is locked (gold) until the slime touches the key in the vault
   room; the room is then rebuilt with the door open.
+- Enemies (`rooms_enemies.lua`): platformer controller bodies in a bump world made from the
+  room's grid, each run by a patrol / chase / attack state machine (`combat.behaviours`), in one
+  combat world with the slime, which combat sees through `softbody.box`. Landing on an enemy
+  while falling fast hurts it and bounces the slime off; a bite hurts the slime (5 HP, shown top
+  left) and knocks it back, and it blinks while it cannot be hurt. At 0 HP it goes back to the
+  start room, healed. A room's enemies are back when the slime comes back to it.
 - A minimap in the corner shows the explored rooms (`nav:minimap()`), the current one in yellow.
 
 | Action | Keyboard | Controller |
@@ -25,6 +31,6 @@ The rooms are in `rooms_data.lua` as rows of strings, the shape LDtk levels read
 
 What to look at on the console: the fade hides the room change (no frame of the old or new
 room in the wrong place), the camera never shows outside the room, and the frame stays at 30
-FPS in the two-by-two room.
+FPS in the two-by-two room with its three enemies.
 
 Test: `luajit -joff tests/pc/rooms_example_test.lua`.

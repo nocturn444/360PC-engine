@@ -106,6 +106,53 @@ check(#play.locked == 0, "with the key the room is rebuilt with the door open")
 slime:move_to(ex, ey); frames(25)
 check(nav.index == lock.b, "and it leads to the next zone (" .. side .. ")")
 
+-- the fight: enemies in a hall, a stomp, a bite, and dying sends the slime back to the start
+local hall
+for i, r in ipairs(map.rooms) do if r.template.id == "hall" then hall = i; break end end
+check(hall ~= nil, "seed 1 has a hall")
+play:load_room(nav:enter(hall))
+local fight = play.fight
+check(#fight.enemies == 2 and fight:alive() == 2, "the hall has its two enemies")
+local e1 = fight.enemies[1]
+local hp0 = e1.fighter.health
+frames(30)                                            -- let everything land
+local ex1 = e1.body.x + e1.body.w / 2
+slime:move_to(ex1, e1.body.y - 40); slime:set_velocity(0, 0)
+local landed = false
+for _ = 1, 60 do
+  love.update(1 / 60)
+  if fight.stomps > 0 then landed = true; break end
+end
+check(landed and e1.fighter.health < hp0, "falling onto an enemy stomps it (" .. e1.fighter.health .. " of " .. hp0 .. ")")
+local _, bounce = slime:velocity()
+check(bounce < 0, "and the slime bounces off")
+-- stand beside an enemy until it bites
+frames(60)
+local p = fight.player
+local hp = p.health
+local bitten = false
+for _ = 1, 300 do
+  local alive
+  for _, e in ipairs(fight.enemies) do if not e.fighter.dead then alive = e end end
+  if not alive then break end
+  if not play.fade:busy() then
+    local b = alive.body
+    local cx = slime:center()
+    if math.abs(cx - (b.x + b.w / 2)) > 14 then
+      slime:move_to(b.x + b.w / 2 + 12, b.y + b.h - 9); slime:set_velocity(0, 0)
+    end
+  end
+  love.update(1 / 60)
+  if p.health < hp then bitten = true; break end
+end
+check(bitten, "an enemy bites the slime when it is close (" .. p.health .. " of " .. hp .. ")")
+-- dying: back to the start room at full health
+p.health = 1; p.invuln = 0
+play.dead = true
+frames(30)
+check(nav.index == map.start and play.deaths == 1, "dying sends it back to the start room")
+check(play.fight.player.health == play.fight.player.stats:get("max_health"), "with full health")
+
 -- the room is drawn
 F.reset_calls(); love.draw()
 check(#F.find("rectangle") >= 5 and play.pixels.count > 150, "the room, the slime and the minimap are drawn")

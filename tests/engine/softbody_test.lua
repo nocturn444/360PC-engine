@@ -155,6 +155,24 @@ local grown = collectgarbage("count") - before
 collectgarbage("restart")
 T.check(grown < 1, "step and outline allocate nothing (" .. grown .. " KB)")
 
+-- set_velocity and the box for combat
+local v = softbody.new({ x = 100, y = 30 })
+run(v, nil, 10)
+v:set_velocity(120, nil)
+local svx, svy = v:velocity()
+T.near(svx, 120, "set_velocity x", 1e-9)
+local box = softbody.box(v)
+local bx0, by0, bx1, by1 = v:bounds()
+T.check(box.x == bx0 and box.y == by0 and box.w == bx1 - bx0 and box.h == by1 - by0 and box.facing == 1, "box: the points' box")
+run(v, nil, 5); box:sync()
+local nx0 = v:bounds()
+T.check(box.x == nx0, "box:sync follows the body")
+box:knock({ knock_x = -200, knock_y = -150 })
+svx, svy = v:velocity()
+T.near(svx, -200, "knock: x velocity", 1e-9); T.near(svy, -150, "knock: y velocity", 1e-9)
+box:knock({ knock_x = 0, knock_y = 0 })
+T.near(select(1, v:velocity()), -200, "no knockback: nothing changes", 1e-9)
+
 -- Static checks
 local f = assert(io.open("engine/modules/softbody/init.lua", "rb"))
 local src = f:read("*a"):gsub("%-%-[^\n]*", ""); f:close()

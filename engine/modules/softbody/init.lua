@@ -282,6 +282,43 @@ function Body:step(dt, grid, gx, gy)
   self.floor_count, self.wall_count, self.ceiling_count = floors, walls, ceilings
 end
 
+-- Sets the mean velocity (pixels / s) and keeps how the points move relative to each other
+-- (the wobble). nil for an axis keeps it. Takes effect from the next step.
+function Body:set_velocity(vx, vy)
+  local mvx, mvy = self:velocity()
+  local dt, x, y, ox, oy = self.dt, self.x, self.y, self.ox, self.oy
+  local dx, dy = ((vx or mvx) - mvx) * dt, ((vy or mvy) - mvy) * dt
+  for i = 1, self.n do
+    ox[i], oy[i] = ox[i] - dx, oy[i] - dy
+  end
+end
+
+-- softbody.box(body): a rectangle that follows the body, for modules that think in boxes
+-- (combat fighters and hurtboxes, a behaviour's target, a camera): x, y, w, h (the points'
+-- box after the last sync), facing (1 or -1, the game sets it). box:sync() after each step;
+-- box:knock(hit) gives the body a combat hit's knockback (call it from the fighter's on_hurt).
+local Box = {}
+Box.__index = Box
+
+function M.box(body)
+  local b = setmetatable({ body = body, x = 0, y = 0, w = 0, h = 0, facing = 1 }, Box)
+  b:sync()
+  return b
+end
+
+function Box:sync()
+  local x0, y0, x1, y1 = self.body:bounds()
+  self.x, self.y, self.w, self.h = x0, y0, x1 - x0, y1 - y0
+end
+
+-- The knockback of a combat hit (hit.knock_x, hit.knock_y) as the body's new velocity: x is
+-- replaced, y too when the hit pushes up or down
+function Box:knock(hit)
+  local kx, ky = hit.knock_x or 0, hit.knock_y or 0
+  if kx == 0 and ky == 0 then return end
+  self.body:set_velocity(kx, ky ~= 0 and ky or nil)
+end
+
 -- The outline as { x1, y1, x2, y2, ... }: ((point - (ox, oy)) / scale), between the last two
 -- steps by alpha (default 1). Writes into `out` (made if nil) and returns it.
 function Body:outline(out, ox, oy, scale, alpha)

@@ -9,6 +9,7 @@ local softbody = require("engine.modules.softbody")
 local rooms = require("engine.modules.rooms")
 local pixelgrid = require("engine.pixelgrid")
 local data = require("rooms_data")
+local enemies = require("rooms_enemies")
 
 local W, H = 320, 180
 local TS, CW, CH = data.tile_size, data.cell_w, data.cell_h
@@ -63,6 +64,15 @@ function play.load_room(self, x, y)
     end
   end
   self.runs, self.ones = runs, ones
+  -- the room's enemies, and the slime as a fighter with the health it had in the last room
+  local spots = {}
+  for i, t in ipairs(self.nav.room.template.enemies or {}) do
+    spots[i] = { x = (t.tx - 0.5) * TS, y = t.ty * TS }
+  end
+  local health = self.fight and not self.fight.player.dead and self.fight.player.health or nil
+  self.fight = enemies.new(self.slime, self.grid, spots, { boss = self.nav.room.type == "boss",
+    seed = SEED * 1000 + self.nav.index, health = health,
+    on_slime_death = function() self.dead = true end })
   local item = self.nav.room.grants and not self.abilities[self.nav.room.grants] and self.nav.room.template.item
   self.item = item and { x = (item.tx - 1) * TS + 4, y = (item.ty - 1) * TS + 4, tag = self.nav.room.grants } or nil
   if x then
@@ -84,6 +94,7 @@ function play:enter()
   } })
   self.points = {}
   self.facing, self.charging = 1, false
+  self.dead, self.deaths = false, 0
   local x, y = self.nav:enter(self.map.start)
   play.load_room(self, x, y)
 end
@@ -111,8 +122,17 @@ end
 function play:update(dt)
   self.fade:update(dt)
   if self.fade:busy() then return end            -- the room is frozen while the screen fades
+  if self.dead then                               -- back to the start room, healed, behind a fade
+    self.dead, self.deaths = false, self.deaths + 1
+    self.fade:start(function()
+      self.fight.player.dead = true                -- so the next room starts at full health
+      play.load_room(self, self.nav:enter(self.map.start))
+    end)
+    return
+  end
   control(self, dt)
   self.slime:step(dt, self.grid)
+  self.fight:step(dt)
   local cx, cy = self.slime:center()
   -- the key: picked up by touching it; the room is rebuilt so its locked doors open
   local it = self.item
@@ -177,9 +197,14 @@ function play:draw(alpha)
   g.setColor(0.95, 0.75, 0.20, 1)
   for i = 1, #self.locked do local l = self.locked[i]; g.rectangle("fill", l.x + 4, l.y, TS - 8, 3 * TS) end
   if self.item then g.rectangle("fill", self.item.x, self.item.y, 8, 8) end
+  self.fight:draw(alpha, self.nav.room.type == "boss")
   g.setColor(1, 1, 1, 1)
-  draw_slime(self, alpha)
+  -- the slime blinks while nothing can hurt it
+  local p = self.fight.player
+  if not (p:invulnerable() and math.floor(p.invuln * 12) % 2 == 1) then draw_slime(self, alpha) end
   camera:detach()
+  g.setColor(1, 1, 1, 1)
+  engine.text.draw("HP " .. p.health .. "/" .. p.stats:get("max_health"), 4, 4)
   draw_minimap(self)
   local cover = self.fade:cover(alpha)
   if cover > 0 then

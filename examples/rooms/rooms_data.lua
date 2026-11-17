@@ -5,6 +5,8 @@
 -- state opens rows 9 to 11 of a cell's first or last column where the map put a door, and keeps
 -- a locked door shut until the player has its ability.
 --
+-- enemies: the tiles enemies stand on at first (the tile above the floor), read by the play state.
+--
 -- Levels made in LDtk (engine.level) give templates of the same shape; these stay in code so the
 -- example needs no level file.
 local M = { cell_w = 20, cell_h = 12, tile_size = 16 }
@@ -68,7 +70,7 @@ function M.templates()
       "#..................#",
       "####################",
     } },
-    { id = "hall", weight = 3, exits = lr({ "left" }, { "right" }), rows = {
+    { id = "hall", weight = 3, exits = lr({ "left" }, { "right" }), enemies = { { tx = 7, ty = 11 }, { tx = 15, ty = 11 } }, rows = {
       "####################",
       "#..................#",
       "#..................#",
@@ -82,7 +84,7 @@ function M.templates()
       "#..................#",
       "####################",
     } },
-    { id = "steps", weight = 2, exits = lr({ "left" }, { "right" }), rows = {
+    { id = "steps", weight = 2, exits = lr({ "left" }, { "right" }), enemies = { { tx = 16, ty = 11 } }, rows = {
       "####################",
       "#..................#",
       "#..................#",
@@ -96,9 +98,9 @@ function M.templates()
       "#...########.......#",
       "####################",
     } },
-    { id = "tall", weight = 2, h = 2, rows = TALL,
+    { id = "tall", weight = 2, h = 2, rows = TALL, enemies = { { tx = 10, ty = 23 } },
       exits = lr({ "left", 0 }, { "left", 1 }, { "right", 0 }, { "right", 1 }) },
-    { id = "hub", w = 2, h = 2, rows = HUB,
+    { id = "hub", w = 2, h = 2, rows = HUB, enemies = { { tx = 8, ty = 23 }, { tx = 32, ty = 23 }, { tx = 13, ty = 11 } },
       exits = lr({ "left", 0 }, { "left", 1 }, { "right", 0 }, { "right", 1 }) },
     { id = "vault_l", item = { tx = 10, ty = 11 }, exits = lr({ "left" }), rows = {
       "####################",
@@ -128,7 +130,7 @@ function M.templates()
       "#..................#",
       "####################",
     } },
-    { id = "lair_l", type = "boss", exits = lr({ "left" }), rows = {
+    { id = "lair_l", type = "boss", exits = lr({ "left" }), enemies = { { tx = 12, ty = 11 }, { tx = 16, ty = 11 } }, rows = {
       "####################",
       "#..................#",
       "#..................#",
@@ -142,7 +144,7 @@ function M.templates()
       "#..................#",
       "####################",
     } },
-    { id = "lair_r", type = "boss", exits = lr({ "right" }), rows = {
+    { id = "lair_r", type = "boss", exits = lr({ "right" }), enemies = { { tx = 5, ty = 11 }, { tx = 9, ty = 11 } }, rows = {
       "####################",
       "#..................#",
       "#..................#",

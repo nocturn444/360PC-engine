@@ -55,6 +55,8 @@ Every option is a field of the body and can change between steps (`slime.gravity
 | `body:step(dt, grid, gx, gy)` | One fixed step. Without a grid the body only falls. |
 | `body:push(ax, ay)` | An acceleration for the next step only, in pixels / s^2 (call it every step to keep pushing). |
 | `body:impulse(vx, vy)` | A change of velocity for every point at the next step, in pixels / s (a jump). |
+| `body:set_velocity(vx, vy)` | Sets the mean velocity, keeping the wobble; nil keeps that axis. |
+| `softbody.box(body)` | A rectangle that follows the body for modules that think in boxes: `x, y, w, h, facing`. `box:sync()` after each step; `box:knock(hit)` turns a combat hit's knockback into the body's velocity (call it from the fighter's `on_hurt`). `examples/rooms` makes the slime a combat fighter with it. |
 | `body:move_to(x, y)` | Moves the centre there, keeping the velocity (a door, a respawn). |
 | `body:on_ground()`, `:on_wall()`, `:on_ceiling()` | Whether a point touched that kind of surface in the last step. `floor_count`, `wall_count`, `ceiling_count` give how many. |
 | `body:center()` | The mean of the points. |
