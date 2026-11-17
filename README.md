@@ -42,7 +42,7 @@ can check it with `require("engine").requires("0.1")`.
 |---|---|
 | `runtime/` | C runtime on xsdk; builds the `.xex`. Same code for every game. |
 | `engine/` | Generic engine layer in Lua (levels from LDtk in `engine/level.lua`). |
-| `engine/modules/` | Optional modules per genre: `platformer`, `combat`, `procgen`, `items`, `softbody`. |
+| `engine/modules/` | Optional modules per genre: `platformer`, `combat`, `procgen`, `items`, `softbody`, `rooms`. |
 | `lib/` | Third-party Lua libraries, each with its LICENSE. |
 | `tools/` | Shader build, packaging, FTP installer, `deploy.py`, LDtk converter (`ldtk_convert.py`), seed validator, `compat_check`, `check_libs`. |
 | `template/` | Minimal project to start a new game. |

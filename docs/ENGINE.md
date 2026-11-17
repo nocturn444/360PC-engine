@@ -791,6 +791,10 @@ Optional, loaded by the game that wants them; nothing above requires one.
   rolls and squashes against a tile grid, with an outline ready for `engine.pixelgrid`. It needs
   no other module. Reference:
   [engine/modules/softbody/README.md](../engine/modules/softbody/README.md).
+- `engine/modules/rooms`: plays a procgen map one room at a time: the current room, leaving by
+  an exit, where its door leads and where the body arrives, locked doors, explored rooms for the
+  minimap and the run's save, and fade or slide transitions. Reference:
+  [engine/modules/rooms/README.md](../engine/modules/rooms/README.md).
 
 ```lua
 local platformer = require("engine.modules.platformer")

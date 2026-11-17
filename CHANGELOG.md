@@ -14,6 +14,8 @@ All notable changes to 360PC-Engine. The format follows
 - `engine/modules/softbody`: a soft body (points on a ring, springs and pressure) that falls,
   rolls and squashes against a tile grid, with an outline for `engine.pixelgrid`; and
   `examples/slime`, a slime made with both.
+- `engine/modules/rooms`: a procgen map played room by room (exits, doors, arrival points,
+  locks, explored rooms, save state) and fade or slide transitions.
 - `tools/deploy.py`: build, shaders, package, FTP upload and optional XBDM launch in one
   command, with the console's settings in an untracked `deploy.local.ini` (docs/DEPLOY.md).
 
