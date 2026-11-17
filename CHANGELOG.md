@@ -17,6 +17,10 @@ All notable changes to 360PC-Engine. The format follows
 - `engine/modules/rooms`: a procgen map played room by room (exits, doors, arrival points,
   locks, explored rooms, save state) and fade or slide transitions; `examples/rooms` walks a
   generated map with them.
+- `engine.text`: a built-in 3 x 5 pixel font drawn with rectangles, so overlays show text on
+  the console without a TTF.
+- `engine.tune`: live tuning of numbers with an overlay, the controller and a saved file;
+  `examples/slime` tunes its body and controls with it.
 - `tools/deploy.py`: build, shaders, package, FTP upload and optional XBDM launch in one
   command, with the console's settings in an untracked `deploy.local.ini` (docs/DEPLOY.md).
 

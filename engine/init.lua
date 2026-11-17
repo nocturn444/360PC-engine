@@ -19,6 +19,7 @@ local engine = {
   save = require(prefix .. "save"),
   level = require(prefix .. "level"),
   ui = require(prefix .. "ui"),
+  text = require(prefix .. "text"),
   -- set by init():
   config = nil,
   time = nil,      -- the Timestep
@@ -33,6 +34,11 @@ setmetatable(engine, { __index = function(t, k)
     local anim = require(prefix .. "anim")
     rawset(t, "anim", anim)
     return anim
+  end
+  if k == "tune" then         -- engine.tune: loaded on first use (development builds)
+    local tune = require(prefix .. "tune")
+    rawset(t, "tune", tune)
+    return tune
   end
   if k == "debug" then        -- engine.debug: loaded on first use (development builds)
     local dbg = require(prefix .. "debug")

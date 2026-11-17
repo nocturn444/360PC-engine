@@ -65,6 +65,20 @@ frames(60)
 local before = slime:center()
 pad.axes.leftx = -1; frames(15, 1 / 30); pad.axes.leftx = 0   -- the console's 30 FPS
 check(slime:center() < before - 10 and play.facing == -1, "the stick moves it at 30 FPS")
+-- the tuning overlay: Tab opens it, ] raises the selected number, Page Down picks the next
+local tuner = play.tuner
+check(not tuner.open and #tuner.fields == 11, "the tuner has the body's and the controls' numbers, closed")
+F.keys.tab = true; love.update(1 / 60); F.keys.tab = nil; love.update(1 / 60)
+check(tuner.open, "Tab opens it")
+local before_k = slime.stiffness
+F.keys["["] = true; love.update(1 / 60); F.keys["["] = nil; love.update(1 / 60)
+check(math.abs(slime.stiffness - (before_k - 0.05)) < 1e-9, "[ lowers the stiffness one step")
+F.keys.pagedown = true; love.update(1 / 60); F.keys.pagedown = nil; love.update(1 / 60)
+check(tuner.selected == 2, "Page Down picks the next number")
+F.reset_calls(); love.draw()
+check(#F.find("rectangle") > 50, "the overlay is drawn with the built-in font")
+F.keys.tab = true; love.update(1 / 60); F.keys.tab = nil; love.update(1 / 60)
+check(not tuner.open, "Tab closes it")
 F.reset_calls(); love.draw()
 check(play.pixels.count > 150, "the slime is drawn as a pixel grid (" .. play.pixels.count .. " cells)")
 F.keys.escape = true; love.update(1 / 60)

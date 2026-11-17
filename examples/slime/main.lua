@@ -1,6 +1,6 @@
 -- examples/slime: a soft-body slime (engine/modules/softbody) drawn each frame into a pixel
 -- grid (engine/pixelgrid) on a small room (platformer.grid). Move, jump, and hold down to
--- squash. See README.md.
+-- squash; the tuning overlay (Tab or LB) changes its numbers live. See README.md.
 --
 -- The base (engine/ and lib/) is found in this folder (a copy), in base/ (a submodule), or,
 -- for this example, two folders up: the repository it ships in.
@@ -17,11 +17,18 @@ engine.run({
   input = {
     deadzone = 0.25,
     actions = {
-      left = { keys = { "left", "a" }, buttons = { "dpleft" } },
-      right = { keys = { "right", "d" }, buttons = { "dpright" } },
-      down = { keys = { "down", "s" }, buttons = { "dpdown" } },
+      left = { keys = { "left", "a" } },          -- the stick moves too (move_x); the d-pad tunes
+      right = { keys = { "right", "d" } },
+      down = { keys = { "down", "s" }, axes = { { axis = "lefty", dir = 1, threshold = 0.6 } } },
       jump = { keys = { "space", "up", "w" }, buttons = { "a" } },
       quit = { keys = { "escape" } },         -- on the console, hold Back for 3 s
+      -- engine.tune: the overlay that changes the slime's numbers while it runs
+      tune = { keys = { "tab" }, buttons = { "leftshoulder" } },
+      tune_prev = { keys = { "pageup" }, buttons = { "dpup" } },
+      tune_next = { keys = { "pagedown" }, buttons = { "dpdown" } },
+      tune_dec = { keys = { "[" }, buttons = { "dpleft" } },
+      tune_inc = { keys = { "]" }, buttons = { "dpright" } },
+      tune_save = { keys = { "f5" }, buttons = { "rightshoulder" } },
     },
     axes = {
       move_x = { negative = "left", positive = "right", stick = "leftx" },

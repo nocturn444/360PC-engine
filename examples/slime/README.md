@@ -6,10 +6,18 @@ look where it moves) and drawn on the game's pixel grid. No sprite.
 
 | Action | Keyboard | Controller |
 |---|---|---|
-| Move | Left / Right, A / D | Left stick, d-pad |
+| Move | Left / Right, A / D | Left stick |
 | Jump | Space, Up, W | A |
-| Squash (let go on the ground: a higher jump) | Down, S | d-pad down |
+| Squash (let go on the ground: a higher jump) | Down, S | Left stick down |
+| Tuning overlay: open / close | Tab | LB |
+| Choose a number / change it | Page Up / Page Down, [ / ] | D-pad |
+| Save the numbers (loaded at the next start) | F5 | RB |
 | Quit | Escape | Hold Back 3 s |
+
+The overlay (`engine.tune`) changes the body's stiffness, pressure, damping, friction, gravity
+and passes, and the controls' move, air move, jump, charged jump and squash, while the slime
+runs. F5 / RB writes them to `tune_slime.txt` in the save folder; they are loaded at the next
+start, on the PC or on the console. Copy the values you like into the code when they are final.
 
 Run it on PC from the repository root: `love examples/slime`. On the console: package it like
 any game (`python tools/package.py examples/slime --xex <xex>`, see

@@ -48,7 +48,7 @@ together, under load: [examples/perf_platformer](../examples/perf_platformer/REA
 | `engine.run(config)` | Sets `love.load`, `love.update`, `love.draw`, `love.resize` and the input callbacks. Callbacks the game already defined still run, first. `love.run` is not touched (the console ignores it). |
 | `engine.init(config)`, `engine.update(dt)`, `engine.draw()` | The same three steps, to call from the game's own callbacks instead of `run`. |
 | `engine.time`, `engine.states`, `engine.controls`, `engine.screen` | The Timestep, the state Machine, the Input (if `config.input`) and the Pixel (if `config.pixel`), once `love.load` ran. |
-| `engine.state`, `.timestep`, `.input`, `.camera`, `.pixel`, `.layers`, `.entity`, `.modifiers`, `.rng`, `.save`, `.level`, `.ui`, `.anim`, `.debug` | The modules. `engine.anim` loads anim8 on first use; `engine.debug` is loaded on first use too. |
+| `engine.state`, `.timestep`, `.input`, `.camera`, `.pixel`, `.layers`, `.entity`, `.modifiers`, `.rng`, `.save`, `.level`, `.ui`, `.text`, `.anim`, `.debug`, `.tune` | The modules. `engine.anim` loads anim8 on first use; `engine.debug` and `engine.tune` are loaded on first use too. |
 
 Config: `rate` (Hz, 60), `max_steps` (5), `max_frame` (0.25 s), `input`, `pixel`, `states`
 (`name = table`), `load` (`function(engine)`, runs in `love.load` before the first state is
@@ -753,6 +753,47 @@ given.
 
 On the console text needs `default_font` in `game.lua`; the menus then work with the
 controller alone (d-pad or stick, A, B).
+
+## engine.text
+
+A tiny built-in pixel font (3 x 5 glyphs, ASCII 32 to 95, lower case drawn as upper case) drawn
+with rectangles: debug overlays show text on the console without a TTF, which
+`love.graphics.print` needs there (`default_font`, docs/GAME_CONFIG.md). Each pixel row is drawn
+as merged runs (a few rectangles a glyph); nothing is allocated. For a game's own text, ship a TTF
+or a font sprite sheet.
+
+```lua
+engine.text.draw("SEED 1234", 4, 4)           -- the current colour; returns the rectangles drawn
+engine.text.draw("PAUSED", 100, 80, 2)        -- scale 2: each font pixel 2 x 2
+engine.text.lines({ "A", "B" }, 4, 4)         -- line_height (6) apart
+local w, h = engine.text.width("PAUSED", 2), engine.text.height(2)
+```
+
+## engine.tune
+
+Live tuning for development: the game lists numbers (a table and a key, with a range and a
+step), an overlay shows them, the controller or keyboard changes them while the game runs, and
+they can be saved to a file in the save folder (engine.save's data format, never run as code)
+and loaded back at the next start. For finding how a body, a jump or an enemy should feel, on
+the PC or on the console, without rebuilding. Loaded on first use.
+
+```lua
+local tuner = engine.tune.new({ file = "tune_slime.txt" })
+tuner:add(slime, "stiffness", { min = 0.05, max = 1, step = 0.05 })
+     :add(params, "jump", { min = 0, max = 800, step = 10, label = "jump speed" })
+tuner:load()                                  -- last saved values; false, "no file" the first time
+function play:input(input) tuner:input(input) end
+function play:draw(alpha) ...; tuner:draw(4, 4) end
+```
+
+Actions the game binds (names in `engine.tune.actions`, renamed with `opts.actions`): `tune`
+(open and close), `tune_prev` and `tune_next` (choose), `tune_dec` and `tune_inc` (one step; held,
+it repeats after 0.3 s at ten steps a second), `tune_save`. Values are clamped to `min` and
+`max` and rounded to the step's decimals; `on_change(value, table, key)` runs after each change.
+`tuner:values()`, `get`, `set`, `nudge(n)`, `reset()` (the values at `add` time), `save()` and
+`load()` (both report through return values and `opts.log`, never raise). Text is drawn with
+`engine.text`, or with `opts.print(text, x, y)` and `opts.line_height`. `examples/slime` binds it
+to Tab / LB with the d-pad and saves with F5 / RB.
 
 ## engine.anim
 

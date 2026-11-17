@@ -19,7 +19,8 @@ local ROOM = {
   "#.....##.......#####",
   "####################",
 }
-local MOVE, AIR_MOVE, JUMP, CHARGED_JUMP = 700, 300, 260, 380
+-- the controls' numbers, tuned live with the overlay (engine.tune) like the body's own
+local params = { move = 700, air_move = 300, jump = 260, charged_jump = 380, squash = 0.7 }
 local SIZE = 40                              -- the pixel grid around the slime, in pixels
 
 local play = {}
@@ -37,9 +38,24 @@ function play:enter()
   self.points = {}
   self.facing = 1
   self.charging = false
+  local slime = self.slime
+  self.tuner = engine.tune.new({ file = "tune_slime.txt" })
+  self.tuner:add(slime, "stiffness", { min = 0.05, max = 1, step = 0.05 })
+    :add(slime, "pressure", { min = 0.05, max = 1, step = 0.05 })
+    :add(slime, "damping", { min = 0.9, max = 1, step = 0.001 })
+    :add(slime, "friction", { min = 0, max = 1, step = 0.05 })
+    :add(slime, "gravity", { min = 100, max = 2000, step = 25 })
+    :add(slime, "iterations", { min = 1, max = 12, step = 1 })
+    :add(params, "move", { min = 0, max = 3000, step = 50 })
+    :add(params, "air_move", { label = "air move", min = 0, max = 3000, step = 50 })
+    :add(params, "jump", { min = 0, max = 800, step = 10 })
+    :add(params, "charged_jump", { label = "charged jump", min = 0, max = 1000, step = 10 })
+    :add(params, "squash", { min = 0.3, max = 1, step = 0.05 })
+  self.tuner:load()                          -- what was saved with F5 / RB last time, if anything
 end
 
 function play:input(input)
+  self.tuner:input(input)
   if input:pressed("quit") then love.event.quit() end
 end
 
@@ -47,15 +63,15 @@ function play:update(dt)
   local input, slime = engine.controls, self.slime
   local move = input:axis("move_x")
   if move ~= 0 then self.facing = move > 0 and 1 or -1 end
-  slime:push(move * (slime:on_ground() and MOVE or AIR_MOVE), 0)
+  slime:push(move * (slime:on_ground() and params.move or params.air_move), 0)
   -- hold down to squash; let go on the ground for a bigger jump
   local squash = input:down("down")
-  slime.inflate = squash and 0.7 or 1
+  slime.inflate = squash and params.squash or 1
   if squash and slime:on_ground() then self.charging = true end
   if input:pressed("jump") and slime:on_ground() then
-    slime:impulse(0, -JUMP)
+    slime:impulse(0, -params.jump)
   elseif self.charging and not squash then
-    if slime:on_ground() then slime:impulse(0, -CHARGED_JUMP) end
+    if slime:on_ground() then slime:impulse(0, -params.charged_jump) end
     self.charging = false
   end
   slime:step(dt, self.grid)
@@ -95,6 +111,7 @@ function play:draw(alpha)
   end
   px:set(math.floor(x0 - ox) + 4, ey + 3, 5)               -- a shine on the far side
   px:draw(ox, oy)
+  self.tuner:draw(4, 4)
 end
 
 return play
