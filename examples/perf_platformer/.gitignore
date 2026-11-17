@@ -1,0 +1,14 @@
+# Packaging and build output
+dist/
+build/
+*.xex
+*.psu
+*.vsu
+*.zip
+
+# Local state
+save/
+*.log
+.DS_Store
+Thumbs.db
+__pycache__/

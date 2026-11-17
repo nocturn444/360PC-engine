@@ -12,3 +12,6 @@ save/
 .DS_Store
 Thumbs.db
 __pycache__/
+
+# Local deploy settings: console IP and FTP login (docs/DEPLOY.md)
+deploy.local.ini

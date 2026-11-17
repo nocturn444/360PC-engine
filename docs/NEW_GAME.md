@@ -86,7 +86,8 @@ python base/tools/package.py . --xex base/runtime/build/game.xex --shaders build
 This writes `dist/<identity>/`, the folder that goes on the console, and `dist/<identity>.zip`:
 
 - `default.xex`, the game's files (without development files: dot files, `*.md`, `dist/`,
-  `build/`, `tests/`, `tools/`, `docs/`, the `base/` submodule, saves, logs, art sources, LDtk projects);
+  `build/`, `tests/`, `tools/`, `docs/`, the `base/` submodule, saves, logs, art sources, LDtk
+  projects, `deploy.local.ini`);
 - `engine/` (the core, plus the modules the game's Lua mentions) and the `lib/` libraries it
   uses, with their licenses;
 - `l360/` (the runtime's Lua) and `shaders/` (the compiled shaders);
@@ -101,6 +102,9 @@ the shader folder lacks the engine's files or a declared shader. It warns when `
 `debug = true`.
 
 ## 7. Install over FTP
+
+Steps 4 to 8 can run as one command, `python base/tools/deploy.py .`, with the console's
+address and the tool paths in a local `deploy.local.ini`: [DEPLOY.md](DEPLOY.md).
 
 With the console on, Aurora running and its FTP server enabled (Aurora shows the console's IP;
 the default user and password are `xboxftp` / `xboxftp`):

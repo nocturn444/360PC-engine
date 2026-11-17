@@ -10,7 +10,8 @@ Reference and usage example: [docs/ENGINE.md](../docs/ENGINE.md).
 | `timestep.lua` | Fixed timestep at a configurable rate, with a cap on steps per frame and the interpolation alpha. |
 | `input.lua` | Actions bound, as data, to keys, mouse buttons, gamepad buttons and gamepad axes. |
 | `camera.lua` | Camera: follow, room bounds, room transitions, shake, world/screen conversion. |
-| `pixel.lua` | Low-resolution drawing scaled by a whole number, with bars. |
+| `pixel.lua` | Low-resolution drawing scaled by a whole number, with bars; `"direct"` mode by default on PC and console. |
+| `pixelgrid.lua` | A small grid of colour indices that shapes (rectangles, circles, any polygon) are rasterized into every frame, drawn as pixel-aligned cells in one SpriteBatch draw call. |
 | `layers.lua` | Sprites made of named layers drawn in a fixed order. |
 | `entity.lua` | Entities made of components, cached queries, tags and ordered systems. |
 | `modifiers.lua` | Modifiers as data: stats evaluated in a fixed order, events, stacking, timers, save state. |

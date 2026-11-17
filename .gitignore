@@ -20,3 +20,6 @@ dist/
 .DS_Store
 Thumbs.db
 __pycache__/
+
+# Local deploy settings (console IP, FTP login): tools/deploy.example.ini
+deploy.local.ini

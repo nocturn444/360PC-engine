@@ -11,6 +11,7 @@ local engine = {
   input = require(prefix .. "input"),
   camera = require(prefix .. "camera"),
   pixel = require(prefix .. "pixel"),
+  pixelgrid = require(prefix .. "pixelgrid"),
   layers = require(prefix .. "layers"),
   entity = require(prefix .. "entity"),
   modifiers = require(prefix .. "modifiers"),
@@ -47,6 +48,26 @@ end })
 --   states                       { name = state table }
 --   load                         function(engine): create the game's things; runs before `start` is entered
 --   start                        the name (or table) of the first state
+-- engine.requires("0.2") or ("0.2.1"): stops with a clear error when this base is older than the
+-- version a game was written for, or has another major version (docs/VERSIONING.md). Returns
+-- the engine. Under 1.0.0 the minor version counts as the major one (0.2 cannot run a 0.3 game).
+local function parse_version(v)
+  local a, b, c = tostring(v):match("^(%d+)%.?(%d*)%.?(%d*)$")
+  if not a then error("engine.requires: a version is \"major.minor.patch\", got " .. tostring(v), 3) end
+  return tonumber(a), tonumber(b) or 0, tonumber(c) or 0
+end
+function engine.requires(wanted)
+  local ma, mi, pa = parse_version(engine._VERSION)
+  local wa, wi, wp = parse_version(wanted)
+  local same_line = ma == wa and (ma > 0 or mi == wi)
+  local new_enough = mi > wi or (mi == wi and pa >= wp)
+  if not (same_line and new_enough) then
+    error(string.format("this game needs 360PC-Engine %s; the base here is %s (docs/VERSIONING.md)",
+      tostring(wanted), engine._VERSION), 2)
+  end
+  return engine
+end
+
 function engine.init(config)
   config = config or {}
   engine.config = config

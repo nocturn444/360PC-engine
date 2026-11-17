@@ -65,3 +65,20 @@ T.no_new_globals(globals)
 engine.init({ states = { a = { update = function() log[#log + 1] = "u" end, draw = function() log[#log + 1] = "d" end } }, start = "a" })
 engine.update(1 / 60); engine.draw()
 T.check(took() == "u d" and engine.controls == nil and engine.screen == nil, "input and pixel are optional")
+
+-- Versions (docs/VERSIONING.md): VERSION, engine._VERSION and the newest CHANGELOG.md entry agree
+local function read(path)
+  local f = assert(io.open(path, "rb")); local s = f:read("*a"); f:close(); return s
+end
+local file_version = read("VERSION"):match("^(%d+%.%d+%.%d+)%s*$")
+T.check(file_version == engine._VERSION, "VERSION matches engine._VERSION (" .. tostring(file_version) .. ")")
+local newest = read("CHANGELOG.md"):match("\n## %[(%d+%.%d+%.%d+)%]")
+T.check(newest == engine._VERSION, "the newest CHANGELOG.md release is engine._VERSION (" .. tostring(newest) .. ")")
+T.check(engine.requires("0.1") == engine and engine.requires(engine._VERSION) == engine, "requires: this version")
+local ma, mi, pa = engine._VERSION:match("^(%d+)%.(%d+)%.(%d+)$")
+ma, mi, pa = tonumber(ma), tonumber(mi), tonumber(pa)
+local function refuses(v) local ok, err = pcall(engine.requires, v); return not ok and err:find("needs 360PC-Engine", 1, true) end
+T.check(refuses(ma .. "." .. mi .. "." .. (pa + 1)) and refuses(ma .. "." .. (mi + 1)) and refuses((ma + 1) .. ".0"),
+  "requires: a newer version is refused")
+if ma == 0 and mi > 0 then T.check(refuses("0." .. (mi - 1)), "requires: under 1.0 an older minor is another line") end
+T.check(not pcall(engine.requires, "latest"), "requires: a version has numbers")
