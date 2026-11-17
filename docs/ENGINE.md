@@ -58,7 +58,8 @@ A frame: `controls:poll()`; then, for each fixed step the frame time asks for, `
 the top state's `input(controls)` and `update(dt)`; then `screen:start()`, the states'
 `draw(alpha)`, `screen:finish()`, and the states' `draw_screen(alpha)` in screen pixels. Other
 events (`keypressed`, `gamepadpressed`, `resize`, `quit`...) reach the top state as hooks of the
-same name. The console runs at 30 FPS: at 60 Hz a frame there is two steps.
+same name. The target is 30 FPS on PC and console alike: at the default 60 Hz logic rate a frame runs two
+steps.
 
 ## engine.timestep
 

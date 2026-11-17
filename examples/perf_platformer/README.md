@@ -9,8 +9,8 @@ What a frame does:
 
 - **Level.** A procgen map (`engine/modules/procgen`) of 12 rooms picked from 8 hand-made
   templates. The templates are rows of tile strings in `perf/rooms.lua`, the form
-  `platformer.grid` takes; they stay in code because the level file format (objective 11) is not
-  decided. The map is at least 4 screens wide (6 x 4 rooms of 20 x 12 tiles with the default
+  `platformer.grid` takes; they stay in code so the test needs no level file (LDtk levels read
+  by `engine.level`, objective 11, give the same template form). The map is at least 4 screens wide (6 x 4 rooms of 20 x 12 tiles with the default
   seed). Each room is one static SpriteBatch of about 250 sprites; only the rooms in view are
   drawn.
 - **Player and N enemies**, N = 0, 50, 100 or 200. Each is a platformer controller body in one

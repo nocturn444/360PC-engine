@@ -16,7 +16,8 @@ copied here and made generic.
 
 ## Status
 
-Early development. Nothing is released yet. The roadmap is in
+First version 0.1.0 (see [CHANGELOG.md](CHANGELOG.md)); it is tagged once it passes the
+console tests. The roadmap is in
 [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Start a game
@@ -35,15 +36,15 @@ The base follows semantic versioning ([docs/VERSIONING.md](docs/VERSIONING.md));
 version is in `VERSION` and the changes in [CHANGELOG.md](CHANGELOG.md). A game pins a tag and
 can check it with `require("engine").requires("0.1")`.
 
-## Layout (planned)
+## Layout
 
 | Path | What it is |
 |---|---|
 | `runtime/` | C runtime on xsdk; builds the `.xex`. Same code for every game. |
 | `engine/` | Generic engine layer in Lua. |
-| `engine/modules/` | Optional modules per genre (e.g. tilemap and collisions for platformers). |
+| `engine/modules/` | Optional modules per genre: `platformer`, `combat`, `procgen`, `items`. |
 | `lib/` | Third-party Lua libraries, each with its LICENSE. |
-| `tools/` | Shader build, packaging, FTP installer, seed validator, `compat_check`. |
+| `tools/` | Shader build, packaging, FTP installer, seed validator, `compat_check`, `check_libs`. |
 | `template/` | Minimal project to start a new game. |
 | `examples/perf_platformer/` | Example and performance test ([README](examples/perf_platformer/README.md)). |
 | `docs/` | Documentation. |
