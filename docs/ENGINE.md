@@ -787,6 +787,10 @@ Optional, loaded by the game that wants them; nothing above requires one.
 - `engine/modules/items`: weighted item pools drawn with the run's `"loot"` stream, filtered by
   room type and the run's tags, with unique items per run and entries that permanent unlocks add.
   Reference: [engine/modules/items/README.md](../engine/modules/items/README.md).
+- `engine/modules/softbody`: a soft body (points on a ring, springs and pressure) that falls,
+  rolls and squashes against a tile grid, with an outline ready for `engine.pixelgrid`. It needs
+  no other module. Reference:
+  [engine/modules/softbody/README.md](../engine/modules/softbody/README.md).
 
 ```lua
 local platformer = require("engine.modules.platformer")
