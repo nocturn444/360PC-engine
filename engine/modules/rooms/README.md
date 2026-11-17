@@ -64,7 +64,9 @@ exit gives no tile; default 1.5 tiles, or 24), `on_enter(nav, index, exit)`.
 ## rooms.transition
 
 Two halves: the first covers the screen, a callback swaps the room in the middle, the second
-uncovers it. Only numbers; the game draws.
+uncovers it. Only numbers; the game draws. `engine.camera` has a `transition` of its own, for
+moving the view to other bounds inside one loaded world; this one is for when the room itself is
+replaced (its grid, entities and batches built anew), which the camera cannot know about.
 
 | Call | What it does |
 |---|---|
