@@ -30,6 +30,9 @@ It runs from a copy in `%TEMP%`, so a pull that changes the script itself is saf
 https://love2d.org to get LOVE 11.5), lists the games and starts the chosen one (Enter picks
 `rooms`) from the repository root.
 
+`level_editor.bat` opens the level editor with LOVE ([LEVEL_EDITOR.md](LEVEL_EDITOR.md)). It does
+not update the repository.
+
 ## One-time setup
 
 1. Do the setup of [BUILDING.md](../BUILDING.md): WSL with xsdk, its GCC and LuaJIT for xsdk

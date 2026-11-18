@@ -40,6 +40,10 @@ All notable changes to 360PC-Engine. The format follows
   the console package gets mono WAV files instead (16-bit PCM for short effects, IMA ADPCM for
   long ones, music split into streamed IMA ADPCM chunks with an `.idx`), cached between runs;
   settings in `game.lua`'s new `audio` table. Needs ffmpeg.
+- `tools/level_editor`: an interactive level editor made with LÖVE for the level file of
+  `engine.level`. It covers collision, doors and their abilities, the item, entities with
+  fields, rooms (add, copy, delete, order, type, tags, weight, size), live checks, undo, and a
+  play test with a platformer body. `level_editor.bat` opens it on Windows.
 - `run_pc.bat`: double-click to update the repository and open a game on the PC with LOVE.
 
 ### Changed

@@ -37,6 +37,10 @@ Build, packaging and validation tools. The whole path from a new game to the con
   `X360_FTP_*` variables. Uploads only changed files (size, and CRC-32 against the manifest of
   the last install), never deletes anything, never touches saves or the log; `--dry-run`,
   `--force`. `python tools/install_ftp.py dist/<identity> --host <console IP>`.
+- `level_editor/`: an interactive level editor made with LÖVE. It edits a level file's rooms
+  (collision, doors, the item, entities, room fields and size), checks them and play-tests a
+  room. `love tools/level_editor levels/world.lvl`, or `level_editor.bat` on Windows
+  ([../docs/LEVEL_EDITOR.md](../docs/LEVEL_EDITOR.md)).
 - `ldtk_convert.py`: converts an LDtk project (`.ldtk`, with its `.ldtkl` files when levels are
   saved separately) into the level file `engine/level.lua` reads: rooms with collisions, exits,
   items, entities and tile layers, as sorted data in the text format of `engine/save.lua`.

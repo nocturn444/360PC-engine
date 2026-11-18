@@ -4,7 +4,7 @@ rem Xbox 360 over FTP with tools\deploy.py. Settings: deploy.local.ini (docs\DEP
 rem
 rem The branch to follow. A pull can change this file, so it runs from a copy in %TEMP%.
 setlocal EnableExtensions EnableDelayedExpansion
-set "BRANCH=claude/obj23-enemies"
+set "BRANCH=claude/project-thread-e7o1dl"
 set "DEFAULT_GAME=rooms"
 
 if /i not "%~1"=="--from-temp" (

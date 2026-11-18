@@ -44,7 +44,7 @@ can check it with `require("engine").requires("0.1")`.
 | `engine/` | Generic engine layer in Lua (levels from LDtk in `engine/level.lua`). |
 | `engine/modules/` | Optional modules per genre: `platformer`, `combat`, `procgen`, `items`, `softbody`, `rooms`. |
 | `lib/` | Third-party Lua libraries, each with its LICENSE. |
-| `tools/` | Shader build, packaging, FTP installer, `deploy.py`, LDtk converter (`ldtk_convert.py`), seed validator, `compat_check`, `check_libs`. |
+| `tools/` | Shader build, packaging, FTP installer, `deploy.py`, LDtk converter (`ldtk_convert.py`), level editor (`level_editor/`), seed validator, `compat_check`, `check_libs`. |
 | `template/` | Minimal project to start a new game. |
 | `examples/perf_platformer/` | Example and performance test ([README](examples/perf_platformer/README.md)). |
 | `examples/rooms/` | A generated map walked room by room, with fades, a key and a minimap ([README](examples/rooms/README.md)). |

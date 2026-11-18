@@ -8,6 +8,9 @@ level file that `engine/level.lua` loads on PC and on the console.
 levels/world.ldtk  --tools/ldtk_convert.py-->  levels/world.lvl  --engine.level.load-->  rooms
 ```
 
+The same file can also be made and edited with the base's own interactive editor,
+`tools/level_editor`, which can play-test a room on the spot ([LEVEL_EDITOR.md](LEVEL_EDITOR.md)).
+
 The level file is data in the text format of `engine/save.lua` (`Save.serialize` /
 `Save.parse`), so nothing on the console runs `load()` on it. The converter sorts the keys: the
 same project always gives the same bytes. `tools/package.py` leaves `*.ldtk` and `*.ldtkl` out
