@@ -14,10 +14,7 @@ local enemies = require("rooms_enemies")
 local W, H = 320, 180
 local TS, CW, CH = data.tile_size, data.cell_w, data.cell_h
 local MOVE, AIR_MOVE, JUMP, CHARGED_JUMP = 700, 300, 260, 380
--- The slug: a long soft body (softbody width / height, kept long by `shape`), drawn each frame
--- into a SW x SH pixel grid around its centre
-local SLUG = { width = 34, height = 13, points = 24, shape = 0.2 }
-local SW, SH = 56, 36
+local SIZE = 40
 local SEED = 1
 
 local play = {}
@@ -91,8 +88,8 @@ function play:enter()
   self.fade = rooms.transition.new({ kind = "fade", time = 0.3 })
   self.camera = engine.camera.new({ width = W, height = H, lerp = 10, deadzone_w = 24, deadzone_h = 16 })
   self.abilities = {}
-  self.slime = softbody.new(SLUG)
-  self.pixels = pixelgrid.new(SW, SH, { palette = {
+  self.slime = softbody.new({ radius = 9, points = 18 })
+  self.pixels = pixelgrid.new(SIZE, SIZE, { palette = {
     { 0.98, 0.90, 0.52 }, { 0.10, 0.30, 0.16 }, { 0.95, 1.00, 0.95 }, { 0.05, 0.08, 0.06 },
   } })
   self.points = {}
@@ -154,36 +151,22 @@ function play:update(dt)
   self.camera:update(dt)
 end
 
--- The top filled cell of column c of the pixel grid (nil if the column is empty)
-local function top_of(px, c)
-  for r = 1, SH do if px:get(c, r) ~= 0 then return r end end
-  return nil
-end
-
--- An eye stalk: a line of outline cells up from the body's top at column c, and the eye on it
-local function stalk(px, c, len, look)
-  local top = top_of(px, c)
-  if not top then return end
-  for r = top - len, top - 1 do px:set(c, r, 2) end
-  local ey = top - len - 2
-  px:set(c, ey, 3); px:set(c + 1, ey, 3); px:set(c, ey + 1, 3); px:set(c + 1, ey + 1, 3)
-  px:set(c + look, ey + 1, 4)
-end
-
 local function draw_slime(self, alpha)
   local slime, px = self.slime, self.pixels
   local cx, cy = slime:center()
-  local ox, oy = math.floor(cx) - SW / 2, math.floor(cy) - SH / 2
+  local ox, oy = math.floor(cx) - SIZE / 2, math.floor(cy) - SIZE / 2
   px:clear()
   px:polygon(slime:outline(self.points, ox, oy, 1, alpha), 1)
   px:outline(2)
-  -- two eye stalks near the front end: the front one taller
-  local x0, _, x1 = slime:bounds()
-  local f = self.facing
-  local front = f > 0 and math.floor(x1 - ox) - 6 or math.floor(x0 - ox) + 6
-  local look = f > 0 and 1 or 0
-  stalk(px, front, 4, look)
-  stalk(px, front - 4 * f, 3, look)
+  local x0, y0, x1 = slime:bounds()
+  local ex = math.floor((x0 + x1) / 2 - ox) + 1 + self.facing * 2
+  local ey = math.floor(y0 - oy) + 5
+  local look = self.facing > 0 and 1 or 0
+  for dx = -3, 2, 5 do
+    px:set(ex + dx, ey, 3); px:set(ex + dx + 1, ey, 3)
+    px:set(ex + dx, ey + 1, 3); px:set(ex + dx + 1, ey + 1, 3)
+    px:set(ex + dx + look, ey + 1, 4)
+  end
   px:draw(ox, oy)
 end
 
