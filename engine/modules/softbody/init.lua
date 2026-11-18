@@ -28,6 +28,11 @@ local EPS = 1e-4          -- how far outside a tile face a point is put back, so
 
 local DEFAULTS = {
   radius = 8,             -- rest radius of the ring
+  width = 0,              -- rest width and height, for a long body (a slug) or a tall one;
+  height = 0,             -- 0: 2 * radius
+  shape = 0,              -- 0..1: how hard the body pulls back to its rest shape around its
+                          -- centre, without turning (0: springs and pressure only, so it can
+                          -- roll and tumble; 0.1 to 0.3 keeps a long body lying down)
   points = 16,            -- points on the ring (6 or more)
   stiffness = 0.9,        -- 0..1: how hard the springs between neighbours hold their length
   pressure = 0.8,         -- 0..1: how hard the body keeps its area
@@ -56,22 +61,35 @@ function M.new(opts)
   local n = self.points
   assert(n >= 6 and n == floor(n), "softbody.new: points is a whole number >= 6")
   assert(self.radius > 0, "softbody.new: radius > 0")
+  assert(self.width >= 0 and self.height >= 0, "softbody.new: width and height >= 0")
+  local rx = self.width > 0 and self.width / 2 or self.radius
+  local ry = self.height > 0 and self.height / 2 or self.radius
   self.n = n
   self.x, self.y, self.ox, self.oy, self.lx, self.ly = {}, {}, {}, {}, {}, {}
   self.mx, self.my = {}, {}        -- the springs' moves within a pass
   self.contact = {}        -- per point: false, "floor", "wall" or "ceiling" (last step)
-  self.rest_length = 2 * self.radius * sin(pi / n)
-  self.rest_area = 0.5 * n * self.radius * self.radius * sin(2 * pi / n)
+  self.rest, self.rest_x, self.rest_y = {}, {}, {}   -- per spring length; per point offset from the centre
   self.ax, self.ay, self.ivx, self.ivy = 0, 0, 0, 0
   self.floor_count, self.wall_count, self.ceiling_count = 0, 0, 0
   self.dt = 1 / 60
   local cx, cy = opts.x or 0, opts.y or 0
   for i = 1, n do
     local a = 2 * pi * (i - 1) / n          -- angle grows clockwise on screen (y down)
-    local x, y = cx + self.radius * cos(a), cy + self.radius * sin(a)
+    local dx, dy = rx * cos(a), ry * sin(a)
+    local x, y = cx + dx, cy + dy
     self.x[i], self.y[i], self.ox[i], self.oy[i], self.lx[i], self.ly[i] = x, y, x, y, x, y
+    self.rest_x[i], self.rest_y[i] = dx, dy
     self.contact[i] = false
   end
+  local total = 0
+  for i = 1, n do
+    local j = i == n and 1 or i + 1
+    local dx, dy = self.rest_x[j] - self.rest_x[i], self.rest_y[j] - self.rest_y[i]
+    self.rest[i] = sqrt(dx * dx + dy * dy)
+    total = total + self.rest[i]
+  end
+  self.rest_length = total / n           -- the mean spring length
+  self.rest_area = self:area()
   return self
 end
 
@@ -142,7 +160,7 @@ end
 -- the ring would turn the body: a resting body would slowly roll)
 local function springs(self)
   local x, y, n, k = self.x, self.y, self.n, self.stiffness * 0.5
-  local rest = self.rest_length * sqrt(self.inflate)
+  local rest, scale = self.rest, sqrt(self.inflate)
   local mx, my = self.mx, self.my
   for i = 1, n do mx[i], my[i] = 0, 0 end
   for i = 1, n do
@@ -150,7 +168,7 @@ local function springs(self)
     local dx, dy = x[j] - x[i], y[j] - y[i]
     local d = sqrt(dx * dx + dy * dy)
     if d > 1e-9 then
-      local f = (d - rest) / d * k
+      local f = (d - rest[i] * scale) / d * k
       dx, dy = dx * f, dy * f
       mx[i], my[i] = mx[i] + dx, my[i] + dy
       mx[j], my[j] = mx[j] - dx, my[j] - dy
@@ -190,6 +208,20 @@ end
 local function open(grid, tx, ty)
   if tx < 1 or ty < 1 or tx > grid.width or ty > grid.height then return false end
   return grid:kind(tx, ty) ~= "solid"
+end
+
+-- Shape: each point a part of the way to its rest place around the current centre (scaled
+-- like the springs by inflate). No rotation: a long body stays lying down.
+local function hold_shape(self)
+  local k = self.shape
+  if k <= 0 then return end
+  local x, y, rx, ry, n = self.x, self.y, self.rest_x, self.rest_y, self.n
+  local cx, cy = self:center()
+  local s = sqrt(self.inflate)
+  for i = 1, n do
+    x[i] = x[i] + (cx + rx[i] * s - x[i]) * k
+    y[i] = y[i] + (cy + ry[i] * s - y[i]) * k
+  end
 end
 
 -- Pushes point i out of the grid; records the side it touched
@@ -262,6 +294,7 @@ function Body:step(dt, grid, gx, gy)
   for _ = 1, self.iterations do
     springs(self)
     inflate(self)
+    hold_shape(self)
     if grid then for i = 1, n do collide(self, i, grid, gx, gy) end end
   end
   -- contacts: no velocity into the surface, and friction along it

@@ -155,6 +155,24 @@ local grown = collectgarbage("count") - before
 collectgarbage("restart")
 T.check(grown < 1, "step and outline allocate nothing (" .. grown .. " KB)")
 
+-- A long body: width, height and shape
+local slug = softbody.new({ x = 100, y = 40, width = 34, height = 13, points = 24, shape = 0.2 })
+local sx0, sy0, sx1, sy1 = slug:bounds()
+T.near(sx1 - sx0, 34, "width at rest", 1e-9); T.near(sy1 - sy0, 13, "height at rest", 0.2)
+T.near(slug:area(), slug.rest_area, "rest area: the ellipse polygon's", 1e-9)
+T.check(slug.rest_area > 0.95 * math.pi * 17 * 6.5 and slug.rest_area < math.pi * 17 * 6.5, "about pi * a * b")
+run(slug, room(), 120)
+sx0, sy0, sx1, sy1 = slug:bounds()
+local scx = slug:center()
+T.check(slug:on_ground() and sx1 - sx0 > 2.2 * (sy1 - sy0), "it lies long on the floor (" .. (sx1 - sx0) .. " x " .. (sy1 - sy0) .. ")")
+run(slug, room(), 60)
+T.near(slug:center(), scx, "and does not creep", 0.01)
+-- pushed hard against a wall, it keeps lying down (shape holds its orientation)
+run(slug, room(), 200, function(_, b) b:push(900, 0) end)
+sx0, sy0, sx1, sy1 = slug:bounds()
+T.check(sx1 - sx0 > 1.8 * (sy1 - sy0), "pushed into a wall it stays long and lying (" .. (sx1 - sx0) .. " x " .. (sy1 - sy0) .. ")")
+T.check(not pcall(softbody.new, { width = -1 }), "width >= 0")
+
 -- set_velocity and the box for combat
 local v = softbody.new({ x = 100, y = 30 })
 run(v, nil, 10)

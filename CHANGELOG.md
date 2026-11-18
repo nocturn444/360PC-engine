@@ -21,7 +21,8 @@ All notable changes to 360PC-Engine. The format follows
   the console without a TTF.
 - `engine.tune`: live tuning of numbers with an overlay, the controller and a saved file;
   `examples/slime` tunes its body and controls with it.
-- `softbody`: `set_velocity` and `softbody.box`, a box that lets combat (fighters, knockback,
+- `softbody`: `width` / `height` for long bodies and `shape` to keep them lying down (the rooms
+  example's slug); `set_velocity` and `softbody.box`, a box that lets combat (fighters, knockback,
   behaviour targets) work with a soft body; `examples/rooms` adds enemies with patrol / chase /
   attack, stomps, health and respawn.
 - `tools/deploy.py`: build, shaders, package, FTP upload and optional XBDM launch in one

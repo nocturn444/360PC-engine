@@ -36,6 +36,8 @@ end
 | Key | Default | What it does |
 |---|---|---|
 | `radius` | 8 | Rest radius of the ring, in pixels. |
+| `width`, `height` | 0 | Rest width and height for a long (or tall) body, such as a slug; 0 means `2 * radius`. The points lie on an ellipse and each spring keeps its own length. |
+| `shape` | 0 | 0..1: how hard the body pulls back to its rest shape around its centre, without turning. 0: springs and pressure only (it can roll and tumble); 0.1 to 0.3 keeps a long body lying down. |
 | `points` | 16 | Points on the ring, 6 or more. More points, a rounder and softer outline. |
 | `stiffness` | 0.9 | 0..1: how hard the springs between neighbours keep their length. |
 | `pressure` | 0.8 | 0..1: how hard the body keeps its area. Low values sag and wobble. |

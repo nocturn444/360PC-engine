@@ -91,8 +91,8 @@ local function edge(index, e)                         -- a point just past that 
   local ox, oy = P.templates.exit_cell(r.template, ex)
   local cw, ch = data.cell_w * data.tile_size, data.cell_h * data.tile_size
   local y = oy * ch + 10 * data.tile_size - 4         -- in the doorway (rows 9 to 11)
-  if ex.side == "left" then return -2, y end
-  return r.w * cw + 2, y
+  if ex.side == "left" then return -6, y end
+  return r.w * cw + 6, y
 end
 play.abilities = {}
 play:load_room(nav:enter(lock.a))
@@ -103,7 +103,7 @@ check(nav.index == lock.a and not play.fade:busy(), "past a locked door without 
 play.abilities.key = true
 play:load_room()
 check(#play.locked == 0, "with the key the room is rebuilt with the door open")
-slime:move_to(ex, ey); frames(25)
+slime:move_to(ex, ey); slime:set_velocity(0, 0); frames(25)
 check(nav.index == lock.b, "and it leads to the next zone (" .. side .. ")")
 
 -- the fight: enemies in a hall, a stomp, a bite, and dying sends the slime back to the start
