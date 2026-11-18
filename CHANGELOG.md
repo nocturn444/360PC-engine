@@ -36,6 +36,10 @@ All notable changes to 360PC-Engine. The format follows
   volume variation from its own generator, a minimum gap between plays, music crossfades,
   volume buses (`master`, `music`, `sfx` or the game's own) that can be saved, and pause /
   resume; it stays inside the console's audio subset and allocates nothing per play.
+- `tools/audio_convert.py`, called by `tools/package.py`: the game keeps `.ogg` for the PC and
+  the console package gets mono WAV files instead (16-bit PCM for short effects, IMA ADPCM for
+  long ones, music split into streamed IMA ADPCM chunks with an `.idx`), cached between runs;
+  settings in `game.lua`'s new `audio` table. Needs ffmpeg.
 - `run_pc.bat`: double-click to update the repository and open a game on the PC with LOVE.
 
 ### Changed

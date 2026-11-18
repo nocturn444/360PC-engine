@@ -14,6 +14,12 @@ The folder it writes (runtime/README.md, "Console folder"):
     shaders/                  the output of tools/shaders/build_shaders.py (--shaders)
     package_manifest.txt      size and CRC-32 of every file (tools/install_ftp.py reads it)
 
+The game's .ogg files are replaced by the WAV files the console plays (tools/audio_convert.py,
+needs ffmpeg): short effects in 16-bit PCM, long ones and music (split into streamed chunks)
+in IMA ADPCM, all mono, with the settings of game.lua's `audio` table. The game keeps asking
+for "x.ogg": the PC plays the .ogg, the console loads the .wav. Converted files are cached in
+build/audio_cache/<identity> (--audio-cache), so packaging again only converts what changed.
+
 save/ and default.log are never written: they belong to the console. A game that has its own
 engine/ or lib/ folder (a pinned copy) ships that one as it is. The base is the repository this
 script is in, so it works the same for a submodule and for a copy.
@@ -32,6 +38,9 @@ import sys
 import zipfile
 import zlib
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import audio_convert  # noqa: E402
 
 BASE = Path(__file__).resolve().parent.parent
 MANIFEST = "package_manifest.txt"
@@ -173,10 +182,23 @@ def read_config(game, lua=None, log=print):
 
         cfg = dict(line.split("=", 1) for line in ask().splitlines() if "=" in line)
         cfg["shaders"] = sorted(line.split("\t")[0] for line in ask("shaders").splitlines() if line.strip())
+        audio = {}
+        for line in ask("audio").splitlines():
+            k, _, v = line.partition("=")
+            if k == "music":
+                audio.setdefault("music", []).append(v)
+            elif k == "rate":
+                audio[k] = int(float(v))
+            elif k in ("long_seconds", "chunk_seconds"):
+                audio[k] = float(v)
+        cfg["audio"] = audio
     else:
         log("  note: no LuaJIT found; game.lua read with the built-in parser (plain values only)")
         cfg = validate_config(fields)
         cfg["shaders"] = sorted(shader_names)
+        cfg["audio"] = {}
+        if "audio" in text and re.search(r"(?m)^\s*audio\s*=", text):
+            log("  note: game.lua's audio table needs LuaJIT to be read; the default audio settings are used")
     cfg["debug"] = fields.get("debug") is True
     cfg["default_font"] = fields.get("default_font") if isinstance(fields.get("default_font"), str) else None
     return cfg
@@ -319,12 +341,44 @@ def check_xex(xex):
     return path
 
 
+def convert_audio(files, cfg, cache_dir, ffmpeg=None, log=print):
+    """files with every .ogg replaced by its converted WAV files (and music's .idx); warnings"""
+    settings = audio_convert.settings_from(cfg.get("audio"))
+    have = {rel.lower() for rel, _ in files}
+    out, warnings, converted = [], [], 0
+    for rel, src in files:
+        if not rel.lower().endswith(".ogg"):
+            out.append((rel, src))
+            continue
+        stem = rel[:-4]
+        if (stem + ".wav").lower() in have:
+            warnings.append("%s: the game has its own %s.wav, used on the console instead" % (rel, stem))
+            continue
+        music = audio_convert.is_music(rel, settings["music"])
+        try:
+            made = audio_convert.convert_cached(src, music, settings, ffmpeg, cache_dir)
+        except audio_convert.AudioError as e:
+            raise PackageError(str(e))
+        folder = rel.rsplit("/", 1)[0] + "/" if "/" in rel else ""
+        out += [(folder + name, path) for name, path in made]
+        converted += 1
+    if converted:
+        log("  audio: %d .ogg converted for the console (%d Hz mono)" % (converted, settings["rate"]))
+    return out, warnings
+
+
 def make_plan(game, cfg, xex=None, shaders=None, excludes=(), modules=(), libs=(), all_modules=False,
-              extras=(), out=None, log=print):
+              extras=(), out=None, log=print, audio_cache=None, ffmpeg=None, audio=True):
     """the sorted list of (destination, source) and the warnings; raises PackageError"""
     game = Path(game)
     warnings = []
-    files = game_files(game, cfg, excludes, skip_dirs=[out] if out else [])
+    files = game_files(game, cfg, excludes, skip_dirs=[d for d in (out, audio_cache) if d])
+    if audio:
+        files, more = convert_audio(files, cfg, audio_cache or Path("build") / "audio_cache" / cfg["identity"],
+                                    ffmpeg, log)
+        warnings += more
+    elif any(rel.lower().endswith(".ogg") for rel, _ in files):
+        warnings.append("--no-audio-convert: the .ogg files are shipped as they are and the console cannot play them")
     names = {rel for rel, _ in files}
     if "main.lua" not in names:
         raise PackageError("%s has no main.lua" % game)
@@ -458,6 +512,10 @@ def main(argv=None, log=print):
     ap.add_argument("--lib", action="append", default=[], metavar="NAME", help="include lib/NAME (repeatable)")
     ap.add_argument("--extra", action="append", default=[], metavar="FILE[=DEST]",
                     help="add a file (e.g. a console check script); DEST is its path in the package")
+    ap.add_argument("--no-audio-convert", action="store_true",
+                    help="ship the .ogg files as they are (the console will not play them)")
+    ap.add_argument("--audio-cache", type=Path, help="cache of converted audio (default: build/audio_cache/<identity>)")
+    ap.add_argument("--ffmpeg", help="ffmpeg executable for the audio conversion (default: ffmpeg on the PATH)")
     ap.add_argument("--lua", help="LuaJIT executable used to read game.lua (default: luajit on the PATH)")
     args = ap.parse_args(argv)
     try:
@@ -472,7 +530,8 @@ def main(argv=None, log=print):
         log("%s (%s), Title ID %s" % (cfg["name"], cfg["identity"], cfg["title_id"]))
         plan, warnings = make_plan(args.game, cfg, None if args.no_xex else args.xex,
                                    None if args.no_shaders else args.shaders, args.exclude, args.module,
-                                   args.lib, args.all_modules, args.extra, out, log)
+                                   args.lib, args.all_modules, args.extra, out, log,
+                                   args.audio_cache, args.ffmpeg, not args.no_audio_convert)
         for w in warnings:
             log("  warning: " + w)
         total = sum(Path(src).stat().st_size for _, src in plan)

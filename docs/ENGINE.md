@@ -821,7 +821,7 @@ sound:update(dt)                          -- every step or frame: fades and min_
 
 | Sound field | Default | |
 |---|---|---|
-| `file` | | A `.wav` (or `.ogg`: the console loads the `.wav` next to it). |
+| `file` | | An `.ogg` (converted for the console by `tools/package.py`) or a `.wav`. |
 | `volume`, `pitch` | 1 | The sound's own; `play` multiplies them. |
 | `pitch_var` | 0 | Pitch varies by up to this fraction each way (0.1: 0.9 to 1.1). |
 | `volume_var` | 0 | Volume is lowered by up to this fraction. |
@@ -913,6 +913,8 @@ end
 - `love.keypressed`, `love.mousepressed`, `love.resize`, `love.textinput` and `love.focus` are
   never called there. `engine.run` defines them for PC, so `tools/compat_check.lua` lists them.
 - Saves go to `save_dir` with two slots per file; `engine.save` keeps no `.bak` there.
-- Audio is WAV only (16-bit PCM, or mono IMA ADPCM for long effects); a game that asks
-  for `x.ogg` gets the `x.wav` next to it, so the console package needs the `.wav` version. Pitch goes up to 16.
+- Audio is WAV only (16-bit PCM, or mono IMA ADPCM). Keep `.ogg` in the game: the PC plays it,
+  and `tools/package.py` converts each one for the console, where asking for `x.ogg` loads the
+  `x.wav` next to it and music streams in chunks (`audio` in [GAME_CONFIG.md](GAME_CONFIG.md)).
+  Pitch goes up to 16.
 - No built-in font: set `default_font` in `game.lua` ([GAME_CONFIG.md](GAME_CONFIG.md)).

@@ -5,7 +5,8 @@ Xbox 360 with Aurora. Each step names the tool and the page with the details.
 
 You need: LÖVE 11.x and LuaJIT on the PC; Python 3.8 or later; for the console build, the
 requirements of [BUILDING.md](../BUILDING.md) (Linux or WSL, xsdk and its toolchain) and the
-shader compiler of [SHADERS.md](SHADERS.md) (Windows, or Linux with `libxsc.so`).
+shader compiler of [SHADERS.md](SHADERS.md) (Windows, or Linux with `libxsc.so`); ffmpeg on the PATH
+when the game has `.ogg` sounds (the packaging converts them for the console).
 
 ## 1. Start the repository
 

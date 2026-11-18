@@ -4,6 +4,8 @@
 --   with "shaders": one "name<TAB>pixel file<TAB>vertex file" line per declared shader (a file
 --                   can be empty; a single-file shader has the same file twice), for
 --                   tools/shaders/build_shaders.py. Does not need title_id.
+--   with "audio":   the audio conversion settings given in game.lua, "key=value" lines
+--                   (music patterns as one "music=pattern" line each), for tools/package.py.
 --   with field:    only that value, e.g.
 --     cmake ... -DGAME_TITLE_ID="$(luajit tools/read_game_config.lua mygame title_id)" \
 --               -DGAME_NAME="$(luajit tools/read_game_config.lua mygame name)"
@@ -31,6 +33,15 @@ if field == 'shaders' then
     local d = cfg.shaders[name]
     print(name .. '\t' .. (d.glsl or d.pixel or '') .. '\t' .. (d.glsl or d.vertex or ''))
   end
+  return
+end
+if field == 'audio' then
+  -- one "key=value" line per field given in game.lua; music patterns one "music=pattern" each
+  local a = cfg.audio or {}
+  for _, k in ipairs({ 'rate', 'long_seconds', 'chunk_seconds' }) do
+    if a[k] ~= nil then print(k .. '=' .. tostring(a[k])) end
+  end
+  for _, p in ipairs(a.music or {}) do print('music=' .. p) end
   return
 end
 if not cfg.title_id then die(path .. ': title_id is required to build or package the game') end

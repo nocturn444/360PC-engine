@@ -24,6 +24,7 @@ return {
 | `aurora` | table | `{}` | Aurora assets, as paths inside the game folder: `icon`, `cover`, `background`, `banner`. Placeholders until the packaging objective uses them. |
 | `shaders` | table | `{}` | The game's shaders: console name to the GLSL it is built from. Each value is a path, `{ glsl = path }` (one file), or `{ pixel = path, vertex = path }` (one file per stage, either optional). Names: 1 to 24 letters, digits or `_`, starting with a letter, not `l360_`. Used by the shader build and by `love.graphics.newShader` on the console: [SHADERS.md](SHADERS.md). |
 | `default_font` | string | none | TTF (path inside the game folder) that `love.graphics.newFont(size)` uses on the console, which has no built-in font. |
+| `audio` | table | `{}` | How `tools/package.py` converts the game's `.ogg` files for the console (the PC plays them as they are). `rate`: Hz, 8000 to 48000 (22050). `music`: list of path patterns of the tracks to stream (`{ "music/*", "*/music/*" }`); they become mono IMA ADPCM chunks of `chunk_seconds` (10, 1 to 60) plus an `.idx`. Other `.ogg` files become one mono `.wav`: IMA ADPCM when longer than `long_seconds` (2), else 16-bit PCM. Ignored at runtime. |
 | `debug` | boolean | `false` | Development builds only: turns `engine.debug` on (seed entry, modifier list, hitbox overlay; [ENGINE.md](ENGINE.md)). `tools/package.py` warns when it is set. |
 
 Rules:

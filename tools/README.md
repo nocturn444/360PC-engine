@@ -22,9 +22,16 @@ Build, packaging and validation tools. The whole path from a new game to the con
   the compiled shaders: the game's files without development files, the `engine/` core and the
   modules and `lib/` libraries the game uses, `l360/` (the runtime's Lua), `shaders/`, and a
   `package_manifest.txt`. It reads and validates `game.lua` (through `read_game_config.lua`,
-  or a small built-in parser when there is no LuaJIT), has `--dry-run` and `--zip`. Python 3,
-  standard library only, Windows and Linux.
+  or a small built-in parser when there is no LuaJIT), has `--dry-run` and `--zip`. Each `.ogg`
+  is replaced by what the console plays, with `audio_convert.py` (needs ffmpeg; cached in
+  `build/audio_cache/<identity>`; `--no-audio-convert` skips it). Python 3, standard library
+  only, Windows and Linux.
   `python tools/package.py <game> --xex runtime/build/game.xex --shaders <built shaders>`.
+- `audio_convert.py`: turns an `.ogg` into the console's WAV files with ffmpeg: short effects
+  in mono 16-bit PCM, long ones in mono IMA ADPCM, music in IMA ADPCM chunks with an `.idx` that
+  the runtime streams (splitter from Love360). Settings from `game.lua`'s `audio` table
+  ([GAME_CONFIG.md](../docs/GAME_CONFIG.md)). `package.py` calls it; alone:
+  `python tools/audio_convert.py <file.ogg> <out folder> [--music]`.
 - `install_ftp.py`: uploads a packaged folder to the console over FTP (Aurora), by default to
   `Hdd1:/Games/<folder name>/`. Host, port, user, password and target come from arguments or
   `X360_FTP_*` variables. Uploads only changed files (size, and CRC-32 against the manifest of

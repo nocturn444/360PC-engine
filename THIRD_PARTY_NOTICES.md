@@ -7,7 +7,7 @@ The license texts below are **copied in full from their sources**, without abrid
 
 | Section | Source |
 |---|---|
-| 1 | 360PC-Engine `LICENSE` (repository root). The console runtime starts from Love360 (`nocturn444/love360-xbox360`, commit `e46bc8f`), under the same MIT license and copyright holder. |
+| 1 | 360PC-Engine `LICENSE` (repository root). The console runtime starts from Love360 (`nocturn444/love360-xbox360`, commit `e46bc8f`), under the same MIT license and copyright holder; so does the music chunk splitter in `tools/audio_convert.py` (Love360's `herramientas/pc/partir_musica.py`). ffmpeg, which that tool runs, is not part of this repository or of any package. |
 | 2 | xsdk `LICENSE`, commit `2c4599b31066efcf67be099673287fbec786ef14` (`runtime/XSDK_VERSION`) |
 | 3 | xsdk `THIRD_PARTY_NOTICES.md`, same commit |
 | 4 | LuaJIT `COPYRIGHT`, commit `a4c064539ea931274d407e1249b4bb575424a0f4` (`toolchain/build_luajit_xsdk.sh`) |

@@ -39,7 +39,7 @@ end
 local function validate(t)
   if type(t) ~= 'table' then fail('game.lua must return a table') end
   local known = { name = true, identity = true, title_id = true, save_dir = true, aurora = true,
-    shaders = true, default_font = true, debug = true }
+    shaders = true, default_font = true, debug = true, audio = true }
   for k in pairs(t) do
     if not known[k] then fail('unknown field: ' .. tostring(k)) end
   end
@@ -98,6 +98,32 @@ local function validate(t)
       if d.glsl and (d.pixel or d.vertex) then fail(what .. ': give glsl, or pixel and/or vertex') end
       if not (d.glsl or d.pixel or d.vertex) then fail(what .. ' needs glsl, pixel or vertex') end
       cfg.shaders[name] = d
+    end
+  end
+
+  -- audio: how tools/package.py converts the game's .ogg for the console (docs/GAME_CONFIG.md).
+  -- The runtime does not use it; it is checked here so a typo fails on the PC too.
+  cfg.audio = {}
+  if t.audio ~= nil then
+    if type(t.audio) ~= 'table' then fail('audio must be a table') end
+    for k, v in pairs(t.audio) do
+      if k == 'rate' then
+        if type(v) ~= 'number' or v ~= math.floor(v) or v < 8000 or v > 48000 then
+          fail('audio.rate must be a whole number of Hz from 8000 to 48000')
+        end
+      elseif k == 'long_seconds' then
+        if type(v) ~= 'number' or v < 0 then fail('audio.long_seconds must be a number of seconds, 0 or more') end
+      elseif k == 'chunk_seconds' then
+        if type(v) ~= 'number' or v < 1 or v > 60 then fail('audio.chunk_seconds must be from 1 to 60') end
+      elseif k == 'music' then
+        if type(v) ~= 'table' then fail('audio.music must be a list of path patterns') end
+        for i, p in ipairs(v) do
+          if type(p) ~= 'string' or p == '' then fail('audio.music[' .. i .. '] must be a path pattern') end
+        end
+      else
+        fail('unknown field: audio.' .. tostring(k))
+      end
+      cfg.audio[k] = v
     end
   end
 
