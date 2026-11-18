@@ -3,12 +3,15 @@
 -- patrol / chase / attack state machine (combat.behaviours); the slime is a soft body seen by
 -- combat through softbody.box. The slime hurts an enemy by landing on it (a hitbox under the
 -- body while it falls) and bounces off; an enemy's bite hurts the slime and knocks it back.
+-- The slime also has three attacks (rooms_attacks.lua, combat.attacks configs): melee, ranged
+-- and explosive, one at a time; Fight:attack() triggers the current one.
 -- Everything here is rebuilt when a room is entered, so a room's enemies are back when the
 -- slime comes back to it.
 local platformer = require("engine.modules.platformer")
 local combat = require("engine.modules.combat")
 local softbody = require("engine.modules.softbody")
 local rng = require("engine.rng")
+local attack_configs = require("rooms_attacks")
 
 local B = combat.behaviours
 local W, H = 12, 10                         -- an enemy's box
@@ -46,7 +49,8 @@ Fight.__index = Fight
 
 -- M.new(slime, grid, spots, opts): spots = { { x, y } ... } (the bottom centre of each enemy, room
 -- pixels); opts.boss (stronger enemies), opts.seed (their patrol pauses), opts.health (the
--- slime's health carried over from the last room), opts.on_slime_death
+-- slime's health carried over from the last room), opts.mode (the slime's attack, an index of
+-- rooms_attacks), opts.on_slime_death
 function M.new(slime, grid, spots, opts)
   opts = opts or {}
   local self = setmetatable({ slime = slime, enemies = {}, stomps = 0, kills = 0 }, Fight)
@@ -59,8 +63,14 @@ function M.new(slime, grid, spots, opts)
     on_death = opts.on_slime_death })
   self.hurt = self.player:hurtbox({ w = 1, h = 1 })
   self.stomp = self.player:hitbox({ w = 1, h = 6, damage = 1, knockback = 90, away = true, ky = -0.5 })
+  -- the slime's attacks: shots and bombs stop at the room's solid tiles
+  self.arsenal = combat.attacks.new(self.fight, { grid = grid, max_projectiles = 24 })
+  self.attacks = {}
+  for i = 1, #attack_configs do self.attacks[i] = self.arsenal:equip(self.player, attack_configs[i]) end
+  self.mode = opts.mode or 1
   self.fight.on_hit = function(hit)
-    if hit.attacker == me.player then          -- a stomp landed: bounce off
+    if hit.killed and hit.target ~= me.player and hit.hitbox ~= me.stomp then me.kills = me.kills + 1 end
+    if hit.hitbox == me.stomp then             -- a stomp landed: bounce off
       me.stomps = me.stomps + 1
       me.slime:set_velocity(nil, BOUNCE)
       if hit.killed then me.kills = me.kills + 1 end
@@ -100,6 +110,15 @@ function Fight:sync()
   end
 end
 
+-- The current attack, and the next one (wraps around)
+function Fight:attack() return self.attacks[self.mode]:trigger() end
+function Fight:current() return self.attacks[self.mode] end
+function Fight:switch()
+  self.attacks[self.mode]:cancel()
+  self.mode = self.mode % #self.attacks + 1
+  return self.attacks[self.mode]
+end
+
 -- One fixed step, after the slime stepped. Returns the hits that landed.
 function Fight:step(dt)
   self:sync()
@@ -119,6 +138,7 @@ function Fight:step(dt)
       body.px, body.py = body.x, body.y
     end
   end
+  self.arsenal:step(dt)
   return self.fight:step(dt)
 end
 
@@ -153,7 +173,48 @@ function Fight:draw(alpha, boss)
       end
     end
   end
+  self:draw_attacks(alpha)
   g.setColor(1, 1, 1, 1)
+end
+
+-- The slime's attacks, on the pixel grid: the melee box while it is out, the shots, the bombs
+-- (blinking faster as the fuse runs out) and each blast as a disc of 2 px rows.
+function Fight:draw_attacks(alpha)
+  local g = love.graphics
+  local melee = self.attacks[1].hitbox
+  if melee and melee.active then
+    local bx, by, bw, bh = melee:rect()
+    g.setColor(0.95, 1.00, 0.95, 0.7)
+    g.rectangle("fill", math.floor(bx + 0.5), math.floor(by + 0.5), bw, bh)
+  end
+  local list = self.arsenal.projectiles
+  for i = 1, #list do
+    local p = list[i]
+    if p.alive then
+      local x, y = combat.attacks.position(p, alpha)
+      if p.kind == "bomb" then
+        if math.floor(p.life * (p.life < 0.3 and 20 or 8)) % 2 == 0 then g.setColor(0.95, 0.35, 0.20, 1)
+        else g.setColor(0.25, 0.20, 0.20, 1) end
+      else
+        g.setColor(0.98, 0.90, 0.52, 1)
+      end
+      g.rectangle("fill", x, y, p.w, p.h)
+    end
+  end
+  local blasts = self.arsenal.blasts
+  for i = 1, #blasts do
+    local b = blasts[i]
+    if b.alive then
+      local r = math.floor(b.radius * (0.5 + 0.5 * b.t / b.time) + 0.5)
+      local cx, cy = math.floor(b.x + 0.5), math.floor(b.y + 0.5)
+      g.setColor(1.00, 0.80, 0.30, 0.85 - 0.6 * b.t / b.time)
+      for dy = -r, r - 1, 2 do
+        local m = dy + 1
+        local half = math.floor(math.sqrt(r * r - m * m) + 0.5)
+        g.rectangle("fill", cx - half, cy + dy, 2 * half, 2)
+      end
+    end
+  end
 end
 
 return M

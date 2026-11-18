@@ -30,11 +30,12 @@ end
 
 | File | What it is |
 |---|---|
-| `init.lua` | `require("engine.modules.combat")`: `{ stats, world, fsm, behaviours }`. |
+| `init.lua` | `require("engine.modules.combat")`: `{ stats, world, fsm, behaviours, attacks }`. |
 | `stats.lua` | The combat stats and their defaults. |
 | `world.lua` | Fighters, hitboxes, hurtboxes, the overlap search, the damage pipeline, i-frames, knockback, hitstop. |
 | `fsm.lua` | A state machine: states with enter / update / exit, transitions, time in the state. |
 | `behaviours.lua` | States for enemies: patrol, chase, attack. |
+| `attacks.lua` | Attacks as data: melee sweeps, ranged shots, explosive bombs, on top of a world. |
 
 Units: pixels and seconds. `y` grows downwards; a body's `x, y` is its top left corner. Every
 time is counted in fixed steps of the `dt` given: `n / 60` is `n` steps at 60 Hz (a timer
@@ -273,9 +274,72 @@ end
 world:step(dt)
 ```
 
+## Attacks as data
+
+`combat.attacks` turns a plain config table into an attack a fighter can trigger, on top of a
+combat world. The three kinds share one config shape, so a game keeps its attacks as data
+(a Lua table per weapon, an item that swaps a config, a modifier that edits a field) and the
+module knows nothing about what they are for.
+
+```lua
+local arsenal = combat.attacks.new(world, { grid = grid })   -- walls for shots and bombs
+local slash = arsenal:equip(hero, {
+  kind = "melee", cooldown = 0.35, windup = 2 / 60, active = 0.15, damage = 1, knockback = 150,
+  boxes = { { ox = 2, oy = -16, w = 12, h = 10 }, { ox = 7, oy = -7, w = 14, h = 14 } },
+})
+local gun = arsenal:equip(hero, { kind = "ranged", speed = 220, life = 0.9, damage = 1 })
+local bomb = arsenal:equip(hero, { kind = "explosive", radius = 28, fuse = 0.8, damage = 2,
+  knockback = 220, throw = { speed = 160, angle = 20, contact = true } })
+
+function play:update(dt)                       -- the fixed step
+  body:step(engine.controls, dt)               -- move first
+  if engine.controls:pressed("attack") then gun:trigger() end
+  arsenal:step(dt)                             -- then the attacks
+  world:step(dt)                               -- then the hits
+end
+```
+
+`combat.attacks.new(world, opts)`: `grid` (anything with `width`, `height`, `tile_size` and
+`kind(tx, ty)`, such as a `platformer.grid`; only `"solid"` tiles stop shots and bombs) or
+`solid(x, y)` (a function instead), `max_projectiles` (default 64), `max_blasts` (default 16),
+`on_blast(blast)`. Then:
+
+| | |
+|---|---|
+| `arsenal:equip(fighter, config)` | Returns an attack. The config is checked and copied (`attacks.define`). |
+| `attack:trigger(ax, ay)` | Starts it if `attack:ready()` (idle, cooldown over, fighter alive). `ax, ay`: a direction for shots and thrown bombs instead of the facing one. Returns true if it started. |
+| `attack:cancel()` | Puts it away; the cooldown keeps running. |
+| `attack.phase`, `attack.cool`, `attack.uses`, `attack.name` | `"idle"`, `"windup"` or `"active"`; seconds of cooldown left; triggers that fired; the config's `name` (default: its kind). |
+| `arsenal:step(dt)` | Once per fixed step, after the bodies moved and before `world:step`. Nothing of a frozen fighter (hitstop) runs. |
+| `arsenal.projectiles`, `arsenal.blasts` | Pools to draw from: read `p.alive`, `p.kind` (`"shot"` or `"bomb"`), `p.w`, `p.h`, `p.life`; `b.alive`, `b.x`, `b.y`, `b.radius`, `b.t`, `b.time`, `b.hits`. |
+| `attacks.position(p, alpha)` | A projectile's top left corner between the last two steps, rounded to the pixel grid. |
+| `arsenal:clear()`, `arsenal:count()`, `arsenal:unequip(attack)` | Everything put away; shots and bombs in flight; one attack taken away. |
+| `attacks.define(config)` | The checked copy with every default; an unknown kind or field, or a wrong type, is an error that names it. |
+
+Every config has `kind` (`"melee"`, `"ranged"` or `"explosive"`), `name`, `cooldown` (s from a
+trigger to the next, default 0.3), `windup` (s from the trigger to the hit, the shot or the
+throw, default 0), and the fields of a hit: `damage` or `power`, `knockback`, `kx`, `ky`,
+`away`, `hitstop`, `global_hitstop` (see the hitbox options above). Offsets are from the body's
+centre when it faces right (+x in front, y down) and are mirrored when it faces left, so they
+hold when a soft body changes size.
+
+| Kind | Fields (default) |
+|---|---|
+| `melee` | `boxes` (`{ { ox, oy, w, h }, ... }`, at least one; `ox, oy` is the box's top left corner) and `active` (0.1 s). One hitbox walks through the boxes in equal slices of `active`: one box is a stab, three around the front are an arc, one big box around the body is an area. It hits each fighter once per trigger. |
+| `ranged` | `count` (1) shots in a fan `spread` degrees wide (0), at `angle` degrees above the facing (0), `speed` (200 px/s), `gravity` (0 px/s²), `life` (1 s), `w`, `h` (4), from `ox, oy` (their centre), `pierce` (1 fighter), `walls` (`"stop"` or `"pass"`). A shot is a fighter of its own with the owner's team, stats and modifiers, so `power`, `on_hit` events and team rules read as the owner's. |
+| `explosive` | A bomb (`w`, `h`, 4; from `ox, oy`) that blows `fuse` s (0.5) after it is placed or thrown: every fighter whose hurtbox is within `radius` (24 px) is struck once, the damage and the knockback lessened by `falloff` (0.5: half at the edge; damage is rounded, at least 1), pushed away from the centre with `lift` (0) added upwards. `self` (false): it may hurt its owner. `blast_time` (0.2 s): how long the blast stays in `arsenal.blasts`. `throw` (none: it stays where it was placed): `speed` (150), `angle` (30), `gravity` (500), `bounce` (0.4, speed kept off a wall, floor or ceiling), `friction` (0.8, horizontal speed kept on a floor bounce), `contact` (false: true blows it on touching a fighter it may hit). |
+
+Times run in fixed steps like the rest of the module: a windup of `n / 60` fires `n` steps
+after the trigger's step, `active = n / 60` is `n` world steps, and a fuse or a shot's life
+starts on the step after the one it was born in (a fuse of 0 blows at once). A blast uses
+`world:strike`, so i-frames still protect, `can_hit` decides who is a target (the owner only
+with `self`), and walls do not shield (a game that wants that filters in its `can_hit` or adds
+its own check). Example configs: `examples/rooms/rooms_attacks.lua`. Tests:
+`tests/engine/attacks_test.lua`.
+
 ## On the console
 
 Plain Lua 5.1: no FFI, no `goto`, nothing from `love`, no `math.random`, no clock.
-`world:step`, `activate`, the machine and the behaviours create no tables once the world's
-lists have grown to the size the fight needs (they grow when more boxes overlap at once than
+`world:step`, `activate`, the machine, the behaviours and `arsenal:step` / `attack:trigger` create
+no tables once the world's lists and the arsenal's pools have grown to the size the fight needs (they grow when more boxes overlap at once than
 ever before). The search is near linear in the number of hurtboxes plus the overlaps found.

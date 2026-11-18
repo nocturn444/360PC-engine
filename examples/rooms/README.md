@@ -17,6 +17,10 @@ with `engine/modules/rooms`, by the soft-body slime of [examples/slime](../slime
   while falling fast hurts it and bounces the slime off; a bite hurts the slime (5 HP, shown top
   left) and knocks it back, and it blinks while it cannot be hurt. At 0 HP it goes back to the
   start room, healed. A room's enemies are back when the slime comes back to it.
+- The slime's attacks (`rooms_attacks.lua`, example `combat.attacks` configs): a melee arc in
+  front of it, a ranged shot, and a bomb thrown low that bounces, blows on touching an enemy
+  or after its fuse, and pushes everything in its radius away. One mode at a time, switched
+  with the switch button and shown under the health; the mode is kept from room to room.
 - A minimap in the corner shows the explored rooms (`nav:minimap()`), the current one in yellow.
 
 | Action | Keyboard | Controller |
@@ -24,6 +28,8 @@ with `engine/modules/rooms`, by the soft-body slime of [examples/slime](../slime
 | Move | Left / Right, A / D | Left stick, d-pad |
 | Jump | Space, Up, W | A |
 | Squash (let go on the ground: a higher jump) | Down, S | d-pad down |
+| Attack | X, J | X |
+| Switch attack (melee, ranged, explosive) | C, K, Tab | Y |
 | Quit | Escape | Hold Back 3 s |
 
 The rooms are in `rooms_data.lua` as rows of strings, the shape LDtk levels read by

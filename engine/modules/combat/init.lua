@@ -11,6 +11,9 @@
 --   local slash = hero:hitbox({ ox = 10, oy = 2, w = 12, h = 8, knockback = 150, hitstop = 0.05 })
 --   slash:activate(0.1)                            -- 6 steps at 60 Hz
 --   world:step(dt)                                 -- once per fixed step, after the bodies moved
+--
+--   local arsenal = combat.attacks.new(world, { grid = grid })   -- attacks as data (attacks.lua)
+--   local shot = arsenal:equip(hero, { kind = "ranged", speed = 220, damage = 1 })
 local prefix = (...):gsub("%.init$", "") .. "."
 
 return {
@@ -18,4 +21,5 @@ return {
   world = require(prefix .. "world"),
   fsm = require(prefix .. "fsm"),
   behaviours = require(prefix .. "behaviours"),
+  attacks = require(prefix .. "attacks"),
 }

@@ -27,6 +27,11 @@ All notable changes to 360PC-Engine. The format follows
   attack, stomps, health and respawn.
 - `tools/deploy.py`: build, shaders, package, FTP upload and optional XBDM launch in one
   command, with the console's settings in an untracked `deploy.local.ini` (docs/DEPLOY.md).
+- `combat.attacks`: attacks as data on top of a combat world: melee sweeps through a list of
+  boxes (arcs, stabs, areas), ranged shots (fans, gravity, piercing, walls, lifetime) and
+  explosive bombs (placed or thrown, bounces, fuse or contact, radius with falloff and radial
+  knockback), with windup and cooldown, pooled so a warm step allocates nothing;
+  `examples/rooms` gives the slime the three kinds, switched with a button.
 - `run_pc.bat`: double-click to update the repository and open a game on the PC with LOVE.
 
 ### Changed

@@ -21,6 +21,8 @@ engine.run({
       right = { keys = { "right", "d" }, buttons = { "dpright" } },
       down = { keys = { "down", "s" }, buttons = { "dpdown" } },
       jump = { keys = { "space", "up", "w" }, buttons = { "a" } },
+      attack = { keys = { "x", "j" }, buttons = { "x" } },
+      switch = { keys = { "c", "k", "tab" }, buttons = { "y" } },
       quit = { keys = { "escape" } },         -- on the console, hold Back for 3 s
     },
     axes = {

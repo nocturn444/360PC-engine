@@ -602,7 +602,7 @@ local function read(path)
   local src = f:read("*a"); f:close()
   return src
 end
-for _, name in ipairs({ "init", "stats", "world", "fsm", "behaviours" }) do
+for _, name in ipairs({ "init", "stats", "world", "fsm", "behaviours", "attacks" }) do
   local path = "engine/modules/combat/" .. name .. ".lua"
   local src = read(path):gsub("%-%-[^\n]*", "")
   T.check(not src:find("%f[%w]goto%f[%W]") and not src:find("require%(?%s*[\"']ffi[\"']")
@@ -613,7 +613,7 @@ for _, name in ipairs({ "init", "stats", "world", "fsm", "behaviours" }) do
   T.check(not src:find("platformer") and not src:find("bump") and not src:find("engine%.modifiers")
     and not src:find("engine%.rng"), path .. ": needs no other module, and requires neither modifiers nor rng")
   if name ~= "init" then
-    T.check(not src:find("[^%w_]pairs%(") or name == "stats" or name == "fsm", path .. ": no pairs() in the step")
+    T.check(not src:find("[^%w_]pairs%(") or name == "stats" or name == "fsm" or name == "attacks", path .. ": no pairs() in the step")
   end
 end
 for _, name in ipairs({ "init", "state", "timestep", "input", "camera", "pixel", "layers", "anim", "entity",

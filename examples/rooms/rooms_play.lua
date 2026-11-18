@@ -71,7 +71,7 @@ function play.load_room(self, x, y)
   end
   local health = self.fight and not self.fight.player.dead and self.fight.player.health or nil
   self.fight = enemies.new(self.slime, self.grid, spots, { boss = self.nav.room.type == "boss",
-    seed = SEED * 1000 + self.nav.index, health = health,
+    seed = SEED * 1000 + self.nav.index, health = health, mode = self.fight and self.fight.mode,
     on_slime_death = function() self.dead = true end })
   local item = self.nav.room.grants and not self.abilities[self.nav.room.grants] and self.nav.room.template.item
   self.item = item and { x = (item.tx - 1) * TS + 4, y = (item.ty - 1) * TS + 4, tag = self.nav.room.grants } or nil
@@ -107,6 +107,9 @@ local function control(self, dt)
   local input, slime = engine.controls, self.slime
   local move = input:axis("move_x")
   if move ~= 0 then self.facing = move > 0 and 1 or -1 end
+  self.fight.box.facing = self.facing            -- the attacks aim where the slime looks
+  if input:pressed("switch") then self.fight:switch() end
+  if input:pressed("attack") then self.fight:attack() end
   slime:push(move * (slime:on_ground() and MOVE or AIR_MOVE), 0)
   local squash = input:down("down")
   slime.inflate = squash and 0.7 or 1
@@ -205,6 +208,7 @@ function play:draw(alpha)
   camera:detach()
   g.setColor(1, 1, 1, 1)
   engine.text.draw("HP " .. p.health .. "/" .. p.stats:get("max_health"), 4, 4)
+  engine.text.draw("ATK " .. self.fight:current().name, 4, 12)
   draw_minimap(self)
   local cover = self.fade:cover(alpha)
   if cover > 0 then
