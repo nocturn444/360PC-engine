@@ -795,6 +795,52 @@ it repeats after 0.3 s at ten steps a second), `tune_save`. Values are clamped t
 `engine.text`, or with `opts.print(text, x, y)` and `opts.line_height`. `examples/slime` binds it
 to Tab / LB with the d-pad and saves with F5 / RB.
 
+## engine.audio
+
+Sound effects and music as data, over `love.audio`. Each effect keeps a few voices (clones of
+one Source) so it can overlap itself; when all are busy the oldest started one is reused. Pitch
+and volume can vary a little per play, from the module's own generator (the game's rng streams
+are never touched). Music crossfades between tracks. Volumes live on named buses: `master`
+scales all of them, effects use `sfx` and tracks `music` unless they name another bus.
+
+```lua
+local sound = engine.audio.new({
+  sounds = {
+    jump = { file = "sfx/jump.wav", volume = 0.8, pitch_var = 0.08, voices = 3 },
+    hit  = { file = "sfx/hit.wav", volume_var = 0.2, min_gap = 0.05 },  -- at most once per 0.05 s
+  },
+  music = { cave = { file = "music/cave.ogg", volume = 0.7 } },
+  volumes = progress.settings.volumes,    -- or nil: every bus at 1
+})
+sound:preload()                           -- in load: no file is read during play
+sound:play("jump")                        -- returns the Source, or nil if it did not play
+sound:play("hit", 0.5, 1.2)               -- volume and pitch times the sound's own
+sound:music("cave", { fade = 1 })         -- crossfade; music(nil) fades out; fade 0 cuts
+sound:update(dt)                          -- every step or frame: fades and min_gap
+```
+
+| Sound field | Default | |
+|---|---|---|
+| `file` | | A `.wav` (or `.ogg`: the console loads the `.wav` next to it). |
+| `volume`, `pitch` | 1 | The sound's own; `play` multiplies them. |
+| `pitch_var` | 0 | Pitch varies by up to this fraction each way (0.1: 0.9 to 1.1). |
+| `volume_var` | 0 | Volume is lowered by up to this fraction. |
+| `voices` | 4 | Copies that can play at once. |
+| `min_gap` | 0 | Seconds before the same effect plays again (fifty enemies hit in one step play it once). |
+| `bus` | `"sfx"` | |
+| `loop` | false | Stop it with `stop(name)`. |
+
+Tracks take `file`, `volume`, `bus` (`"music"`) and `loop` (true), and play as `"stream"`
+Sources. Also: `stop(name)`, `isPlaying(name)`, `currentMusic()`, `setVolume(bus, v)` and
+`getVolume(bus)` (0 to 1, applied at once to what is playing), `getVolumes()` (a copy to keep in
+the permanent progress with `engine.save`) and `setVolumes(t)`, `pause()` and `resume()` (a
+pause menu: nothing new plays and fades wait), `stopAll()`, and `addSound` / `addMusic` to add
+more later. A file that cannot load is logged once and its `play` returns nil; nothing raises.
+
+On the console the mixer has 32 voices: no new effect starts while `love.audio` already has
+`max_active` (28) Sources playing, so the music always has room. Pitch is clamped to 1/16..16.
+A warm `play` and `update` allocate nothing.
+
 ## engine.anim
 
 anim8 v2.3.1 (`lib/anim8`, unchanged; `anim.anim8` is the library itself), plus animations from
@@ -867,4 +913,6 @@ end
 - `love.keypressed`, `love.mousepressed`, `love.resize`, `love.textinput` and `love.focus` are
   never called there. `engine.run` defines them for PC, so `tools/compat_check.lua` lists them.
 - Saves go to `save_dir` with two slots per file; `engine.save` keeps no `.bak` there.
+- Audio is WAV only (16-bit PCM, or mono IMA ADPCM for long effects); a game that asks
+  for `x.ogg` gets the `x.wav` next to it, so the console package needs the `.wav` version. Pitch goes up to 16.
 - No built-in font: set `default_font` in `game.lua` ([GAME_CONFIG.md](GAME_CONFIG.md)).

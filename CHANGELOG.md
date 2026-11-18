@@ -32,6 +32,10 @@ All notable changes to 360PC-Engine. The format follows
   explosive bombs (placed or thrown, bounces, fuse or contact, radius with falloff and radial
   knockback), with windup and cooldown, pooled so a warm step allocates nothing;
   `examples/rooms` gives the slime the three kinds, switched with a button.
+- `engine.audio`: sound effects and music as data, with a few voices per effect, pitch and
+  volume variation from its own generator, a minimum gap between plays, music crossfades,
+  volume buses (`master`, `music`, `sfx` or the game's own) that can be saved, and pause /
+  resume; it stays inside the console's audio subset and allocates nothing per play.
 - `run_pc.bat`: double-click to update the repository and open a game on the PC with LOVE.
 
 ### Changed

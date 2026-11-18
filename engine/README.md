@@ -20,6 +20,7 @@ Reference and usage example: [docs/ENGINE.md](../docs/ENGINE.md).
 | `level.lua` | Levels: reads the file `tools/ldtk_convert.py` writes from an LDtk project into rooms (collision grid, exits, items, entities, tile layers as SpriteBatches), ready for `modules/procgen` (objective 11). Reference: [docs/LEVELS.md](../docs/LEVELS.md). |
 | `ui.lua` | Controller-first menus: focus and spatial navigation, widgets, stacks, themes as data, a pick-1-of-N screen. |
 | `text.lua` | A tiny built-in pixel font drawn with rectangles, for overlays on the console without a TTF. |
+| `audio.lua` | Sound effects and music as data: voices per effect, pitch / volume variation, crossfades, volume buses, pause. |
 | `tune.lua` | Live tuning of numbers with an overlay, saved to and loaded from the save folder (development builds). |
 | `anim.lua` | Animations with anim8 (`lib/anim8`). |
 | `debug.lua` | Debug mode for development builds, off by default: seed code display and entry, a list that grants modifiers, a hitbox overlay fed by the game or a combat world (objective 17). |

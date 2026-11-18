@@ -20,6 +20,7 @@ local engine = {
   level = require(prefix .. "level"),
   ui = require(prefix .. "ui"),
   text = require(prefix .. "text"),
+  audio = require(prefix .. "audio"),
   -- set by init():
   config = nil,
   time = nil,      -- the Timestep
