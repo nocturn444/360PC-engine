@@ -25,6 +25,11 @@ so everything there still applies; this page covers what the wrapper adds.
 
 It runs from a copy in `%TEMP%`, so a pull that changes the script itself is safe.
 
+`run_pc.bat`, next to it, does the same update and then opens a game on the PC: it finds
+`love.exe` (`%ProgramFiles%\LOVE`, then the PATH; if LOVE is missing it says so and opens
+https://love2d.org to get LOVE 11.5), lists the games and starts the chosen one (Enter picks
+`rooms`) from the repository root.
+
 ## One-time setup
 
 1. Do the setup of [BUILDING.md](../BUILDING.md): WSL with xsdk, its GCC and LuaJIT for xsdk
