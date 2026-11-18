@@ -19,6 +19,7 @@ All notable changes to 360PC-Engine. The format follows
   generated map with them.
 - `tools/deploy.py`: build, shaders, package, FTP upload and optional XBDM launch in one
   command, with the console's settings in an untracked `deploy.local.ini` (docs/DEPLOY.md).
+- `run_pc.bat`: double-click to update the repository and open a game on the PC with LOVE.
 
 ### Changed
 - `engine.pixel` uses `"direct"` mode by default on PC too, so PC shows what the console shows.
