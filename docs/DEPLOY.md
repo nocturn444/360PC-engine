@@ -10,6 +10,21 @@ python base\tools\deploy.py .
 It only calls the tools described step by step in [NEW_GAME.md](NEW_GAME.md) (sections 4 to 8),
 so everything there still applies; this page covers what the wrapper adds.
 
+## Double-click on Windows
+
+`deploy_console.bat`, at the root of the base, does everything without typing commands:
+
+1. Updates the repository with `git pull` on the branch named at its top (`BRANCH`). If there
+   are uncommitted changes it does not touch them: it shows them and asks whether to continue
+   without updating. If the pull fails (for example, the branch diverged), it asks the same.
+2. Finds Python 3 (`py -3`, then `python`).
+3. The first time, creates `deploy.local.ini` from the example, opens it in Notepad and stops:
+   set the console's IP and run it again.
+4. Lists the games (`examples\*` and `template`) and asks for one (Enter picks `rooms`).
+5. Runs `tools\deploy.py` on it and waits for a key, so the window stays open to read.
+
+It runs from a copy in `%TEMP%`, so a pull that changes the script itself is safe.
+
 ## One-time setup
 
 1. Do the setup of [BUILDING.md](../BUILDING.md): WSL with xsdk, its GCC and LuaJIT for xsdk
