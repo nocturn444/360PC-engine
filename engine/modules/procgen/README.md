@@ -187,6 +187,54 @@ game's difficulty. `plan:generator(n, rng)` does the same spread over frames.
 Use one stream per floor (`"floor1"`, `"floor2"`...), so a floor depends only on the seed and its
 number. `seeds.hash({ plan = plan, floor = n }, seed)` hashes one floor for the seed tools.
 
+**Biomes** (`biomes.lua`). The run goes through biomes, each lasting 1 to 3 floors (any span the
+game gives). Some are fixed: the first one, the last one, or one that always starts on a given
+floor. The others are variable: chosen at random by weight, only once unlocked for good, or only
+when the run so far allows it (what the player did). The next biome is chosen when its first
+floor is entered, so it can depend on the run.
+
+```lua
+local set = procgen.biomes.new({
+  { id = "cellar", span = 2, fixed = "first", difficulty = 1, music = "music/cellar" },
+  { id = "caves", span = { 1, 3 }, weight = 3, difficulty = 2 },
+  { id = "garden", span = 2, unlock = "found_seed" },                    -- after a permanent unlock
+  { id = "ruins", span = 1, when = function(run) return run.kills >= 12 end },   -- what was done
+  { id = "forge", span = { 1, 2 }, min_floor = 5 },
+  { id = "core", span = 1, fixed = "last", difficulty = 5 },
+}, { floors = 10, unlocked = profile.unlocks })
+local path = set:path()                                          -- one per run
+local biome = path:enter(n, run_state, run.streams:get("biomes"))   -- floor n's biome
+local map = plan:generate(n, run.streams:get("floor" .. n), biome)  -- map.biome, map.difficulty
+```
+
+| Field | Meaning |
+|---|---|
+| `id` | A unique string. |
+| `span` | Floors it lasts: a number (1) or `{ min, max }`. |
+| `fixed` | `"first"`, `"last"`, or a floor number where it always starts. |
+| `weight` | For the random choice among the variable biomes (1). 0 never comes out. |
+| `unlock` | A tag: only once unlocked (`opts.unlocked`, `set:unlock(tag)`). |
+| `when` | `function(run, path) -> boolean`: only when the run allows it. `run` is whatever the game passes to `enter`. |
+| `after` | An array of biome ids: only right after one of them (branching paths). |
+| `min_floor`, `max_floor` | The floors where it may start. |
+| `once` | `false` lets a variable biome come back in the same run (by default it comes once). |
+
+- Floors are entered in order. Entering a floor of the current biome again gives the same biome.
+- A variable biome and its span are only picked when the floors left before the next fixed biome
+  can still be filled. When nothing fits, biomes already used may come back.
+- `path:enter(n, run, rng, forced)`: `forced` is a biome id the player chose (from
+  `path:candidates(n, run)`, for a menu of doors or portals), used if it is a candidate.
+- `path.current` is `{ biome, first, last }`. `path:state()` and `path:set_state(steps)` save and
+  load the path with `engine.save`.
+
+What a biome changes in its floors is read by `floors` from the biome table, all optional:
+`templates` (its own), `types` (its own room types), `rooms_add` / `rooms_scale` (the room
+count), `abilities`, `loops`, `difficulty` (copied to `map.difficulty`), and
+`options(opts, n, plan, rng, biome)`. A template with `biomes = { ids }` is only used in those
+biomes; one without it is used in all of them. Anything else in the biome (enemies, items,
+music, colours) is the game's, reached through `map.biome_def`. Items of a biome are entries
+with `biomes` in `engine/modules/items`, and its music is a name for `engine.audio:music`.
+
 ## Bulk seed checks and the PC vs 360 test
 
 `procgen.seeds` (`seeds.lua`) turns one seed into one layout hash, the same way everywhere:

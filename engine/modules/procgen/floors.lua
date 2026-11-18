@@ -10,7 +10,18 @@
 --   local map = plan:generate(n, run.streams:get("floor" .. n))   -- floor n, 1 to count
 --
 -- Use one rng stream per floor ("floor1", "floor2"...): a floor's map then depends only on the
--- run's seed and its number, never on what happened on the floors before.
+-- run's seed and its number (and its biome), never on what happened on the floors before.
+--
+-- With biomes (procgen.biomes), pass the floor's biome: plan:generate(n, rng, biome). A biome
+-- table may hold, all optional:
+--   templates   templates of its own (replace the plan's); else the plan's templates whose
+--               `biomes` field lists it, plus those without a `biomes` field
+--   types       a procgen.roomtypes set of its own
+--   rooms_add   rooms added to (or, negative, taken from) the floor's count; rooms_scale: times
+--   abilities, loops   instead of the plan's
+--   difficulty  any number of the game's: copied to map.difficulty
+--   options     function(opts, n, plan, rng, biome): its last word on the floor's options
+-- and anything of the game's (mobs, items, music, colours), which the map points to as map.biome_def.
 local generator = require((...):gsub("floors$", "generator"))
 
 local type, floor, max, tostring = type, math.floor, math.max, tostring
@@ -58,20 +69,23 @@ local function bound(v, total, default)
   return v
 end
 
--- The templates of floor n (a new array in the order of the full list).
-function Plan:templates_for(n)
-  local list = self.templates
+-- The templates of floor n (a new array in the order of the full list), for a biome if given.
+function Plan:templates_for(n, biome)
+  local list = (biome and biome.templates) or self.templates
   if type(list) == "function" then list = list(n, self) end
   if list.is_template_set then list = list.list end
   local out = {}
   for i = 1, #list do
     local t = list[i]
     local f = t.floors
-    if f == nil or (n >= bound(f[1], self.count, 1) and n <= bound(f[2], self.count, self.count)) then
-      out[#out + 1] = t
+    local ok = f == nil or (n >= bound(f[1], self.count, 1) and n <= bound(f[2], self.count, self.count))
+    if ok and biome and t.biomes then
+      ok = false
+      for j = 1, #t.biomes do if t.biomes[j] == biome.id then ok = true; break end end
     end
+    if ok then out[#out + 1] = t end
   end
-  if #out == 0 then error("floors: no template for floor " .. n, 3) end
+  if #out == 0 then error("floors: no template for floor " .. n .. (biome and (" in biome " .. tostring(biome.id)) or ""), 3) end
   return out
 end
 
@@ -91,49 +105,57 @@ function Plan:room_count(n, rng)
 end
 
 -- The options of procgen.generate for floor n, drawing from rng (the same rng the map is then
--- generated with: generate(n, rng) does both).
-function Plan:options(n, rng)
+-- generated with: generate(n, rng) does both). biome: the floor's biome table, optional.
+function Plan:options(n, rng, biome)
   if type(n) ~= "number" or n < 1 or n > self.count or n ~= floor(n) then
     error("floors: floor " .. tostring(n) .. " is not 1 to " .. self.count, 2)
   end
-  local specials = self.types and self.types:specials(n, self.count, rng) or nil
+  local types = (biome and biome.types) or self.types
+  local specials = types and types:specials(n, self.count, rng) or nil
   local abilities = self.abilities
+  if biome and biome.abilities ~= nil then abilities = biome.abilities end
   if type(abilities) == "function" then abilities = abilities(n, self) end
   local loops = self.loops
+  if biome and biome.loops ~= nil then loops = biome.loops end
   if type(loops) == "function" then loops = loops(n, self) end
   local rooms = self:room_count(n, rng)
+  if biome then rooms = floor(rooms * (biome.rooms_scale or 1) + 0.5) + (biome.rooms_add or 0) end
   local need = 2 + #(abilities or {})
   for i = 1, #(specials or {}) do need = need + specials[i].count end
   local opts = {
-    templates = self:templates_for(n), rng = rng, rooms = max(rooms, need), abilities = abilities,
+    templates = self:templates_for(n, biome), rng = rng, rooms = max(rooms, need), abilities = abilities,
     loops = loops, specials = specials, boss_distance = self.boss_distance, attempts = self.attempts,
   }
   if self.options_fn then self.options_fn(opts, n, self, rng) end
+  if biome and biome.options then biome.options(opts, n, self, rng, biome) end
   return opts
 end
 
-local function stamp(self, map, n)
+local function stamp(self, map, n, biome)
   map.floor, map.floors = n, self.count
   map.progress = self:progress(n)
+  map.biome = biome and biome.id or nil
+  map.biome_def = biome
+  map.difficulty = biome and biome.difficulty or nil
   return map
 end
 
--- The map of floor n, or nil and the reason. map.floor, map.floors and map.progress (0..1)
--- are set, for the game's difficulty.
-function Plan:generate(n, rng)
-  local m, err = generator.generate(self:options(n, rng))
+-- The map of floor n, or nil and the reason. map.floor, map.floors, map.progress (0..1), and
+-- with a biome map.biome (its id), map.biome_def and map.difficulty are set.
+function Plan:generate(n, rng, biome)
+  local m, err = generator.generate(self:options(n, rng, biome))
   if not m then return nil, err end
-  return stamp(self, m, n)
+  return stamp(self, m, n, biome)
 end
 
 -- The same, spread over frames: gen:step(ops) as in procgen.generator; gen.map is stamped too.
-function Plan:generator(n, rng)
-  local gen = generator.new(self:options(n, rng))
+function Plan:generator(n, rng, biome)
+  local gen = generator.new(self:options(n, rng, biome))
   local plan = self
   local step = gen.step
   function gen:step(ops)
     local done = step(self, ops)
-    if done and self.map and not self.map.floor then stamp(plan, self.map, n) end
+    if done and self.map and not self.map.floor then stamp(plan, self.map, n, biome) end
     return done
   end
   return gen

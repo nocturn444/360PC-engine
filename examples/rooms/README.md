@@ -8,8 +8,17 @@ by room with `engine/modules/rooms`, by the soft-body slime of [examples/slime](
   likelier the deeper the run goes), and a boss far from the start. The special types are
   `procgen.roomtypes.defaults()` (`rooms_data.types()`), and their rooms are one-door templates
   in `rooms_data.lua`.
-- The treasure room's heart heals the slime once. The shop is only a labelled room for now. The
-  miniboss room holds two stronger enemies.
+- The floors go through biomes (`rooms_biomes.lua`, `procgen.biomes`). The cellar is always
+  floors 1 and 2 and the core is always floor 10. In between come the caves (1 to 3 floors), the
+  garden (2), the forge (1 or 2, from floor 5), and the ruins (1), which only open once the slime
+  has 12 kills. Each biome has a difficulty, its own enemies (health, bite, colour), wall
+  colours, a music track name and a few rooms more or fewer. The HUD shows its name.
+- The treasure room holds an item (`rooms_items.lua`, `engine/modules/items`) drawn for the
+  floor's biome from the run's `"loot"` stream: more max health, a higher jump, more speed, and
+  items found only in some biomes (crystal in the caves, moss in the garden, ember in the forge
+  and the core, relic in the ruins). Touching it gives its bonus for the rest of the run and
+  heals the slime. The shop is only a labelled room for now. The miniboss room holds two of the
+  biome's stronger enemies.
 - Once the boss room is cleared, a stairway opens in its floor. Going down it, behind a fade,
   leads to the next floor, a new map. The slime keeps its health. After floor 10 the run starts
   again at floor 1.

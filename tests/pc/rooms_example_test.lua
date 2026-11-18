@@ -15,7 +15,7 @@ local function read(path)
 end
 
 -- 1. Files and config
-for _, name in ipairs({ "game.lua", "conf.lua", "main.lua", "rooms_play.lua", "rooms_data.lua", "README.md" }) do
+for _, name in ipairs({ "game.lua", "conf.lua", "main.lua", "rooms_play.lua", "rooms_data.lua", "rooms_biomes.lua", "rooms_items.lua", "README.md" }) do
   check(read("examples/rooms/" .. name), "examples/rooms/" .. name .. " exists")
 end
 local Config = dofile("runtime/lua/config.lua")
@@ -47,6 +47,44 @@ for seed = 1, 20 do
     sizes[n] = #m.rooms
   end
   check(sizes[10] > sizes[1] + 8, "seed " .. seed .. ": the last floor is much bigger (" .. table.concat(sizes, ",") .. ")")
+end
+-- the biomes of 200 runs: the cellar first (2 floors), the core last, spans of 1 to 3 floors,
+-- the forge never before floor 5, the ruins only after 12 kills; every floor generates
+local B = require("rooms_biomes")
+local set = require("rooms_play").biomes
+local seen = {}
+for seed = 1, 200 do
+  local path, streams = set:path(), Rng.streams(seed)
+  local kills = (seed % 2 == 0) and 20 or 0
+  for n = 1, 10 do
+    local b = path:enter(n, { kills = kills }, streams:get("biomes"))
+    seen[b.id] = true
+    if n <= 2 then check(b.id == "cellar", "seed " .. seed .. ": the run opens in the cellar") end
+    if n == 10 then check(b.id == "core", "seed " .. seed .. ": the run ends in the core") end
+    if b.id == "forge" then check(path.current.first >= 5, "the forge starts on floor 5 or later") end
+    if b.id == "ruins" then check(kills >= 12, "the ruins need 12 kills") end
+    check(path.current.last - path.current.first <= 2, "a biome lasts 1 to 3 floors")
+    if seed <= 20 then
+      local m, why = plan:generate(n, streams:get("floor" .. n), b)
+      check(m and m.biome == b.id and m.difficulty == b.difficulty, "seed " .. seed .. " floor " .. n .. " in " .. b.id .. ": " .. tostring(why))
+    end
+  end
+end
+for _, id in ipairs({ "cellar", "caves", "garden", "forge", "ruins", "core" }) do check(seen[id], "biome " .. id .. " comes up") end
+check(B.enemy_stats(B.list[6], true).max_health > B.enemy_stats(B.list[1], true).max_health, "the core's boss is stronger")
+-- the treasure items: biome items only in their biomes
+local pool = require("rooms_items").pool()
+for _, id in ipairs({ "caves", "garden", "forge", "ruins" }) do
+  local got = {}
+  local r = Rng.new(7)
+  for k = 1, 200 do local e = pool:draw(r, { room = "treasure", biome = id }); got[e.id] = true end
+  for _, e in ipairs(require("rooms_items").entries) do
+    if e.biomes and got[e.id] then
+      local ok = false
+      for _, x in ipairs(e.biomes) do ok = ok or x == id end
+      check(ok, e.id .. " only in its biomes (" .. id .. ")")
+    end
+  end
 end
 for _, t in ipairs(data.templates()) do
   local rows = t.rows
@@ -199,7 +237,6 @@ for mode = 1, 3 do
     F.keys.left = (side > 0 and k % 20 == 2) or nil
     F.keys.x = (k % 20 == 5) or nil
     love.update(1 / 60); love.draw()
-    if name == "explosive" and k % 4 == 0 and k < 60 then local q = fight.arsenal.projectiles[1]; print(k, q and q.alive, q and q.x, q and q.y, b.x, b.y, fight.arsenal.blast_count, play.facing, nav.index, slime:center()) end
     if target.fighter.health < hp0 or target.fighter.dead then hurt = true; break end
   end
   F.keys.right, F.keys.left, F.keys.x = nil, nil, nil
@@ -218,20 +255,34 @@ frames(30)
 check(nav.index == map.start and play.deaths == 1, "dying sends it back to the start room")
 check(play.fight.player.health == play.fight.player.stats:get("max_health"), "with full health")
 
--- the treasure room: its heart heals the slime once
+-- the floor is in its biome, the enemies are the biome's
+check(play.biome and play.map.biome == play.biome.id and play.music == play.biome.music, "the floor has its biome and music")
+check(play.floor > 2 or play.biome.id == "cellar", "floors 1 and 2 are in the cellar")
+-- the treasure room: an item of the biome on the pedestal, the slime's for the run
 local function find(kind)
   for i, r in ipairs(play.map.rooms) do if r.type == kind then return i end end
 end
 local tr = find("treasure")
 check(tr, "the floor has a treasure room")
 play:load_room(nav:enter(tr))
-check(play.heart, "a heart on the pedestal")
-play.fight.player.health = 1
-slime:move_to(play.heart.x + 4, play.heart.y); slime:set_velocity(0, 0)
-frames(10)
-check(play.fight.player.health == play.fight.player.stats:get("max_health") and not play.heart, "the heart heals")
+local item = play.treasure and play.treasure.entry
+check(item, "an item on the pedestal")
+local again = item
 play:load_room(nav:enter(tr))
-check(not play.heart, "and is gone when the slime comes back")
+check(play.treasure and play.treasure.entry == again, "the same item when the slime comes back")
+local before = { max = play.fight.player.stats:get("max_health"), bonus = {} }
+for k, v in pairs(play.bonus) do before.bonus[k] = v end
+play.fight.player.health = 1
+slime:move_to(play.treasure.x + 4, play.treasure.y); slime:set_velocity(0, 0)
+frames(10)
+check(not play.treasure and play.got == item and play.pool:taken_count(item.id) == 1, "the item is taken: " .. item.id)
+local changed = false
+for k, v in pairs(play.bonus) do changed = changed or v ~= before.bonus[k] end
+check(changed, "its bonus counts for the run")
+check(play.fight.player.health == play.fight.player.stats:get("max_health"), "and the slime is healed")
+if item.bonus.max_health then check(play.fight.player.stats:get("max_health") == before.max + item.bonus.max_health, "more max health") end
+play:load_room(nav:enter(tr))
+check(not play.treasure, "and is gone when the slime comes back")
 
 -- the boss room: cleared, a stairway leads to the next floor, a new and bigger map
 local floor0, rooms0 = play.floor, #play.map.rooms
@@ -245,6 +296,18 @@ slime:move_to(play.stairs.x + TS_HALF, play.stairs.y - 4); slime:set_velocity(0,
 frames(40)
 check(play.floor == floor0 + 1 and play.nav.index == play.map.start, "down the stairs: floor " .. play.floor .. ", at its start")
 check(#play.map.rooms >= rooms0 and play.map.floor == play.floor, "the next floor is generated (" .. #play.map.rooms .. " rooms)")
+check(play.got == item and play.pool:taken_count(item.id) == 1, "the item stays for the run")
+-- the biomes change along the run: by floor 10, the core
+local ids = { play.biome.id }
+while play.floor < 10 do
+  play.new_floor(play, play.floor + 1)
+  ids[#ids + 1] = play.biome.id
+end
+play:load_room(play.nav:enter(play.map.start))
+check(play.biome.id == "core" and #play.map.rooms > 0, "the last floor is the core (" .. table.concat(ids, ",") .. ")")
+play.new_floor(play, 1)
+check(play.biome.id == "cellar" and play.got == nil and play.bonus.max_health == 0 and play.pool:taken_count(item.id) == 0, "a new run: the cellar again, nothing taken")
+play:load_room(play.nav:enter(play.map.start))
 map, nav = play.map, play.nav
 
 -- the room is drawn

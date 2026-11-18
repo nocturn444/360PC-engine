@@ -44,6 +44,10 @@ All notable changes to 360PC-Engine. The format follows
   `engine.level`. It covers collision, doors and their abilities, the item, entities with
   fields, rooms (add, copy, delete, order, type, tags, weight, size), live checks, undo, and a
   play test with a platformer body. `level_editor.bat` opens it on Windows.
+- `procgen.biomes`: the run's path through biomes of 1 to 3 floors, fixed (first, last, a
+  floor) or variable (by weight, unlocked, or depending on the run), read by `procgen.floors`
+  (templates, room types, room count, difficulty); `items` entries can be limited to biomes;
+  `examples/rooms` has six biomes with their enemies, colours and music, and a treasure item.
 - `procgen.roomtypes` and `procgen.floors`: special room types as modular data (count, chance,
   floors, distance from the start, minimum depth), with an Isaac-like default set (treasure,
   shop, miniboss). Special rooms are placed by the generator as dead ends (`specials`), and the

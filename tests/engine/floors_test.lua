@@ -182,4 +182,104 @@ T.check(not pcall(P.floors.new, { count = 0, templates = rooms() }), "count >= 1
 local h = P.seeds.hash({ plan = plan, floor = 4 }, 77)
 T.check(h == P.hash(plan:generate(4, Rng.streams(77):get("floor4"))), "seeds.hash with a plan and a floor")
 
+---------------------------------------------------------------------------
+-- biomes
+---------------------------------------------------------------------------
+local B = P.biomes
+T.check(not pcall(B.new, { { id = "a", span = 0 } }), "a span of 0 is refused")
+T.check(not pcall(B.new, { { id = "a" }, { id = "a" } }), "two biomes with one id")
+local function biome_set(unlocked)
+  return B.new({
+    { id = "cellar", span = 2, fixed = "first", difficulty = 1 },
+    { id = "caves", span = { 1, 3 }, weight = 3, difficulty = 2 },
+    { id = "garden", span = 2, difficulty = 2 },
+    { id = "depths", span = { 1, 2 }, difficulty = 3, min_floor = 5 },
+    { id = "secret", span = 1, unlock = "key_of_secrets", difficulty = 3 },
+    { id = "ruins", span = 1, when = function(run) return run and run.spared end, difficulty = 3 },
+    { id = "crypt", span = { 2, 3 }, after = { "ruins" }, difficulty = 4 },
+    { id = "core", span = 1, fixed = "last", difficulty = 5 },
+  }, { floors = 10, unlocked = unlocked })
+end
+local function walk(set, seed, run, choose)
+  local path, rng = set:path(), Rng.new(seed)
+  local ids = {}
+  for n = 1, 10 do ids[n] = path:enter(n, run, rng, choose and choose(n, path) or nil).id end
+  return ids, path
+end
+local seen_spans, seen_ids = {}, {}
+for seed = 1, 300 do
+  local ids, path = walk(biome_set(), seed, {})
+  T.check(ids[1] == "cellar" and ids[2] == "cellar" and ids[10] == "core", "seed " .. seed .. ": fixed first (2 floors) and last")
+  local run_len, i = 0, 1
+  for _, step in ipairs(path:state()) do
+    local len = step.last - step.first + 1
+    seen_spans[len] = true
+    seen_ids[step.id] = true
+    T.check(step.first == i, "the steps cover the floors in order")
+    i = step.last + 1
+    if step.id == "depths" then T.check(step.first >= 5, "min_floor") end
+    T.check(step.id ~= "secret" and step.id ~= "ruins" and step.id ~= "crypt", "locked, conditional and after-only biomes stay out")
+  end
+  T.check(i == 11, "seed " .. seed .. ": the path fills the 10 floors (" .. table.concat(ids, ",") .. ")")
+  local count = {}
+  for _, step in ipairs(path:state()) do count[step.id] = (count[step.id] or 0) + 1 end
+  for id, c in pairs(count) do T.check(c == 1, "once: " .. id .. " appears in one stretch") end
+end
+T.check(seen_spans[1] and seen_spans[2] and seen_spans[3], "biomes last 1, 2 or 3 floors")
+T.check(seen_ids.caves and seen_ids.garden and seen_ids.depths, "the variable biomes all come up")
+local a1 = walk(biome_set(), 42, {})
+local a2 = walk(biome_set(), 42, {})
+T.check(table.concat(a1, ",") == table.concat(a2, ","), "the same seed and run, the same path")
+-- unlocks, the run's choices, alternative paths, a forced choice
+local got_secret, got_ruins_crypt = false, false
+for seed = 1, 200 do
+  local ids = walk(biome_set({ "key_of_secrets" }), seed, { spared = true })
+  local str = table.concat(ids, ",")
+  if str:find("secret") then got_secret = true end
+  if str:find("ruins,crypt") then got_ruins_crypt = true end
+  if str:find("crypt") then T.check(str:find("ruins,crypt"), "crypt only right after ruins") end
+end
+T.check(got_secret and got_ruins_crypt, "an unlocked biome and a biome the run allowed come up, and their follow-up")
+local forced = walk(biome_set(), 3, {}, function(n) return n == 3 and "garden" or nil end)
+T.check(forced[3] == "garden" and forced[4] == "garden", "a forced choice (the player picked a path)")
+local p = biome_set():path()
+local r = Rng.new(1)
+p:enter(1, {}, r); p:enter(2, {}, r); p:enter(3, {}, r)
+T.check(not pcall(p.enter, p, p.current.last + 2, {}, r), "floors are entered in order")
+local saved = p:state()
+local p2 = biome_set():path()
+T.check(p2:set_state(saved) and p2:enter(3, {}, Rng.new(9)).id == p:enter(3, {}, r).id, "the path saves and loads")
+local cands = biome_set():path()
+cands:enter(1, {}, Rng.new(1))
+local list, room = cands:candidates(3, {})
+T.check(#list >= 2 and room == 7, "candidates: what could start on floor 3 (for a choice screen)")
+
+-- floors read the biome: its templates, size, difficulty
+local bset = B.new({ { id = "ice", span = 10, fixed = "first", difficulty = 4, rooms_add = 3 } }, { floors = 10 })
+local tlist = rooms()
+tlist[#tlist + 1] = { id = "ice_hall", weight = 50, biomes = { "ice" }, exits = ex("left", "right") }
+tlist[#tlist + 1] = { id = "lava_hall", weight = 50, biomes = { "lava" }, exits = ex("left", "right") }
+local bplan = P.floors.new({ count = 10, templates = tlist, types = P.roomtypes.defaults(), rooms = { first = 7, last = 7, jitter = 0 } })
+local ice = bset:path():enter(1, {}, Rng.new(1))
+local m = assert(bplan:generate(1, Rng.new(5), ice))
+local has_ice, has_lava = false, false
+for _, room in ipairs(m.rooms) do
+  if room.id == "ice_hall" then has_ice = true end
+  if room.id == "lava_hall" then has_lava = true end
+end
+T.check(has_ice and not has_lava, "a biome uses its own templates and the shared ones, never another biome's")
+T.check(#m.rooms == 10 and m.biome == "ice" and m.difficulty == 4 and m.biome_def == ice, "rooms_add, map.biome and map.difficulty")
+
+-- items: entries of a biome only come out there
+local items = require("engine.modules.items")
+local pool = items.pool.new({ { id = "snowball", biomes = { "ice" } }, { id = "coin" } })
+local only_ice = true
+for i = 1, 50 do
+  local e = pool:draw(Rng.new(i), { biome = "lava" })
+  if e.id == "snowball" then only_ice = false end
+end
+local ice_seen = false
+for i = 1, 50 do if pool:draw(Rng.new(i), { biome = "ice" }).id == "snowball" then ice_seen = true end end
+T.check(only_ice and ice_seen, "items with biomes come out only in their biome")
+
 T.no_new_globals(globals)

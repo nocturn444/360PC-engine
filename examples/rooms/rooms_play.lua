@@ -4,6 +4,9 @@
 -- in, the camera stays inside it, and a short fade covers each change of room. A locked door
 -- stays shut (drawn gold) until the slime picks up the key in the vault room; once the boss
 -- room is cleared, a stairway leads to the next floor. A minimap shows the explored rooms.
+-- The floors go through biomes (rooms_biomes.lua, procgen.biomes): each has its difficulty,
+-- enemies, colours and music; a treasure room holds an item drawn for the floor's biome
+-- (rooms_items.lua, engine.modules.items) that the slime keeps for the rest of the run.
 local engine = require("engine")
 local procgen = require("engine.modules.procgen")
 local platformer = require("engine.modules.platformer")
@@ -12,6 +15,9 @@ local rooms = require("engine.modules.rooms")
 local pixelgrid = require("engine.pixelgrid")
 local data = require("rooms_data")
 local enemies = require("rooms_enemies")
+local biomes = require("rooms_biomes")
+local loot = require("rooms_items")
+local combat = require("engine.modules.combat")
 
 local W, H = 320, 180
 local TS, CW, CH = data.tile_size, data.cell_w, data.cell_h
@@ -24,7 +30,7 @@ local FLOORS = 10
 local plan = procgen.floors.new({ count = FLOORS, templates = data.templates(), types = data.types(),
   rooms = { first = 6, last = 18 }, abilities = { "key" } })
 
-local play = { plan = plan }
+local play = { plan = plan, biomes = biomes.new(FLOORS) }
 
 -- The room's rows with its doors opened: rows 9..11 of the exit's cell, in the first or last
 -- column. An exit without a door, or a locked door the slime cannot pass yet, stays a wall.
@@ -78,13 +84,29 @@ function play.load_room(self, x, y)
   end
   local health = self.fight and not self.fight.player.dead and self.fight.player.health or nil
   local kind = self.nav.room.type
-  self.fight = enemies.new(self.slime, self.grid, spots, { boss = kind == "boss" or kind == "miniboss",
+  local boss = kind == "boss" or kind == "miniboss"
+  local b, bonus = self.biome, self.bonus
+  local m = boss and b.boss or b.mobs
+  self.fight = enemies.new(self.slime, self.grid, spots, { boss = boss,
     seed = SEED * 100000 + self.floor * 1000 + self.nav.index, health = health, mode = self.fight and self.fight.mode,
+    enemy_stats = combat.stats.new(biomes.enemy_stats(b, boss)), color = m.color,
+    slime_stats = combat.stats.new({ max_health = 5 + bonus.max_health, attack_damage = 1 + bonus.damage,
+      invuln_time = 1.0 + bonus.invuln }),
     on_slime_death = function() self.dead = true end })
+  self.kills_before = self.kills
   local item = self.nav.room.grants and not self.abilities[self.nav.room.grants] and self.nav.room.template.item
   self.item = item and { x = (item.tx - 1) * TS + 4, y = (item.ty - 1) * TS + 4, tag = self.nav.room.grants } or nil
-  -- a treasure room heals once per floor: its heart sits on the pedestal until taken
-  self.heart = kind == "treasure" and not self.taken[self.nav.index] and { x = 9.5 * TS - 4, y = 8 * TS } or nil
+  -- a treasure room holds an item of the floor's biome, drawn the first time the room is
+  -- entered (the run's "loot" stream), on its pedestal until taken
+  self.treasure = nil
+  if kind == "treasure" and not self.taken[self.nav.index] then
+    local entry = self.loot[self.nav.index]
+    if entry == nil then
+      entry = self.pool:draw(self.streams:get("loot"), { room = "treasure", biome = b.id }) or false
+      self.loot[self.nav.index] = entry
+    end
+    if entry then self.treasure = { x = 9.5 * TS - 4, y = 8 * TS, entry = entry } end
+  end
   self.stairs = nil
   if x then
     self.slime:move_to(x, y)
@@ -93,12 +115,26 @@ function play.load_room(self, x, y)
   end
 end
 
--- Floor n: a fresh map from its own stream, the key to find again, the slime at the start
+-- A new run: the seed's streams, a path through the biomes, nothing taken yet
+function play.new_run(self)
+  self.streams = engine.rng.streams(SEED)
+  self.path = play.biomes:path()
+  self.pool = self.pool or loot.pool()
+  self.pool:new_run()
+  self.bonus = loot.no_bonus()
+  self.kills, self.got = 0, nil
+end
+
+-- Floor n: its biome (chosen when the last one ends, from what the run did), a fresh map from
+-- its own stream, the key to find again, the slime at the start
 function play.new_floor(self, n)
+  if n == 1 then play.new_run(self) end
   self.floor = n
-  self.map = assert(plan:generate(n, engine.rng.streams(SEED):get("floor" .. n)))
+  self.biome = self.path:enter(n, { kills = self.kills, floor = n }, self.streams:get("biomes"))
+  self.music = self.biome.music      -- a game with tracks: audio:music(self.music, { fade = 1 })
+  self.map = assert(plan:generate(n, self.streams:get("floor" .. n), self.biome))
   self.nav = rooms.nav.new(self.map, { cell_w = CW * TS, cell_h = CH * TS, tile_size = TS })
-  self.abilities, self.taken = {}, {}
+  self.abilities, self.taken, self.loot = {}, {}, {}
 end
 
 function play:enter()
@@ -127,14 +163,15 @@ local function control(self, dt)
   self.fight.box.facing = self.facing            -- the attacks aim where the slime looks
   if input:pressed("switch") then self.fight:switch() end
   if input:pressed("attack") then self.fight:attack() end
-  slime:push(move * (slime:on_ground() and MOVE or AIR_MOVE), 0)
+  local bonus = self.bonus
+  slime:push(move * (slime:on_ground() and MOVE or AIR_MOVE) * bonus.move, 0)
   local squash = input:down("down")
   slime.inflate = squash and 0.7 or 1
   if squash and slime:on_ground() then self.charging = true end
   if input:pressed("jump") and slime:on_ground() then
-    slime:impulse(0, -JUMP)
+    slime:impulse(0, -JUMP * bonus.jump)
   elseif self.charging and not squash then
-    if slime:on_ground() then slime:impulse(0, -CHARGED_JUMP) end
+    if slime:on_ground() then slime:impulse(0, -CHARGED_JUMP * bonus.jump) end
     self.charging = false
   end
 end
@@ -153,6 +190,7 @@ function play:update(dt)
   control(self, dt)
   self.slime:step(dt, self.grid)
   self.fight:step(dt)
+  self.kills = self.kills_before + self.fight.kills
   local cx, cy = self.slime:center()
   -- the key: picked up by touching it; the room is rebuilt so its locked doors open
   local it = self.item
@@ -160,12 +198,16 @@ function play:update(dt)
     self.abilities[it.tag] = true
     play.load_room(self)
   end
-  -- treasure: the heart heals the slime fully
-  local h = self.heart
+  -- treasure: the item is the slime's for the rest of the run; the room is rebuilt so its
+  -- stats count, and the slime is healed
+  local h = self.treasure
   if h and cx > h.x - 6 and cx < h.x + 14 and cy > h.y - 10 and cy < h.y + 14 then
-    local p = self.fight.player
-    p.health = p.stats:get("max_health")
-    self.taken[self.nav.index], self.heart = true, nil
+    self.pool:take(h.entry)
+    loot.apply(self.bonus, h.entry)
+    self.taken[self.nav.index], self.treasure = true, nil
+    self.got = h.entry
+    self.fight.player.dead = true                  -- the next fight starts at full health
+    play.load_room(self)
   end
   -- the boss room, once cleared, opens a stairway down to the next floor (after the last: floor 1)
   if self.nav.room.type == "boss" and not self.stairs and self.fight:alive() == 0 then
@@ -238,15 +280,22 @@ end
 
 function play:draw(alpha)
   local g, camera = love.graphics, self.camera
+  local colors = self.biome.colors
   camera:attach(alpha)
-  if self.nav.room.type == "boss" then g.setColor(0.32, 0.16, 0.20, 1) else g.setColor(0.20, 0.22, 0.30, 1) end
+  if self.nav.room.type == "boss" then g.setColor(0.32, 0.16, 0.20, 1) else g.setColor(colors.wall[1], colors.wall[2], colors.wall[3], 1) end
   for i = 1, #self.runs do local r = self.runs[i]; g.rectangle("fill", r[1], r[2], r[3], TS) end
-  g.setColor(0.45, 0.48, 0.58, 1)
+  g.setColor(colors.ledge[1], colors.ledge[2], colors.ledge[3], 1)
   for i = 1, #self.ones do local r = self.ones[i]; g.rectangle("fill", r[1], r[2], r[3], 3) end
   g.setColor(0.95, 0.75, 0.20, 1)
   for i = 1, #self.locked do local l = self.locked[i]; g.rectangle("fill", l.x + 4, l.y, TS - 8, 3 * TS) end
   if self.item then g.rectangle("fill", self.item.x, self.item.y, 8, 8) end
-  if self.heart then g.setColor(0.95, 0.3, 0.4, 1); g.rectangle("fill", self.heart.x, self.heart.y, 8, 8) end
+  local tr = self.treasure
+  if tr then
+    local c = tr.entry.color or { 1, 1, 1 }
+    g.setColor(c[1], c[2], c[3], 1); g.rectangle("fill", tr.x, tr.y, 8, 8)
+    g.setColor(1, 1, 1, 0.8)
+    engine.text.draw(tr.entry.name, tr.x + 4 - engine.text.width(tr.entry.name) / 2, tr.y - 10)
+  end
   if self.stairs then
     g.setColor(0.1, 0.1, 0.12, 1)
     g.rectangle("fill", self.stairs.x, self.stairs.y, 2 * TS, TS)
@@ -267,7 +316,8 @@ function play:draw(alpha)
   g.setColor(1, 1, 1, 1)
   engine.text.draw("HP " .. p.health .. "/" .. p.stats:get("max_health"), 4, 4)
   engine.text.draw("ATK " .. self.fight:current().name, 4, 12)
-  engine.text.draw("FLOOR " .. self.floor .. "/" .. FLOORS, 4, 20)
+  engine.text.draw("FLOOR " .. self.floor .. "/" .. FLOORS .. " " .. self.biome.name, 4, 20)
+  if self.got then engine.text.draw("GOT " .. self.got.name, 4, 28) end
   draw_minimap(self)
   local cover = self.fade:cover(alpha)
   if cover > 0 then

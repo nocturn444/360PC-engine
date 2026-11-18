@@ -43,22 +43,23 @@ BRAIN.states.chase.transitions = {
   { to = "patrol", when = B.target_beyond(120, "xy") },
 }
 
-local M = {}
+local M = { SLIME_STATS = SLIME_STATS }
 local Fight = {}
 Fight.__index = Fight
 
 -- M.new(slime, grid, spots, opts): spots = { { x, y } ... } (the bottom centre of each enemy, room
 -- pixels); opts.boss (stronger enemies), opts.seed (their patrol pauses), opts.health (the
 -- slime's health carried over from the last room), opts.mode (the slime's attack, an index of
--- rooms_attacks), opts.on_slime_death
+-- rooms_attacks), opts.on_slime_death; the biome's: opts.enemy_stats, opts.slime_stats
+-- (combat.stats tables) and opts.color (the enemies' colour)
 function M.new(slime, grid, spots, opts)
   opts = opts or {}
-  local self = setmetatable({ slime = slime, enemies = {}, stomps = 0, kills = 0 }, Fight)
+  local self = setmetatable({ slime = slime, enemies = {}, stomps = 0, kills = 0, color = opts.color }, Fight)
   self.world = platformer.collision.newWorld(grid)
   self.fight = combat.world.new()
   self.box = softbody.box(slime)
   local me = self
-  self.player = self.fight:fighter({ body = self.box, team = "player", params = SLIME_STATS,
+  self.player = self.fight:fighter({ body = self.box, team = "player", params = opts.slime_stats or SLIME_STATS,
     health = opts.health, on_hurt = function(_, hit) me.box:knock(hit) end,
     on_death = opts.on_slime_death })
   self.hurt = self.player:hurtbox({ w = 1, h = 1 })
@@ -84,7 +85,7 @@ function M.new(slime, grid, spots, opts)
     agent.body = platformer.controller.new(self.world, { x = s.x - W / 2, y = s.y - H, w = W, h = H,
       stats = setmetatable({ agent = agent }, EnemyStats), actions = { move_x = "move_x" } })
     agent.fighter = self.fight:fighter({ body = agent.body, team = "enemy", owner = agent,
-      params = opts.boss and BOSS_STATS or ENEMY_STATS })
+      params = opts.enemy_stats or (opts.boss and BOSS_STATS or ENEMY_STATS) })
     agent.fighter:hurtbox({ w = W, h = H })
     agent.hitboxes = { bite = agent.fighter:hitbox({ ox = W - 2, oy = 2, w = 9, h = 7, knockback = 160, ky = -0.6 }) }
     agent.machine = combat.fsm.new(BRAIN, agent)
@@ -159,6 +160,7 @@ function Fight:draw(alpha, boss)
       local x = math.floor(b.px + (b.x - b.px) * alpha + 0.5)
       local y = math.floor(b.py + (b.y - b.py) * alpha + 0.5)
       if e.fighter:invulnerable() then g.setColor(1, 0.35, 0.35, 1)
+      elseif self.color then g.setColor(self.color[1], self.color[2], self.color[3], 1)
       elseif boss then g.setColor(0.85, 0.30, 0.55, 1)
       else g.setColor(0.85, 0.55, 0.25, 1) end
       g.rectangle("fill", x, y + 2, W, H - 2)

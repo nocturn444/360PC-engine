@@ -28,6 +28,7 @@ local function check_entry(e, i)
   if e.weight == nil then e.weight = 1 end
   if type(e.weight) ~= "number" or not (e.weight >= 0) then error(where .. "weight is a number >= 0", 4) end
   if e.rooms ~= nil and type(e.rooms) ~= "table" then error(where .. "rooms is an array of room types", 4) end
+  if e.biomes ~= nil and type(e.biomes) ~= "table" then error(where .. "biomes is an array of biome ids", 4) end
   if e.unlock ~= nil and type(e.unlock) ~= "string" then error(where .. "unlock is a tag (string)", 4) end
   if e.requires ~= nil and type(e.requires) ~= "table" then error(where .. "requires is an array of tags", 4) end
   if e.max ~= nil and (type(e.max) ~= "number" or e.max < 1 or e.max ~= floor(e.max)) then
@@ -91,6 +92,7 @@ end
 
 -- pool:available(entry, ctx) -> true if the entry can come out now. ctx (all optional):
 --   room      the room type ("shop", "treasure", ...): entries with `rooms` need one of theirs
+--   biome     the biome id (procgen.biomes): entries with `biomes` need one of theirs
 --   have      the tags the run has (array or { tag = true }), for `requires`
 --   exclude   { [id] = true }: never these
 --   filter    function(entry, ctx) -> boolean: the game's own rule
@@ -99,6 +101,11 @@ local function avail(self, e, ctx, have)
   if e.unlock and not self.unlocked[e.unlock] then return false end
   if e.max and (self.taken[e.id] or 0) >= e.max then return false end
   if not room_ok(e, ctx and ctx.room) then return false end
+  if e.biomes then
+    local b, ok = ctx and ctx.biome, false
+    for i = 1, #e.biomes do if e.biomes[i] == b then ok = true; break end end
+    if not ok then return false end
+  end
   if e.requires and not has_all(e.requires, have) then return false end
   if ctx then
     if ctx.exclude and ctx.exclude[e.id] then return false end

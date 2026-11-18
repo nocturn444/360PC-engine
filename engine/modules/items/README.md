@@ -40,6 +40,7 @@ relics:take(offer[chosen])                                   -- the player got i
 | `unlock` | nil, or a tag. The entry is in the pool only once `pool:unlock(tag)` was called, or the tag was given in `opts.unlocked`. |
 | `max` | nil (no limit), or how many times a run can take it. Use 1 for a unique item. |
 | `requires` | nil, or tags the run must have (`ctx.have`), such as an ability. |
+| `biomes` | nil (any biome), or an array of biome ids (`procgen.biomes`). With `biomes` set, an entry only comes out when `ctx.biome` is one of them. |
 
 Anything else in an entry (name, sprite, price, the modifiers it gives) belongs to the game. Keep
 the order of the entries stable: it is part of every draw's result.
@@ -51,6 +52,7 @@ All of its fields are optional:
 | Field | Meaning |
 |---|---|
 | `room` | The type of the room the draw is for. |
+| `biome` | The id of the floor's biome. |
 | `have` | The run's tags, as an array or `{ tag = true }`. |
 | `exclude` | `{ [id] = true }`: entries that never come out. |
 | `filter` | `function(entry, ctx) -> boolean`: the game's own rule. |
