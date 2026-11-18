@@ -1,8 +1,11 @@
 -- New game on 360PC-Engine. The base (engine/ and lib/) is found either in this folder (a
 -- pinned copy) or in base/ (the 360PC-Engine repository as a git submodule). On the console
 -- the packaging puts engine/ and lib/ next to this file, so the same require works there.
+-- Run from inside the 360PC-Engine repository (template/), the base one folder up is used too.
 if love.filesystem.setRequirePath then      -- official LÖVE on PC only
   love.filesystem.setRequirePath("?.lua;?/init.lua;base/?.lua;base/?/init.lua")
+  local source = love.filesystem.getSource()
+  package.path = source .. "/../?.lua;" .. source .. "/../?/init.lua;" .. package.path
 end
 local engine = require("engine")
 
