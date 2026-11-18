@@ -31,6 +31,23 @@ for seed = 1, 50 do
   if m then made = made + 1 end
 end
 check(made == 50, "50 seeds, 50 maps (" .. made .. ")")
+-- the run: every floor of 20 seeds, growing, with a treasure room and a shop (no shop on the last)
+local Rng = require("engine.rng")
+local plan = require("rooms_play").plan
+for seed = 1, 20 do
+  local sizes = {}
+  for n = 1, 10 do
+    local m, why = plan:generate(n, Rng.streams(seed):get("floor" .. n))
+    check(m, "seed " .. seed .. " floor " .. n .. ": " .. tostring(why))
+    local kinds = {}
+    for _, r in ipairs(m.rooms) do kinds[r.type] = (kinds[r.type] or 0) + 1 end
+    check(kinds.treasure == 1 and kinds.boss == 1 and (kinds.shop == 1) == (n < 10),
+      "seed " .. seed .. " floor " .. n .. ": a treasure room, a boss, a shop except on the last floor")
+    check(n > 1 or not kinds.miniboss, "no miniboss on floor 1")
+    sizes[n] = #m.rooms
+  end
+  check(sizes[10] > sizes[1] + 8, "seed " .. seed .. ": the last floor is much bigger (" .. table.concat(sizes, ",") .. ")")
+end
 for _, t in ipairs(data.templates()) do
   local rows = t.rows
   check(#rows == (t.h or 1) * data.cell_h and #rows[1] == (t.w or 1) * data.cell_w, t.id .. ": rows fit its cells")
@@ -44,6 +61,7 @@ check(last:sub(1, 3) == "OK:", "boot_pc.lua examples/rooms ends with OK: " .. la
 check(not out:find("ERROR", 1, true), "and logs no error")
 
 -- 4. On the fake love
+local TS_HALF = 16
 local F = require("fake_love")
 F.install({ width = 1280, height = 720 })
 assert(loadfile("examples/rooms/main.lua"))()
@@ -108,8 +126,13 @@ check(nav.index == lock.b, "and it leads to the next zone (" .. side .. ")")
 
 -- the fight: enemies in a hall, a stomp, a bite, and dying sends the slime back to the start
 local hall
-for i, r in ipairs(map.rooms) do if r.template.id == "hall" then hall = i; break end end
-check(hall ~= nil, "seed 1 has a hall")
+for n = 1, 10 do                                       -- the first floor with a hall
+  for i, r in ipairs(play.map.rooms) do if r.template.id == "hall" then hall = i; break end end
+  if hall then break end
+  play.new_floor(play, n + 1)
+end
+map, nav = play.map, play.nav
+check(hall ~= nil, "a floor has a hall")
 play:load_room(nav:enter(hall))
 local fight = play.fight
 check(#fight.enemies == 2 and fight:alive() == 2, "the hall has its two enemies")
@@ -194,6 +217,35 @@ play.dead = true
 frames(30)
 check(nav.index == map.start and play.deaths == 1, "dying sends it back to the start room")
 check(play.fight.player.health == play.fight.player.stats:get("max_health"), "with full health")
+
+-- the treasure room: its heart heals the slime once
+local function find(kind)
+  for i, r in ipairs(play.map.rooms) do if r.type == kind then return i end end
+end
+local tr = find("treasure")
+check(tr, "the floor has a treasure room")
+play:load_room(nav:enter(tr))
+check(play.heart, "a heart on the pedestal")
+play.fight.player.health = 1
+slime:move_to(play.heart.x + 4, play.heart.y); slime:set_velocity(0, 0)
+frames(10)
+check(play.fight.player.health == play.fight.player.stats:get("max_health") and not play.heart, "the heart heals")
+play:load_room(nav:enter(tr))
+check(not play.heart, "and is gone when the slime comes back")
+
+-- the boss room: cleared, a stairway leads to the next floor, a new and bigger map
+local floor0, rooms0 = play.floor, #play.map.rooms
+play:load_room(nav:enter(play.map.boss))
+check(play.fight:alive() > 0 and not play.stairs, "the boss room holds its enemies, no stairs yet")
+for _, e in ipairs(play.fight.enemies) do e.fighter.dead = true end
+frames(2)
+check(play.stairs, "cleared: the stairway appears")
+play.fight.player.invuln = 10
+slime:move_to(play.stairs.x + TS_HALF, play.stairs.y - 4); slime:set_velocity(0, 0)
+frames(40)
+check(play.floor == floor0 + 1 and play.nav.index == play.map.start, "down the stairs: floor " .. play.floor .. ", at its start")
+check(#play.map.rooms >= rooms0 and play.map.floor == play.floor, "the next floor is generated (" .. #play.map.rooms .. " rooms)")
+map, nav = play.map, play.nav
 
 -- the room is drawn
 F.reset_calls(); love.draw()

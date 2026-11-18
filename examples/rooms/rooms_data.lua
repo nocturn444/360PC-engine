@@ -9,7 +9,28 @@
 --
 -- Levels made in LDtk (engine.level) give templates of the same shape; these stay in code so the
 -- example needs no level file.
+local procgen = require("engine.modules.procgen")
 local M = { cell_w = 20, cell_h = 12, tile_size = 16 }
+
+-- Special rooms: a pedestal for the treasure, a counter for the shop, an arena for the miniboss
+local SPECIAL_ROWS = {
+  treasure = {
+    "####################", "#..................#", "#..................#", "#..................#",
+    "#..................#", "#..................#", "#..................#", "#..................#",
+    "#..................#", "#........##........#", "#.......####.......#", "####################",
+  },
+  shop = {
+    "####################", "#..................#", "#..................#", "#..................#",
+    "#..................#", "#....==========....#", "#..................#", "#..................#",
+    "#..................#", "#..................#", "#..................#", "####################",
+  },
+  miniboss = {
+    "####################", "#..................#", "#..................#", "#..................#",
+    "#..................#", "#..................#", "#..====......====..#", "#..................#",
+    "#..................#", "#..................#", "#..................#", "####################",
+  },
+}
+local SPECIAL_ENEMIES = { miniboss = { { tx = 10, ty = 11 }, { tx = 14, ty = 11 } } }
 
 local function lr(...)
   local out = {}
@@ -55,7 +76,7 @@ HUB[1] = ("#"):rep(40); HUB[24] = ("#"):rep(40)
 
 -- A new list each call: procgen.templates fills in defaults in place
 function M.templates()
-  return {
+  local list = {
     { id = "start", type = "start", exits = lr({ "left" }, { "right" }), spawn = { tx = 10, ty = 10 }, rows = {
       "####################",
       "#..................#",
@@ -159,6 +180,21 @@ function M.templates()
       "####################",
     } },
   }
+  -- The special rooms (procgen.roomtypes): one cell, one door, so each is a dead end
+  for _, kind in ipairs({ "treasure", "shop", "miniboss" }) do
+    for _, side in ipairs({ "left", "right" }) do
+      list[#list + 1] = { id = kind .. "_" .. side:sub(1, 1), type = kind, exits = lr({ side }),
+        enemies = SPECIAL_ENEMIES[kind], rows = SPECIAL_ROWS[kind] }
+    end
+  end
+  return list
+end
+
+-- The special room types of a run: the base's Isaac-like set (a treasure room and a shop per
+-- floor, a miniboss from floor 2 more likely the deeper the run goes). A new type is one more
+-- define here and its templates above.
+function M.types()
+  return procgen.roomtypes.defaults()
 end
 
 return M

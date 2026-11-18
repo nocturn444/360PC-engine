@@ -11,6 +11,9 @@
 --   types, loops, attempts   as procgen.generate takes them
 --   stream      the engine.rng stream the game generates levels with (default "level");
 --               false: the seed goes straight to procgen.generate
+--   plan, floor a run of floors instead (procgen.floors): floor `floor` (default 1) of `plan`,
+--               from the stream stream .. floor (stream default "floor": "floor1", "floor2"...).
+--               The other fields are then the plan's.
 local Rng = require("engine.rng")
 local prefix = (...):gsub("seeds$", "")
 local generator = require(prefix .. "generator")
@@ -28,6 +31,10 @@ end
 
 -- The map of one seed (a whole number), or nil and the reason.
 function M.generate(spec, seed)
+  if spec.plan then
+    local n = spec.floor or 1
+    return spec.plan:generate(n, Rng.streams(seed):get((spec.stream or "floor") .. n))
+  end
   local opts = { templates = templates_of(spec), abilities = spec.abilities, rooms = spec.rooms,
     check = spec.check, types = spec.types, loops = spec.loops, attempts = spec.attempts }
   if spec.stream == false then opts.seed = seed

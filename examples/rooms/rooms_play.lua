@@ -1,7 +1,9 @@
--- Walking a generated map. Only the current room exists: its grid is built when the slime comes
+-- Walking a run of generated floors (procgen.floors): ten floors, each a fresh map that grows
+-- the deeper the slime goes, with a treasure room, a shop and sometimes a miniboss
+-- (procgen.roomtypes). Only the current room exists: its grid is built when the slime comes
 -- in, the camera stays inside it, and a short fade covers each change of room. A locked door
--- stays shut (drawn gold) until the slime picks up the key in the vault room; a minimap in the
--- corner shows the explored rooms.
+-- stays shut (drawn gold) until the slime picks up the key in the vault room; once the boss
+-- room is cleared, a stairway leads to the next floor. A minimap shows the explored rooms.
 local engine = require("engine")
 local procgen = require("engine.modules.procgen")
 local platformer = require("engine.modules.platformer")
@@ -16,8 +18,13 @@ local TS, CW, CH = data.tile_size, data.cell_w, data.cell_h
 local MOVE, AIR_MOVE, JUMP, CHARGED_JUMP = 700, 300, 260, 380
 local SIZE = 40
 local SEED = 1
+local FLOORS = 10
 
-local play = {}
+-- The run: 10 floors from 6 rooms to 18, the special rooms of rooms_data.types(), a key per floor
+local plan = procgen.floors.new({ count = FLOORS, templates = data.templates(), types = data.types(),
+  rooms = { first = 6, last = 18 }, abilities = { "key" } })
+
+local play = { plan = plan }
 
 -- The room's rows with its doors opened: rows 9..11 of the exit's cell, in the first or last
 -- column. An exit without a door, or a locked door the slime cannot pass yet, stays a wall.
@@ -70,11 +77,15 @@ function play.load_room(self, x, y)
     spots[i] = { x = (t.tx - 0.5) * TS, y = t.ty * TS }
   end
   local health = self.fight and not self.fight.player.dead and self.fight.player.health or nil
-  self.fight = enemies.new(self.slime, self.grid, spots, { boss = self.nav.room.type == "boss",
-    seed = SEED * 1000 + self.nav.index, health = health, mode = self.fight and self.fight.mode,
+  local kind = self.nav.room.type
+  self.fight = enemies.new(self.slime, self.grid, spots, { boss = kind == "boss" or kind == "miniboss",
+    seed = SEED * 100000 + self.floor * 1000 + self.nav.index, health = health, mode = self.fight and self.fight.mode,
     on_slime_death = function() self.dead = true end })
   local item = self.nav.room.grants and not self.abilities[self.nav.room.grants] and self.nav.room.template.item
   self.item = item and { x = (item.tx - 1) * TS + 4, y = (item.ty - 1) * TS + 4, tag = self.nav.room.grants } or nil
+  -- a treasure room heals once per floor: its heart sits on the pedestal until taken
+  self.heart = kind == "treasure" and not self.taken[self.nav.index] and { x = 9.5 * TS - 4, y = 8 * TS } or nil
+  self.stairs = nil
   if x then
     self.slime:move_to(x, y)
     self.camera:setBounds(self.nav:bounds())
@@ -82,12 +93,18 @@ function play.load_room(self, x, y)
   end
 end
 
-function play:enter()
-  self.map = assert(procgen.generate({ templates = data.templates(), seed = SEED, rooms = 10, abilities = { "key" } }))
+-- Floor n: a fresh map from its own stream, the key to find again, the slime at the start
+function play.new_floor(self, n)
+  self.floor = n
+  self.map = assert(plan:generate(n, engine.rng.streams(SEED):get("floor" .. n)))
   self.nav = rooms.nav.new(self.map, { cell_w = CW * TS, cell_h = CH * TS, tile_size = TS })
+  self.abilities, self.taken = {}, {}
+end
+
+function play:enter()
+  play.new_floor(self, 1)
   self.fade = rooms.transition.new({ kind = "fade", time = 0.3 })
   self.camera = engine.camera.new({ width = W, height = H, lerp = 10, deadzone_w = 24, deadzone_h = 16 })
-  self.abilities = {}
   self.slime = softbody.new({ radius = 9, points = 18 })
   self.pixels = pixelgrid.new(SIZE, SIZE, { palette = {
     { 0.98, 0.90, 0.52 }, { 0.10, 0.30, 0.16 }, { 0.95, 1.00, 0.95 }, { 0.05, 0.08, 0.06 },
@@ -143,6 +160,27 @@ function play:update(dt)
     self.abilities[it.tag] = true
     play.load_room(self)
   end
+  -- treasure: the heart heals the slime fully
+  local h = self.heart
+  if h and cx > h.x - 6 and cx < h.x + 14 and cy > h.y - 10 and cy < h.y + 14 then
+    local p = self.fight.player
+    p.health = p.stats:get("max_health")
+    self.taken[self.nav.index], self.heart = true, nil
+  end
+  -- the boss room, once cleared, opens a stairway down to the next floor (after the last: floor 1)
+  if self.nav.room.type == "boss" and not self.stairs and self.fight:alive() == 0 then
+    self.stairs = { x = 9 * TS, y = 10 * TS }
+  end
+  local st = self.stairs
+  if st and cx > st.x - 4 and cx < st.x + 2 * TS + 4 and cy > st.y - 12 then
+    self.fade:start(function()
+      local health = self.fight.player.health
+      play.new_floor(self, self.floor % FLOORS + 1)
+      play.load_room(self, self.nav:enter(self.map.start))
+      self.fight.player.health = health
+    end)
+    return
+  end
   local _, door, side = self.nav:leaving(cx, cy)
   if door and self.nav:can_pass(door, self.abilities) then
     self.fade:start(function()
@@ -173,6 +211,12 @@ local function draw_slime(self, alpha)
   px:draw(ox, oy)
 end
 
+local TYPE_COLORS = {
+  normal = { 0.5, 0.6, 0.8 }, start = { 0.5, 0.6, 0.8 }, boss = { 0.8, 0.3, 0.3 },
+  treasure = { 0.95, 0.75, 0.2 }, shop = { 0.35, 0.8, 0.45 }, miniboss = { 0.9, 0.5, 0.25 },
+}
+local LABELS = { treasure = "TREASURE", shop = "SHOP", miniboss = "MINIBOSS", boss = "BOSS" }
+
 local function draw_minimap(self)
   local g, mm = love.graphics, self.nav:minimap()
   local S = 5
@@ -182,8 +226,10 @@ local function draw_minimap(self)
       local c = mm.cells[(cy - 1) * mm.w + cx]
       if c and c.explored then
         if c.room == self.nav.index then g.setColor(0.95, 0.95, 0.6, 1)
-        elseif c.type == "boss" then g.setColor(0.8, 0.3, 0.3, 1)
-        else g.setColor(0.5, 0.6, 0.8, 1) end
+        else
+          local col = TYPE_COLORS[c.type] or TYPE_COLORS.normal
+          g.setColor(col[1], col[2], col[3], 1)
+        end
         g.rectangle("fill", x0 + (cx - 1) * S, y0 + (cy - 1) * S, S - 1, S - 1)
       end
     end
@@ -200,6 +246,18 @@ function play:draw(alpha)
   g.setColor(0.95, 0.75, 0.20, 1)
   for i = 1, #self.locked do local l = self.locked[i]; g.rectangle("fill", l.x + 4, l.y, TS - 8, 3 * TS) end
   if self.item then g.rectangle("fill", self.item.x, self.item.y, 8, 8) end
+  if self.heart then g.setColor(0.95, 0.3, 0.4, 1); g.rectangle("fill", self.heart.x, self.heart.y, 8, 8) end
+  if self.stairs then
+    g.setColor(0.1, 0.1, 0.12, 1)
+    g.rectangle("fill", self.stairs.x, self.stairs.y, 2 * TS, TS)
+    g.setColor(0.6, 0.85, 1, 1)
+    g.rectangle("line", self.stairs.x, self.stairs.y, 2 * TS, TS)
+  end
+  local label = LABELS[self.nav.room.type]
+  if label then
+    g.setColor(1, 1, 1, 0.6)
+    engine.text.draw(label, (CW * TS - engine.text.width(label, 2)) / 2, 2 * TS, 2)
+  end
   self.fight:draw(alpha, self.nav.room.type == "boss")
   g.setColor(1, 1, 1, 1)
   -- the slime blinks while nothing can hurt it
@@ -209,6 +267,7 @@ function play:draw(alpha)
   g.setColor(1, 1, 1, 1)
   engine.text.draw("HP " .. p.health .. "/" .. p.stats:get("max_health"), 4, 4)
   engine.text.draw("ATK " .. self.fight:current().name, 4, 12)
+  engine.text.draw("FLOOR " .. self.floor .. "/" .. FLOORS, 4, 20)
   draw_minimap(self)
   local cover = self.fade:cover(alpha)
   if cover > 0 then

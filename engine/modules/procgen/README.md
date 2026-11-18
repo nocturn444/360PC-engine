@@ -106,6 +106,87 @@ Every choice is an `engine.rng` draw over arrays in a fixed order, never over `p
 operation is one room placed or tried. `gen:step(n)` pauses after n operations, so the budget
 never changes the result.
 
+## Special rooms, room types and floors (The Binding of Isaac style)
+
+A run can be made of **floors**: each one a fresh map, bigger and fuller the deeper the player
+goes, with **special rooms** (a treasure room, a shop, a miniboss...) hung as dead ends. Room
+types are modular data: a new type is one `define` plus templates of that type, and the
+generator never names a type.
+
+```lua
+local types = procgen.roomtypes.defaults()          -- treasure, shop, miniboss (below)
+types:define("secret", { count = { 0, 1 }, min_floor = 3, distance = "far" })   -- a new type
+
+local plan = procgen.floors.new({
+  count = 10,                                       -- floors in a run
+  templates = lvl.rooms,                            -- templates of every type, special ones too
+  types = types,
+  rooms = { first = 7, last = 20 },                 -- floor 1 to floor 10, straight in between, +0..1
+  abilities = { "key" },                            -- locks per floor (or a function of the floor)
+})
+local map = plan:generate(n, run.streams:get("floor" .. n))   -- floor n; map.floor, map.progress
+```
+
+**Room types** (`roomtypes.lua`). `types:define(name, def)` takes these fields, all optional:
+
+| Field | Meaning |
+|---|---|
+| `count` | Rooms per floor: a number (1), `{ min, max }` (a draw), or `function(floor, total, rng)`. |
+| `chance` | 0..1, or `function(floor, total)`: whether a floor gets the type at all. |
+| `min_floor`, `max_floor` | The floors it appears on. A negative `max_floor` counts from the end: -1 is the last floor, -2 the one before it. |
+| `distance` | `"any"`, `"far"` (behind the deepest open exits) or `"near"` (close to the start). |
+| `min_depth` | The fewest doors between the start and the room. |
+
+Anything else in `def` belongs to the game, such as prices or minimap colours. `types:specials(floor, total, rng)`
+returns the generator's `specials` list. The order of the definitions is part of a generated
+map.
+
+`roomtypes.defaults()` is a starting set:
+
+| Type | Rule |
+|---|---|
+| `treasure` | One per floor, at least 2 doors from the start. |
+| `shop` | One per floor except the last, at least 2 doors from the start. |
+| `miniboss` | From floor 2, with a chance from 25% on floor 2 rising to 85%, far from the start, at least 3 doors away. |
+
+**Special rooms in the generator** (`specials` and `boss_distance` options of `generate`):
+
+- Special rooms are placed after the ordinary rooms, items and locks, and before the boss.
+- Each one is a dead end: nothing hangs off it and loops never join it. Give their templates a
+  single exit.
+- Templates of a special type are never used as ordinary rooms. This holds even on a floor
+  where the type has no room, because its count is then 0.
+- They count in `rooms`.
+- `distance` picks from the open exits by how many doors they are from the start, and falls
+  back to any exit when nothing fits that band.
+- After loops are added, a map whose special room ended up closer than its `min_depth` is
+  thrown away and tried again.
+- With `boss_distance = "far"`, the default of `floors`, the boss goes behind one of the
+  deepest exits. A map where loops bring it more than one door closer than the deepest ordinary
+  room is tried again.
+- `map.rooms[i].depth` is the fewest doors from the start. Special rooms have `special = true`.
+
+**Floors** (`floors.lua`). `floors.new(def)` takes these fields:
+
+| Field | Meaning |
+|---|---|
+| `count` | Floors in a run (10). |
+| `templates` | A list, or `function(n, plan)`. A template with `floors = { min, max }` is only used on those floors. |
+| `types` | A `roomtypes` set. |
+| `rooms` | `{ first, last, jitter }` or `function(n, plan, rng)`. The count never drops below what the floor's special rooms need. |
+| `abilities` | An array, or `function(n, plan)`. |
+| `loops` | `true` / `false`, or `function(n, plan)`. |
+| `boss_distance` | `"far"` (the default) or `"any"`. |
+| `attempts` | The generator's attempts. |
+| `options` | `function(opts, n, plan, rng)`: the game's last word on floor n's options. |
+
+`plan:options(n, rng)` gives the generate options. `plan:generate(n, rng)` gives the map, with
+`map.floor`, `map.floors` and `map.progress` (0 on the first floor, 1 on the last) for the
+game's difficulty. `plan:generator(n, rng)` does the same spread over frames.
+
+Use one stream per floor (`"floor1"`, `"floor2"`...), so a floor depends only on the seed and its
+number. `seeds.hash({ plan = plan, floor = n }, seed)` hashes one floor for the seed tools.
+
 ## Bulk seed checks and the PC vs 360 test
 
 `procgen.seeds` (`seeds.lua`) turns one seed into one layout hash, the same way everywhere:

@@ -398,7 +398,7 @@ function E.room_action(what)
       if not ok then E.undo(); E.history.redo = {}; E.say(why, true) else E.changed() end
     end)
   elseif what == "type" then
-    E.ask("Room type (normal, start, boss or the game's own)", room.type, function(t)
+    E.ask("Room type (normal, start, boss, treasure, shop, miniboss or the game's own)", room.type, function(t)
       t = t:lower():match("^%s*(.-)%s*$")
       if t == "" then return end
       E.begin_change(); room.type = t; E.changed()

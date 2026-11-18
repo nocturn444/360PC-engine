@@ -17,6 +17,17 @@
 --   attempts   tries before giving up (default 50); each try goes on drawing from the same rng.
 --   check      optional function(map) -> true or false, message: the game's own rule; a map it
 --              refuses is thrown away and tried again.
+--   specials   optional array of { type, count = 1, distance = "any" | "far" | "near",
+--              min_depth = 1 }: special rooms (a shop, a treasure room, a miniboss...) placed
+--              after the other rooms, before the boss, each one a dead end that loops never
+--              join. Templates of those types are never used as filler rooms. distance picks
+--              the open exits by how many doors they are from the start (far: the deepest ones;
+--              near: the closest ones), falling back to any exit; min_depth is the fewest doors
+--              between the start and the special room. Specials count in `rooms`.
+--              A count of 0 places none but still keeps the type's templates out of the
+--              filler. procgen.roomtypes builds this list from modular room type definitions.
+--   boss_distance  optional "far": the boss goes behind one of the deepest open exits
+--              (default: any open exit of the last zone).
 --
 -- generator.new(opts) -> gen. gen:step(ops) does at most `ops` operations (one operation is one
 -- room placed or tried) and returns true when finished. Then gen.map is the map, or nil and
@@ -48,12 +59,18 @@ local function door_tags(e1, e2, lock)
 end
 
 local function pools(set, opts)
-  local start, boss, item, filler, by_type = {}, {}, {}, {}, {}
+  local start, boss, item, filler, by_type, special = {}, {}, {}, {}, {}, {}
+  local special_type = {}
+  for i = 1, #(opts.specials or {}) do special_type[opts.specials[i].type] = true end
   for i = 1, #set.list do
     local t = set.list[i]
     if t.weight > 0 then
       if t.type == "start" then start[#start + 1] = t
       elseif t.type == "boss" then boss[#boss + 1] = t
+      elseif special_type[t.type] then
+        local list = special[t.type]
+        if not list then list = {}; special[t.type] = list end
+        list[#list + 1] = t
       elseif t.item then item[#item + 1] = t
       else
         filler[#filler + 1] = t
@@ -73,7 +90,14 @@ local function pools(set, opts)
     end
     if #types == 0 then error("procgen: no template has a type of opts.types", 3) end
   end
-  return { start = start, boss = boss, item = item, filler = filler, by_type = by_type, types = types }
+  for i = 1, #(opts.specials or {}) do
+    local sp = opts.specials[i]
+    if (sp.count or 1) > 0 and not special[sp.type] then
+      error("procgen: no template has the special type \"" .. tostring(sp.type) .. "\"", 3)
+    end
+  end
+  return { start = start, boss = boss, item = item, filler = filler, by_type = by_type, types = types,
+    special = special }
 end
 
 -- One try. Returns the map, or nil and why.
@@ -99,9 +123,9 @@ local function attempt(g)
     return true
   end
 
-  local function add_room(tpl, x, y, zone)
+  local function add_room(tpl, x, y, zone, depth)
     local room = { index = #rooms + 1, id = tpl.id, template = tpl, x = x, y = y, w = tpl.w, h = tpl.h,
-      type = tpl.type, zone = zone, doors = {}, closed = {} }
+      type = tpl.type, zone = zone, depth = depth or 0, doors = {}, closed = {} }
     rooms[room.index] = room
     for e = 1, #tpl.exits do room.doors[e] = false end
     for cx = x, x + tpl.w - 1 do
@@ -143,11 +167,13 @@ local function attempt(g)
 
   -- Places one room of the pool behind an open exit of a room whose zone passes zone_ok.
   -- pool: an array of templates, or "filler" (a type by opts.types first, then a template).
-  local function place(pool, zone_ok, zone, lock)
+  -- zone nil: the new room takes the zone of the exit it hangs from. entry_ok(f), optional:
+  -- a further filter on the open exits (specials: distance, never behind a special room).
+  local function place(pool, zone_ok, zone, lock, entry_ok)
     local open = {}
     for i = 1, #frontier do
       local f = frontier[i]
-      if f.open and zone_ok(f.zone) then open[#open + 1] = f end
+      if f.open and zone_ok(f.zone) and (not entry_ok or entry_ok(f)) then open[#open + 1] = f end
     end
     while #open > 0 do
       tick()
@@ -160,7 +186,7 @@ local function attempt(g)
       if list and #list > 0 then
         local c = rng:weighted(list)
         local from = rooms[f.room]
-        local room = add_room(c.tpl, c.x, c.y, zone)
+        local room = add_room(c.tpl, c.x, c.y, zone or f.zone, from.depth + 1)
         local e1, e2 = from.template.exits[f.exit], c.tpl.exits[c.exit]
         local door = { index = #doors + 1, a = from.index, b = room.index, ea = f.exit, eb = c.exit,
           requires = door_tags(e1, e2, lock), lock = lock }
@@ -194,7 +220,9 @@ local function attempt(g)
   m.start = 1
 
   -- How many filler rooms each zone gets
-  local fill = opts.rooms - 1 - (#P.boss > 0 and 1 or 0) - (#P.item > 0 and #abilities or 0)
+  local specials = 0
+  for i = 1, #(opts.specials or {}) do specials = specials + (opts.specials[i].count or 1) end
+  local fill = opts.rooms - 1 - (#P.boss > 0 and 1 or 0) - (#P.item > 0 and #abilities or 0) - specials
   if fill < zones - 1 then return nil, "too few rooms for the abilities", true end
   local base, extra = floor(fill / zones), fill % zones
 
@@ -226,10 +254,57 @@ local function attempt(g)
       end
     end
   end
+  -- Special rooms: dead ends hung from ordinary rooms, by distance from the start
+  local function deepest(zone_ok)
+    local d = -1
+    for i = 1, #frontier do
+      local f = frontier[i]
+      if f.open and zone_ok(f.zone) and not rooms[f.room].special then d = math.max(d, rooms[f.room].depth) end
+    end
+    return d
+  end
+  local any_zone = function() return true end
+  local function place_far(pool, zone_ok, zone, distance, min_depth)
+    local not_special = function(f) return not rooms[f.room].special and rooms[f.room].depth + 1 >= min_depth end
+    local r
+    if distance == "far" or distance == "near" then
+      local band
+      if distance == "far" then
+        local d = deepest(zone_ok)
+        band = function(f) return not_special(f) and rooms[f.room].depth >= d - 1 end
+      else
+        band = function(f) return not_special(f) and rooms[f.room].depth <= min_depth end
+      end
+      r = place(pool, zone_ok, zone, nil, band)
+    end
+    return r or place(pool, zone_ok, zone, nil, not_special)
+  end
+  local function seal(room)                    -- nothing hangs off a special room: a dead end
+    room.special = true
+    for i = 1, #frontier do
+      if frontier[i].room == room.index then frontier[i].open = false end
+    end
+  end
+  for i = 1, #(opts.specials or {}) do
+    local sp = opts.specials[i]
+    for _ = 1, sp.count or 1 do
+      local r = place_far(P.special[sp.type], any_zone, nil, sp.distance, sp.min_depth or 1)
+      if not r then return nil, "no room for a special room of type " .. sp.type end
+      r.min_depth = sp.min_depth or 1
+      seal(r)
+    end
+  end
   if #P.boss > 0 then
-    local r = place(P.boss, function(fz) return fz == zones - 1 end, zones - 1)
+    local last = function(fz) return fz == zones - 1 end
+    local r
+    if opts.boss_distance == "far" then
+      r = place_far(P.boss, last, zones - 1, "far", 1)
+    else
+      r = place(P.boss, last, zones - 1)
+    end
     if not r then return nil, "no room for the boss" end
     m.boss = r.index
+    if opts.specials then r.special = true end
   end
 
   -- Loops: facing exits of neighbour rooms of the same zone (never the boss room)
@@ -241,7 +316,8 @@ local function attempt(g)
           local tx, ty, ex = target(room, e)
           local j = cells[key(tx, ty)]
           local other = j and rooms[j]
-          if other and other.zone == room.zone and i ~= m.boss and j ~= m.boss then
+          if other and other.zone == room.zone and i ~= m.boss and j ~= m.boss
+            and not room.special and not other.special then
             local back = templates.opposite[ex.side]
             local ox, oy = templates.exit_cell(room.template, ex)
             for e2 = 1, #other.template.exits do
@@ -267,6 +343,39 @@ local function attempt(g)
     local room = rooms[i]
     for e = 1, #room.doors do
       if not room.doors[e] then room.closed[#room.closed + 1] = e end
+    end
+  end
+
+  -- depth: the fewest doors from the start, now that loops may have made shortcuts
+  if opts.specials or opts.boss_distance == "far" then
+    for i = 1, #rooms do rooms[i].depth = nil end
+    rooms[1].depth = 0
+    local queue, qi = { 1 }, 1
+    while queue[qi] do
+      local r = rooms[queue[qi]]
+      qi = qi + 1
+      for e = 1, #r.doors do
+        local d = r.doors[e] and doors[r.doors[e]]
+        if d then
+          local o = rooms[d.a == r.index and d.b or d.a]
+          if not o.depth then o.depth = r.depth + 1; queue[#queue + 1] = o.index end
+        end
+      end
+    end
+    for i = 1, #rooms do
+      local r = rooms[i]
+      if r.min_depth and (r.depth or 0) < r.min_depth then
+        return nil, "a " .. r.type .. " room ended up " .. tostring(r.depth) .. " doors from the start"
+      end
+    end
+    if opts.boss_distance == "far" and m.boss then
+      local deepest_room = 0
+      for i = 1, #rooms do
+        if not rooms[i].special then deepest_room = math.max(deepest_room, rooms[i].depth or 0) end
+      end
+      if (rooms[m.boss].depth or 0) < deepest_room - 1 then
+        return nil, "loops brought the boss closer to the start than the far rooms"
+      end
     end
   end
 
@@ -307,7 +416,19 @@ function M.new(opts)
     rng = Rng.new(opts.seed)
   end
   local o = { rooms = opts.rooms or 12, attempts = opts.attempts or 50, types = opts.types,
-    loops = opts.loops, check = opts.check }
+    loops = opts.loops, check = opts.check, specials = opts.specials, boss_distance = opts.boss_distance }
+  for i = 1, #(o.specials or {}) do
+    local sp = o.specials[i]
+    if type(sp) ~= "table" or type(sp.type) ~= "string" then error("procgen: specials[" .. i .. "] needs a type", 2) end
+    if sp.type == "start" or sp.type == "boss" or sp.type == "normal" then
+      error("procgen: " .. sp.type .. " cannot be a special room type", 2)
+    end
+    local c = sp.count or 1
+    if type(c) ~= "number" or c < 0 or c ~= floor(c) then error("procgen: specials[" .. i .. "].count is a whole number >= 0", 2) end
+    if sp.distance ~= nil and sp.distance ~= "any" and sp.distance ~= "far" and sp.distance ~= "near" then
+      error("procgen: specials[" .. i .. "].distance is \"any\", \"far\" or \"near\"", 2)
+    end
+  end
   if type(o.rooms) ~= "number" or o.rooms < 1 or o.rooms ~= floor(o.rooms) then
     error("procgen: rooms is a whole number >= 1", 2)
   end

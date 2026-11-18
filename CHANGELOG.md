@@ -44,6 +44,12 @@ All notable changes to 360PC-Engine. The format follows
   `engine.level`. It covers collision, doors and their abilities, the item, entities with
   fields, rooms (add, copy, delete, order, type, tags, weight, size), live checks, undo, and a
   play test with a platformer body. `level_editor.bat` opens it on Windows.
+- `procgen.roomtypes` and `procgen.floors`: special room types as modular data (count, chance,
+  floors, distance from the start, minimum depth), with an Isaac-like default set (treasure,
+  shop, miniboss). Special rooms are placed by the generator as dead ends (`specials`), and the
+  boss can go far from the start (`boss_distance`). A run of floors grows from floor to floor
+  (rooms, special rooms, templates by floor). `examples/rooms` is now a ten-floor run with
+  stairs after each boss.
 - `run_pc.bat`: double-click to update the repository and open a game on the PC with LOVE.
 
 ### Changed

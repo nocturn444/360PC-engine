@@ -25,6 +25,8 @@ return {
   map = map,
   reach = require(prefix .. "reach"),
   seeds = require(prefix .. "seeds"),
+  roomtypes = require(prefix .. "roomtypes"),
+  floors = require(prefix .. "floors"),
   generate = generator.generate,
   hash = map.hash,
 }

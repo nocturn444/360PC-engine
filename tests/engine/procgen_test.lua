@@ -316,7 +316,7 @@ local function read(path)
   local src = f:read("*a"); f:close()
   return src
 end
-for _, name in ipairs({ "init", "templates", "graph", "map", "generator", "reach" }) do
+for _, name in ipairs({ "init", "templates", "graph", "map", "generator", "reach", "roomtypes", "floors" }) do
   local path = "engine/modules/procgen/" .. name .. ".lua"
   local src = read(path):gsub("%-%-[^\n]*", "")
   T.check(not src:find("%f[%w]goto%f[%W]") and not src:find("require%(?%s*[\"']ffi[\"']")
