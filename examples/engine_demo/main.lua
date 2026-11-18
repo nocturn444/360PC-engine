@@ -4,7 +4,13 @@
 -- to room and shakes; all drawn at 320x180 and scaled to the screen. The sprite is an entity
 -- with two modifiers on its speed: one that stays and one that lasts two seconds; a
 -- pick-1-of-3 screen (engine.ui) adds more.
--- Needs engine/ and lib/ next to this file (copies or links of the repository's folders).
+-- The base (engine/ and lib/) is found in this folder (a copy), in base/ (a submodule), or,
+-- for this example, two folders up: the repository it ships in.
+if love.filesystem.setRequirePath then      -- official LÖVE on PC only
+  love.filesystem.setRequirePath("?.lua;?/init.lua;base/?.lua;base/?/init.lua")
+  local source = love.filesystem.getSource()
+  package.path = source .. "/../../?.lua;" .. source .. "/../../?/init.lua;" .. package.path
+end
 local engine = require("engine")
 
 local W, H = 320, 180
