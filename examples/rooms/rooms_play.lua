@@ -93,7 +93,7 @@ function play:enter()
   self.abilities = {}
   self.slime = softbody.new(SLUG)
   self.pixels = pixelgrid.new(SW, SH, { palette = {
-    { 0.42, 0.86, 0.48 }, { 0.10, 0.30, 0.16 }, { 0.95, 1.00, 0.95 }, { 0.05, 0.08, 0.06 },
+    { 0.98, 0.90, 0.52 }, { 0.10, 0.30, 0.16 }, { 0.95, 1.00, 0.95 }, { 0.05, 0.08, 0.06 },
   } })
   self.points = {}
   self.facing, self.charging = 1, false
