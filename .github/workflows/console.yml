@@ -1,0 +1,87 @@
+# Builds a game's Xbox 360 console folder (default.xex, engine, shaders, WAV audio) in the cloud
+# and publishes it as a downloadable artifact. Everything is built from open sources (xsdk,
+# glslang-xenon, LuaJIT): no Microsoft SDK. See docs/CLOUD_BUILD.md.
+#
+# Manual run: Actions tab > "Console build" > Run workflow (pick the game folder).
+# Pushes to main build examples/rooms. Manual runs need this file on main; until then, pushes to
+# the branch that adds it also build. The repository is private: runs use its Actions minutes,
+# and the first run spends about an hour on the toolchain (cached afterwards, and shared with
+# every branch once it is built on main).
+name: Console build
+
+on:
+  workflow_dispatch:
+    inputs:
+      game:
+        description: "Game folder (with game.lua)"
+        required: true
+        default: "examples/rooms"
+      release:
+        description: "Release build of the runtime (short log)"
+        type: boolean
+        default: false
+  push:
+    branches: [main, claude/project-thread-a9ws4f]
+    paths-ignore: ["**.md", "docs/**"]
+
+concurrency:
+  group: console-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    env:
+      CI_CACHE: ${{ github.workspace }}/.ci-cache
+      GAME: ${{ inputs.game || 'examples/rooms' }}
+      L360_RELEASE: ${{ inputs.release && 'ON' || 'OFF' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q build-essential bison flex texinfo libgmp-dev libmpfr-dev \
+            libmpc-dev curl xz-utils patch gcc-multilib g++-multilib cmake ninja-build git \
+            python3 luajit ffmpeg
+
+      # The toolchain (GCC 15 for powerpc-xsdk-elf) takes about an hour to build on a runner;
+      # it is cached by the xsdk commit and the scripts that build it.
+      - name: Restore toolchain and xost
+        id: tools
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ${{ env.CI_CACHE }}/xsdk-gcc
+            ${{ env.CI_CACHE }}/xost-linux
+          key: xsdk-tools-${{ runner.os }}-${{ hashFiles('runtime/XSDK_VERSION', 'tools/shaders/xost_windows/build.py', 'tools/ci/build_console.sh') }}
+          restore-keys: xsdk-tools-${{ runner.os }}-
+
+      - name: Build toolchain, xost and xsdk
+        run: bash tools/ci/build_console.sh --tools-only
+
+      # Saved right away, so a later failure does not throw away an hour of toolchain build.
+      - name: Save toolchain and xost
+        if: steps.tools.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ${{ env.CI_CACHE }}/xsdk-gcc
+            ${{ env.CI_CACHE }}/xost-linux
+          key: xsdk-tools-${{ runner.os }}-${{ hashFiles('runtime/XSDK_VERSION', 'tools/shaders/xost_windows/build.py', 'tools/ci/build_console.sh') }}
+
+      - name: Build the .xex, shaders and console package
+        id: build
+        run: bash tools/ci/build_console.sh "$GAME" dist
+
+      - name: Upload the console folder
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.build.outputs.identity }}-console
+          path: ${{ steps.build.outputs.folder }}
+          if-no-files-found: error
+          retention-days: 30
