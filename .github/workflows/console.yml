@@ -3,10 +3,9 @@
 # glslang-xenon, LuaJIT): no Microsoft SDK. See docs/CLOUD_BUILD.md.
 #
 # Manual run: Actions tab > "Console build" > Run workflow (pick the game folder).
-# Pushes to main build examples/rooms. Manual runs need this file on main; until then, pushes to
-# the branch that adds it also build. The repository is private: runs use its Actions minutes,
-# and the first run spends about an hour on the toolchain (cached afterwards, and shared with
-# every branch once it is built on main).
+# Pushes to main build examples/rooms. The repository is private: runs use its Actions minutes,
+# and the first run on main spends about an hour on the toolchain (cached afterwards, and shared
+# with every branch).
 name: Console build
 
 on:
@@ -21,7 +20,7 @@ on:
         type: boolean
         default: false
   push:
-    branches: [main, claude/project-thread-a9ws4f]
+    branches: [main]
     paths-ignore: ["**.md", "docs/**"]
 
 concurrency:

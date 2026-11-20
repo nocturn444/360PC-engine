@@ -18,10 +18,8 @@ The header of the script lists the packages it needs. `CI_CACHE` (default
 ## Running it
 
 - **Manual run:** Actions tab, "Console build", "Run workflow": pick the branch, the game
-  folder (default `examples/rooms`) and whether it is a release build. GitHub only offers this
-  once the workflow file is on `main`.
-- **On push:** pushes to `main` (and, until it is merged, to the branch that added the workflow)
-  build `examples/rooms`. Changes to Markdown and `docs/` alone do not start a build.
+  folder (default `examples/rooms`) and whether it is a release build.
+- **On push:** pushes to `main` build `examples/rooms`. Changes to Markdown and `docs/` alone do not start a build.
 
 The result is an artifact named `<identity>-console` on the run's page (kept 30 days): a zip
 of the folder that goes to `Hdd1:/Games/<identity>/` on the console, `default.xex` included.
@@ -31,8 +29,8 @@ of the folder that goes to `Hdd1:/Games/<identity>/` on the console, `default.xe
 The first run builds the toolchain: about an hour on GitHub's 4-core runner. It is cached
 (`actions/cache`, keyed by `runtime/XSDK_VERSION` and the build scripts) and saved as soon as
 it is built, so later runs take a few minutes. GitHub shares caches from `main` with every
-branch, but not between sibling branches: until the workflow is on `main`, each branch builds
-the toolchain once. The repository is private, so runs count against the account's Actions
+branch, but not between sibling branches: a branch reuses the toolchain once `main` has built
+it. The repository is private, so runs count against the account's Actions
 minutes.
 
 ## Getting it onto the console

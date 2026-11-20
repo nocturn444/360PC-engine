@@ -4,7 +4,7 @@ rem The same safe update as deploy_console.bat: local changes are never touched.
 rem
 rem The branch to follow. A pull can change this file, so it runs from a copy in %TEMP%.
 setlocal EnableExtensions EnableDelayedExpansion
-set "BRANCH=claude/project-thread-e7o1dl"
+set "BRANCH=main"
 set "DEFAULT_GAME=rooms"
 
 if /i not "%~1"=="--from-temp" (
