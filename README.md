@@ -63,6 +63,8 @@ Anything game-specific goes in the game's configuration.
 
 ## Contributing
 
+AI agents: read [AGENTS.md](AGENTS.md) first.
+
 `main` holds what has been built and tested on the console. Work happens in
 branches, one pull request per objective. The owner tests on the console and
 decides every merge to `main`.
