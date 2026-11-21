@@ -69,7 +69,26 @@ class TestInstall(InstallCase):
         self.assertEqual(stats["target"], "Hdd1:/Games/my_game/")
         self.assertEqual(self.ftp.changes()[-1], "STOR " + package.MANIFEST)       # the manifest goes last
         self.assertIn("CONNECT 192.168.0.20:21", self.ftp.commands)
+        self.assertNotIn("LIST", self.ftp.commands)       # Aurora's LIST hangs on an empty folder
         self.assertTrue(self.ftp.closed)
+
+    def test_safe_mode_reconnects_per_file(self):
+        root = self.ftp.root
+        connections = []
+
+        def factory():
+            ftp = FakeFTP(root=root)
+            connections.append(ftp)
+            return ftp
+
+        stats = install_ftp.install(self.folder, host="192.168.0.20", log=self.lines.append,
+            ftp_factory=factory, safe=True)
+        self.assertEqual(stats["uploaded"], len(self.files) + 1)
+        self.assertGreaterEqual(len(connections), len(self.files) + 2)     # the first and one per file
+        game = self.remote("Hdd1", "Games", "my_game")
+        self.assertEqual(game["engine"]["init.lua"], self.files["engine/init.lua"])
+        self.assertEqual(game["default.xex"], self.files["default.xex"])
+        self.assertEqual(game[package.MANIFEST], (self.folder / package.MANIFEST).read_bytes())
 
     def test_second_install_uploads_nothing(self):
         self.install()
@@ -167,12 +186,12 @@ class TestInstall(InstallCase):
         self.assertEqual(p("01-01-00  12:00AM                 77 main.lua"), ("main.lua", 77, False))
         self.assertEqual(p("main.lua"), ("main.lua", None, None))
         self.assertIsNone(p("  "))
-        # a server that only gives names: sizes are unknown, so everything is uploaded again
+        # a server that only gives names: SIZE still gives the sizes, so only the manifest goes
         self.install()
         self.ftp.list_style = "names"
         del self.remote("Hdd1", "Games", "my_game")[package.MANIFEST]
         self.ftp.commands.clear()
-        self.assertEqual(self.install()["uploaded"], len(self.files) + 1)
+        self.assertEqual(self.install()["uploaded"], 1)
 
     def test_errors(self):
         with self.assertRaises(install_ftp.InstallError) as e:

@@ -33,6 +33,27 @@ https://love2d.org to get LOVE 11.5), lists the games and starts the chosen one 
 `level_editor.bat` opens the level editor with LOVE ([LEVEL_EDITOR.md](LEVEL_EDITOR.md)). It does
 not update the repository.
 
+## From Android or Termux (cloud build)
+
+A phone cannot build the `.xex` locally. `tools/deploy_android.py` uses the console build that
+runs on GitHub Actions instead:
+
+```sh
+python3 tools/deploy_android.py examples/rooms
+python3 tools/deploy_android.py examples/rooms --branch my/branch
+```
+
+It pulls the branch (`git pull --ff-only`; a different `--branch` is fetched and checked out
+first), finds the newest successful "Console build" run of that branch, downloads its
+`<identity>-console` artifact and uploads it with `tools/install_ftp.py` in safe mode (one
+connection per file and a size check, because some Aurora FTP servers mix consecutive transfers).
+If the newest successful build is of an older commit than the branch (a newer run is still going,
+or it failed), it prints a WARNING with both commits and installs the older build. `deploy.py`
+uploads in the same safe mode by default. It uses the same untracked `deploy.local.ini` as `deploy.py`. `--no-pull`, `--no-upload`,
+`--force` and `--dry-run` work as expected. It needs Python 3, `git` and the GitHub CLI logged in
+(`gh auth login`). The workflow must have run on that branch: push it and run "Console build",
+or let a push to `main` build it.
+
 ## One-time setup
 
 1. Do the setup of [BUILDING.md](../BUILDING.md): WSL with xsdk, its GCC and LuaJIT for xsdk

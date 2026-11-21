@@ -106,6 +106,14 @@ class FakeFTP:
             raise ftplib.error_perm("550 is a folder")
         callback(value)
 
+    def size(self, name):
+        self.commands.append("SIZE " + name)
+        node = self._dir()
+        value = node[self._key(node, name)]
+        if isinstance(value, dict):
+            raise ftplib.error_perm("550 is a folder")
+        return len(value)
+
     def sendcmd(self, cmd):
         self.commands.append(cmd)
         if cmd == "CDUP":

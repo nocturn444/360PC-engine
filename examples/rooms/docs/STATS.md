@@ -1,7 +1,10 @@
 # Stats and shield
 
+> **Pending the owner's confirmation.** The design and the numbers here were chosen by an AI agent
+> as examples. They are not decisions yet (see AGENTS.md, section 9).
+
 The rooms prototype has six run stats and a shield resource. The numeric engine is
-[`engine.modifiers`](ENGINE.md#engine-modifiers); the game supplies the schema in
+[`engine.modifiers`](../../../docs/ENGINE.md#engine-modifiers); the game supplies the schema in
 `examples/rooms/rooms_stats.lua`, so a new stat is data plus the code that reads it. Nothing here
 is required by `engine/`, and the console uses the same plain Lua.
 

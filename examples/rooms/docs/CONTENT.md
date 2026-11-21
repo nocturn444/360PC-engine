@@ -1,7 +1,10 @@
 # Mutations, consumables and pools
 
+> **Pending the owner's confirmation.** The design and the numbers here were chosen by an AI agent
+> as examples. They are not decisions yet (see AGENTS.md, section 9).
+
 The run's content is built on the generic weighted pool
-[`engine.modules.items`](../engine/modules/items/README.md). The game side is
+[`engine.modules.items`](../../../engine/modules/items/README.md). The game side is
 `examples/rooms/rooms_content.lua`; the data is `rooms_mutations.lua` and
 `rooms_consumables.lua`.
 
