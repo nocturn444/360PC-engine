@@ -18,8 +18,10 @@ local consumable_defs = require("rooms_consumables")
 
 local M = {}
 
--- The roll of each source, before luck (see M.drop)
-M.chances = { mob = 0.10, obstacle = 0.35, machine = 0.35, room_clear = 0.20 }
+-- The roll of each source, before luck (see M.drop). A mob also has a small separate roll for
+-- an optional key (the super treasure room), so it does not replace the heart/virus roll.
+M.chances = { mob = 0.10, obstacle = 0.35, machine = 0.35, room_clear = 0.20,
+  mob_bonus_key = 0.05 }
 
 -- The chance a drop of a source happens: baseline, and the effect of one point of luck.
 local function normalize_mutation(e)
@@ -43,6 +45,12 @@ for i = 1, #consumable_defs.entries do
   M.consumables[i] = e
   if e.kind == "heart" then M.hearts[#M.hearts + 1] = e
   elseif e.kind == "virus" then M.virus[#M.virus + 1] = e end
+end
+
+-- Optional keys (not the per-floor `key` ability), kept apart from the consumables
+M.bonus_keys = {}
+for i = 1, #consumable_defs.bonus_keys do
+  M.bonus_keys[i] = consumable_defs.bonus_keys[i]
 end
 
 local function in_list(list, value)
@@ -148,15 +156,23 @@ function M.draw_mutation(pool, rng, ctx) return pool:draw(rng, with_hooks(ctx)) 
 function M.draw_heart(pool, rng, ctx) return pool:draw(rng, with_hooks(ctx)) end
 function M.draw_virus(pool, rng, ctx) return pool:draw(rng, with_hooks(ctx)) end
 
+-- M.draw_bonus_key(pool, rng, ctx): pool:draw with the hooks. `pool` may also be the pools
+-- table, so a kill can call it with either pools or pools.bonus_keys.
+function M.draw_bonus_key(pool, rng, ctx)
+  if pool.draw == nil and pool.bonus_keys ~= nil then pool = pool.bonus_keys end
+  return pool:draw(rng, with_hooks(ctx))
+end
+
 -- M.take(pool, entry): the slime got it (counts against max for uniques)
 function M.take(pool, entry) return pool:take(entry) end
 
--- The pools of a run: mutations, and consumables split by kind
+-- The pools of a run: mutations, consumables split by kind, and the optional keys
 function M.new_pools()
   return {
     mutations = items.pool.new(M.mutations),
     hearts = items.pool.new(M.hearts),
     virus = items.pool.new(M.virus),
+    bonus_keys = items.pool.new(M.bonus_keys),
   }
 end
 
