@@ -1,8 +1,11 @@
 # Virus, pickups and machines
 
+> **Pending the owner's confirmation.** The design and the numbers here were chosen by an AI agent
+> as examples. They are not decisions yet (see AGENTS.md, section 9).
+
 Virus is the run's currency. It resets with a new run, survives floors, and is spent at machines
 that have `accepts_money = true`. The wallet is the generic module
-[`engine.modules.wallet`](../engine/modules/wallet/README.md); the game data is
+[`engine.modules.wallet`](../../../engine/modules/wallet/README.md); the game data is
 `examples/rooms/rooms_pickups.lua`, `rooms_obstacles.lua` and `rooms_machines.lua`.
 
 ## Wallet

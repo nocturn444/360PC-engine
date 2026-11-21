@@ -23,21 +23,24 @@ by room with `engine/modules/rooms`, by the soft-body slime of [examples/slime](
 
 ## Stats and mutations
 
+Pending the owner's confirmation: the stats, the virus currency, the shield, the machines and the
+cosmetics below are example designs chosen by an AI agent, not decisions yet (AGENTS.md, section 9).
+
 The six run stats are `luck`, `jump`, `speed`, `damage`, `shield` and `health`
-(`rooms_stats.lua`, [docs/STATS.md](../../docs/STATS.md)). Bases: luck 5 (0..10), jump and speed
+(`rooms_stats.lua`, [docs/STATS.md](docs/STATS.md)). Bases: luck 5 (0..10), jump and speed
 multipliers 1.0, damage 1, shield capacity 0, health 5. Jump and speed scale movement; damage
 scales the three attacks (`power` in `rooms_attacks.lua`); health is the maximum, not the current
 health.
 
 The treasure room holds exactly one mutation, drawn for the floor and the current build from the
 content pools (`rooms_content.lua`, `rooms_mutations.lua`,
-[docs/CONTENT.md](../../docs/CONTENT.md)). It is not a choice: touching it is enough. Mutations
+[docs/CONTENT.md](docs/CONTENT.md)). It is not a choice: touching it is enough. Mutations
 are unique or stackable, can require a build tag, can gain weight from synergy tags, and can be
 restricted by biome, floor, room or mob. The three example mutations are a jump/antenna change, a
 shield/shell change and a speed/legs change; they are placeholders to be replaced.
 
 Every mutation also changes the slime's look (`rooms_look.lua`,
-[docs/COSMETICS.md](../../docs/COSMETICS.md)): colour, eyes, shape or new limbs. A mutation with
+[docs/COSMETICS.md](docs/COSMETICS.md)): colour, eyes, shape or new limbs. A mutation with
 `body` changes the soft body's rest shape, so its hitbox follows; one without it only changes the
 drawing. The legs example is wider and faster; it does not add a new walking model.
 
@@ -55,8 +58,8 @@ and after `5 + 2.5 * capacity` seconds without a hit it refills. The HUD shows `
   broken while the room exists and can drop virus.
 - The shop template has a test healer (`rooms_machines.lua`): `accepts_money = true`, 5 virus,
   one use, fills the health. Each machine has its own state. Interact with it when close.
-- Pools, drops and pickups are described in [docs/ECONOMY.md](../../docs/ECONOMY.md) and
-  [docs/CONTENT.md](../../docs/CONTENT.md). The shop stock is deliberately not implemented yet.
+- Pools, drops and pickups are described in [docs/ECONOMY.md](docs/ECONOMY.md) and
+  [docs/CONTENT.md](docs/CONTENT.md). The shop stock is deliberately not implemented yet.
 
 ## Rooms and movement
 

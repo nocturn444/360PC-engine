@@ -27,6 +27,9 @@ All notable changes to 360PC-Engine. The format follows
   attack, stomps, health and respawn.
 - `tools/deploy.py`: build, shaders, package, FTP upload and optional XBDM launch in one
   command, with the console's settings in an untracked `deploy.local.ini` (docs/DEPLOY.md).
+- `tools/deploy_android.py`: from a phone or tablet that cannot build the `.xex`, pulls the
+  branch, downloads the newest successful "Console build" artifact with the GitHub CLI (`gh`)
+  and uploads it with `install_ftp.py`, sending only changed files.
 - `combat.attacks`: attacks as data on top of a combat world: melee sweeps through a list of
   boxes (arcs, stabs, areas), ranged shots (fans, gravity, piercing, walls, lifetime) and
   explosive bombs (placed or thrown, bounces, fuse or contact, radius with falloff and radial
@@ -61,6 +64,7 @@ All notable changes to 360PC-Engine. The format follows
   boss can go far from the start (`boss_distance`). A run of floors grows from floor to floor
   (rooms, special rooms, templates by floor). `examples/rooms` is now a ten-floor run with
   stairs after each boss.
+- `run_pc.bat`: double-click to update the repository and open a game on the PC with LOVE.
 - `engine/modules/wallet`: a small bag of named integer currencies for a run (`virus` in the
   example), with add/can/spend, no negative amounts, and plain-data state for a run save.
 - `examples/rooms`: six run stats (`luck`, `jump`, `speed`, `damage`, `shield`, `health`) built
@@ -74,7 +78,8 @@ All notable changes to 360PC-Engine. The format follows
   action, one use per machine).
 - `examples/rooms`: cosmetic mutations (colours, eyes, shape, limbs) and optional physical rest
   shapes; `softbody` gains `Body:set_rest_shape` for mutations that change the body and hitbox.
-- `docs/STATS.md`, `docs/CONTENT.md`, `docs/ECONOMY.md` and `docs/COSMETICS.md`.
+- `examples/rooms/docs/`: `STATS.md`, `CONTENT.md`, `ECONOMY.md` and `COSMETICS.md` (the prototype's
+  systems; the numbers in them are examples pending the owner's design decisions).
 
 ### Changed
 - `engine.pixel` uses `"direct"` mode by default on PC too, so PC shows what the console shows.
@@ -86,6 +91,11 @@ All notable changes to 360PC-Engine. The format follows
 - `examples/rooms` no longer uses `rooms_items.lua`: the treasure room holds one mutation from
   `rooms_content.lua`, and the old item bonuses were replaced by the stats system. The run's
   treasure draws use the new named streams, so they differ from the previous build.
+- `tools/install_ftp.py`: a first install no longer runs `LIST` on an empty folder (Aurora's
+  `LIST` hangs there); it compares sizes with `SIZE` instead. `--safe` opens a fresh connection
+  for every file and checks its size, for Aurora FTP servers that mix consecutive transfers. This
+  safe mode is now the default (also for `deploy.py`); `--fast` keeps one connection.
+  `tools/deploy_android.py` warns when the build it installs is older than the branch's last commit.
 
 ## [0.1.0] - not tagged yet
 

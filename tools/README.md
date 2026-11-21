@@ -36,7 +36,10 @@ Build, packaging and validation tools. The whole path from a new game to the con
   `Hdd1:/Games/<folder name>/`. Host, port, user, password and target come from arguments or
   `X360_FTP_*` variables. Uploads only changed files (size, and CRC-32 against the manifest of
   the last install), never deletes anything, never touches saves or the log; `--dry-run`,
-  `--force`. `python tools/install_ftp.py dist/<identity> --host <console IP>`.
+  `--force`. By default every file gets a fresh connection and its size is checked on the console
+  (some Aurora FTP servers mix consecutive transfers); `--fast` keeps one connection instead.
+  `deploy_android.py` warns when the build it installs is older than the branch's last commit.
+  `python tools/install_ftp.py dist/<identity> --host <console IP>`.
 - `level_editor/`: an interactive level editor made with LÖVE. It edits a level file's rooms
   (collision, doors, the item, entities, room fields and size), checks them and play-tests a
   room. `love tools/level_editor levels/world.lvl`, or `level_editor.bat` on Windows
@@ -51,6 +54,13 @@ Build, packaging and validation tools. The whole path from a new game to the con
   Windows), compiles the shaders, packages, uploads over FTP and optionally starts the game
   through XBDM. Settings in an untracked `deploy.local.ini` (`deploy.example.ini` shows every
   key). `python tools/deploy.py <game>`; see [../docs/DEPLOY.md](../docs/DEPLOY.md).
+- `deploy_android.py`: for a phone or tablet that cannot build the `.xex`. It pulls the branch,
+  finds the newest successful "Console build" run on GitHub, downloads its
+  `<identity>-console` artifact with the GitHub CLI (`gh`) and uploads it with
+  `install_ftp.py`, using the same `deploy.local.ini`. `python3 tools/deploy_android.py <game>
+  [--branch NAME] [--no-pull] [--no-upload] [--force] [--dry-run]`; needs `gh auth login`.
+  See [../docs/CLOUD_BUILD.md](../docs/CLOUD_BUILD.md) and
+  [../docs/DEPLOY.md](../docs/DEPLOY.md).
 - `seed_validator.lua`: bulk seed validation for games with procedural levels
   (`engine/modules/procgen`). `luajit tools/seed_validator.lua <game> <spec module> --count N
   [--out level_hashes.txt]` generates N seeds from the spec the game provides and reports

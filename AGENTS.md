@@ -33,13 +33,13 @@ No emojis in text.
 | `engine/` | Generic engine layer in Lua: state, timestep, input, camera, pixel, pixelgrid, layers, entity, modifiers, rng, save, level, ui, text, audio, tune, anim, debug. [engine/README.md](engine/README.md), reference in [docs/ENGINE.md](docs/ENGINE.md). |
 | `engine/modules/` | Optional genre modules: `platformer`, `combat` (incl. `attacks`), `procgen` (graph, templates, roomtypes, floors, biomes, seeds, reach), `items`, `wallet`, `softbody`, `rooms`. [engine/modules/README.md](engine/modules/README.md) |
 | `lib/` | Third-party Lua libraries (`anim8`, `bump`), pinned, each with its LICENSE. |
-| `tools/` | Packaging, FTP install, deploy, shader build, LDtk converter, level editor, seed validator, `compat_check`, `check_libs`, `gen_api_subset`. [tools/README.md](tools/README.md) |
+| `tools/` | Packaging, FTP install, deploy (also `deploy_android.py`, from a phone), shader build, LDtk converter, level editor, seed validator, `compat_check`, `check_libs`, `gen_api_subset`. [tools/README.md](tools/README.md) |
 | `tools/ci/build_console.sh` | The whole console build on Ubuntu (used by CI). |
 | `template/` | Minimal project to start a new game. |
-| `examples/` | `engine_demo`, `perf_platformer` (performance test), `slime` (soft body), `rooms` (generated map, enemies, attacks, floors, biomes: the game prototype). |
+| `examples/` | `engine_demo`, `perf_platformer` (performance test), `slime` (soft body), `rooms` (generated map, enemies, attacks, floors, biomes, stats, content, economy, cosmetics: the game prototype; its own docs are in `examples/rooms/docs/`). |
 | `tests/` | PC tests and console checks. [tests/README.md](tests/README.md) |
 | `toolchain/` | Scripts and patch to build LuaJIT for xsdk. |
-| `docs/` | Documentation: `ROADMAP`, `ENGINE`, `API_SUBSET`, `GAME_CONFIG`, `LEVELS`, `LEVEL_EDITOR`, `SHADERS`, `NEW_GAME`, `DEPLOY`, `CLOUD_BUILD`, `VERSIONING`, `STATS`, `CONTENT`, `ECONOMY`, `COSMETICS`. |
+| `docs/` | Documentation: `ROADMAP`, `ENGINE`, `API_SUBSET`, `GAME_CONFIG`, `LEVELS`, `LEVEL_EDITOR`, `SHADERS`, `NEW_GAME`, `DEPLOY`, `CLOUD_BUILD`, `VERSIONING`. Engine docs only: a game's own docs go in its folder. |
 
 ## 3. Hard rules (do not break)
 
@@ -145,8 +145,11 @@ the console will generate different levels.
   needlessly.
 - The result is the artifact `<identity>-console` (zip of the game folder with
   `default.xex`). The owner downloads it on his phone, unzips it and uploads it with an FTP app
-  over home Wi-Fi to `Hdd1:/Games/<identity>/`, then launches it from Aurora. The cloud cannot
-  reach the console's FTP.
+  over home Wi-Fi to `Hdd1:/Games/<identity>/`, then launches it from Aurora. Or, from Termux on
+  the phone, `python3 tools/deploy_android.py examples/rooms` downloads the newest build and
+  uploads it. Aurora's FTP can mix consecutive transfers, so `tools/install_ftp.py` uses one
+  connection per file and checks sizes by default (`--fast` for one connection). The cloud
+  cannot reach the console's FTP.
 - The console log is `default.log` in the game folder; ask the owner for it when debugging.
 - Local alternatives (when a PC is available): [BUILDING.md](BUILDING.md),
   [docs/DEPLOY.md](docs/DEPLOY.md) (`tools/deploy.py`), `deploy_console.bat`.
@@ -179,6 +182,10 @@ the console will generate different levels.
 
 - The real attacks, enemies and items of the game (current ones in `examples/rooms/` are
   examples).
+- The run stats (`luck`, `jump`, `speed`, `damage`, `shield`, `health`), the `virus` currency,
+  the shield recharge (`5 + 2.5 * capacity` s), a full-health heart giving virus, the treasure
+  room not healing, the healer machine and the cosmetic mutations in `examples/rooms/` were
+  chosen by an agent as examples (2026-11-21): not confirmed by the owner yet.
 - What scales per floor besides size (enemies, ability locks, rooms) and what the shop does.
 - How the own level editor relates to LDtk long term (painting tiles is not done yet).
 - Whether WAV size is a problem on the console.

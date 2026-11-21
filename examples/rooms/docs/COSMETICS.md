@@ -1,5 +1,8 @@
 # The Blob's look
 
+> **Pending the owner's confirmation.** The design and the numbers here were chosen by an AI agent
+> as examples. They are not decisions yet (see AGENTS.md, section 9).
+
 Every mutation can change the slime's appearance, and some change its body. The data lives in the
 mutation entries (`look` and `body`); `examples/rooms/rooms_look.lua` turns the run's acquired
 entries into one look and draws it with `engine.pixelgrid`. Nothing is allocated in the per-frame
