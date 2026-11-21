@@ -27,6 +27,9 @@ All notable changes to 360PC-Engine. The format follows
   attack, stomps, health and respawn.
 - `tools/deploy.py`: build, shaders, package, FTP upload and optional XBDM launch in one
   command, with the console's settings in an untracked `deploy.local.ini` (docs/DEPLOY.md).
+- `tools/deploy_android.py`: from a phone or tablet that cannot build the `.xex`, pulls the
+  branch, downloads the newest successful "Console build" artifact with the GitHub CLI (`gh`)
+  and uploads it with `install_ftp.py`, sending only changed files.
 - `combat.attacks`: attacks as data on top of a combat world: melee sweeps through a list of
   boxes (arcs, stabs, areas), ranged shots (fans, gravity, piercing, walls, lifetime) and
   explosive bombs (placed or thrown, bounces, fuse or contact, radius with falloff and radial
