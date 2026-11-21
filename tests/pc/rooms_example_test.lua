@@ -17,7 +17,7 @@ end
 -- 1. Files and config
 for _, name in ipairs({ "game.lua", "conf.lua", "main.lua", "rooms_play.lua", "rooms_data.lua", "rooms_biomes.lua",
   "rooms_stats.lua", "rooms_content.lua", "rooms_mutations.lua", "rooms_consumables.lua", "rooms_look.lua",
-  "rooms_pickups.lua", "rooms_obstacles.lua", "rooms_machines.lua", "README.md" }) do
+  "rooms_pickups.lua", "rooms_obstacles.lua", "rooms_machines.lua", "rooms_pause.lua", "README.md" }) do
   check(read("examples/rooms/" .. name), "examples/rooms/" .. name .. " exists")
 end
 local Config = dofile("runtime/lua/config.lua")
@@ -446,10 +446,50 @@ if mb then
   check(not play.sealed and play.fight:alive() == 0, "and opens them when it is cleared")
 end
 
+-- the pause menu: Escape pauses (the play state stops updating) and Resume pops it
+local pause = require("rooms_pause")
+check(engine.states:get("pause") == pause, "the pause state is registered")
+if play.fade:busy() then frames(30) end
+local updates = 0
+local real_update = play.update
+play.update = function(self, dt) updates = updates + 1; return real_update(self, dt) end
+F.keys.escape = true; love.update(1 / 60); F.keys.escape = nil
+check(engine.states:top() == pause, "Escape pushes the pause state")
+frames(10)
+check(updates == 0, "the play state does not update while paused")
+F.keys["return"] = true; love.update(1 / 60); F.keys["return"] = nil
+check(engine.states:top() == play, "Resume pops the pause state")
+local before = updates
+frames(2)
+check(updates > before, "the play state updates again")
+play.update = real_update
+
+-- losing the pad in use auto-pauses with reason "controller"
+local pad = F.add_pad()
+love.joystickadded(pad)
+love.gamepadpressed(pad, "a")
+check(engine.controls.joystick == pad, "the pad is the one in use")
+for i = #F.pads, 1, -1 do if F.pads[i] == pad then table.remove(F.pads, i) end end
+love.joystickremoved(pad)
+check(engine.states:top() == pause and pause.reason == "controller", "losing the pad in use auto-pauses")
+F.keys["return"] = true; love.update(1 / 60); F.keys["return"] = nil
+check(engine.states:top() == play, "Resume after the controller was lost")
+
+-- Restart run: a confirmation, then Yes starts the run again at floor 1
+play.new_floor(play, 3)
+play:load_room(play.nav:enter(play.map.start))
+check(play.floor == 3, "a floor to leave behind")
+F.keys.p = true; love.update(1 / 60); F.keys.p = nil
+check(engine.states:top() == pause, "P pauses too")
+F.keys.down = true; love.update(1 / 60); F.keys.down = nil
+F.keys["return"] = true; love.update(1 / 60); F.keys["return"] = nil
+check(play.floor == 3 and engine.states:top() == pause, "Restart run asks first")
+F.keys.left = true; love.update(1 / 60); F.keys.left = nil
+F.keys["return"] = true; love.update(1 / 60); F.keys["return"] = nil
+check(engine.states:top() == play and play.floor == 1, "Yes restarts the run at floor 1")
+
 -- the room is drawn
 F.reset_calls(); love.draw()
 check(#F.find("rectangle") >= 5 and play.pixels.count > 150, "the room, the slime and the minimap are drawn")
-F.keys.escape = true; love.update(1 / 60)
-check(F.quit == true, "quit leaves the game")
 
 print(string.format("OK: %d checks; the rooms example boots and walks its map", checks))
