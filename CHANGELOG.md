@@ -61,7 +61,20 @@ All notable changes to 360PC-Engine. The format follows
   boss can go far from the start (`boss_distance`). A run of floors grows from floor to floor
   (rooms, special rooms, templates by floor). `examples/rooms` is now a ten-floor run with
   stairs after each boss.
-- `run_pc.bat`: double-click to update the repository and open a game on the PC with LOVE.
+- `engine/modules/wallet`: a small bag of named integer currencies for a run (`virus` in the
+  example), with add/can/spend, no negative amounts, and plain-data state for a run save.
+- `examples/rooms`: six run stats (`luck`, `jump`, `speed`, `damage`, `shield`, `health`) built
+  on `engine.modifiers`; attacks scale with `damage`; the shield absorbs damage and refills after
+  `5 + 2.5 * capacity` seconds without a hit; boss/miniboss clears give a mutation.
+- `examples/rooms`: content pools for mutations and consumables with source, mob, biome, floor,
+  room and build filters, synergy weights, unique/stackable entries, deterministic per-room and
+  per-enemy streams, and luck on drop chances.
+- `examples/rooms`: a normal heart, virus pickups, breakable crates that can drop virus, a room
+  clear virus chance, and a test machine with `accepts_money` (a healer bought with the interact
+  action, one use per machine).
+- `examples/rooms`: cosmetic mutations (colours, eyes, shape, limbs) and optional physical rest
+  shapes; `softbody` gains `Body:set_rest_shape` for mutations that change the body and hitbox.
+- `docs/STATS.md`, `docs/CONTENT.md`, `docs/ECONOMY.md` and `docs/COSMETICS.md`.
 
 ### Changed
 - `engine.pixel` uses `"direct"` mode by default on PC too, so PC shows what the console shows.
@@ -70,6 +83,9 @@ All notable changes to 360PC-Engine. The format follows
   pass `branching = 0` for the old uniform layout. The known answers in
   `tests/console/procgen_check.lua`, the engine tests and the level hash procedure were updated.
 - The camera's `snap` is on by default.
+- `examples/rooms` no longer uses `rooms_items.lua`: the treasure room holds one mutation from
+  `rooms_content.lua`, and the old item bonuses were replaced by the stats system. The run's
+  treasure draws use the new named streams, so they differ from the previous build.
 
 ## [0.1.0] - not tagged yet
 

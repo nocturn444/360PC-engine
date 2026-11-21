@@ -7,6 +7,8 @@
 -- shut until the player has its ability.
 --
 -- enemies: the tiles enemies stand on at first (the tile above the floor), read by the play state.
+-- obstacles: breakable props ({ tx, ty, kind = "crate" }); pickups: static hearts/virus
+-- ({ tx, ty, kind, amount }); machine: a machine instance ({ tx, ty, kind = "healer" }).
 --
 -- Levels made in LDtk (engine.level) give templates of the same shape; these stay in code so the
 -- example needs no level file.
@@ -90,7 +92,8 @@ local VERTICAL_ROWS = {
 -- A new list each call: procgen.templates fills in defaults in place
 function M.templates()
   local list = {
-    { id = "start", type = "start", exits = lr({ "left" }, { "right" }), spawn = { tx = 10, ty = 10 }, rows = {
+    { id = "start", type = "start", exits = lr({ "left" }, { "right" }), spawn = { tx = 10, ty = 10 },
+      pickups = { { tx = 5, ty = 11, kind = "heart" }, { tx = 15, ty = 11, kind = "virus", amount = 2 } }, rows = {
       "####################",
       "#..................#",
       "#..................#",
@@ -104,7 +107,8 @@ function M.templates()
       "#..................#",
       "####################",
     } },
-    { id = "hall", weight = 3, exits = lr({ "left" }, { "right" }), enemies = { { tx = 7, ty = 11 }, { tx = 15, ty = 11 } }, rows = {
+    { id = "hall", weight = 3, exits = lr({ "left" }, { "right" }), enemies = { { tx = 7, ty = 11 }, { tx = 15, ty = 11 } },
+      obstacles = { { tx = 5, ty = 11, kind = "crate" } }, rows = {
       "####################",
       "#..................#",
       "#..................#",
@@ -118,7 +122,8 @@ function M.templates()
       "#..................#",
       "####################",
     } },
-    { id = "steps", weight = 2, exits = lr({ "left" }, { "right" }), enemies = { { tx = 16, ty = 11 } }, rows = {
+    { id = "steps", weight = 2, exits = lr({ "left" }, { "right" }), enemies = { { tx = 16, ty = 11 } },
+      obstacles = { { tx = 4, ty = 11, kind = "crate" } }, rows = {
       "####################",
       "#..................#",
       "#..................#",
@@ -220,13 +225,16 @@ function M.templates()
   for _, kind in ipairs({ "treasure", "shop", "miniboss" }) do
     for _, side in ipairs({ "left", "right" }) do
       list[#list + 1] = { id = kind .. "_" .. side:sub(1, 1), type = kind, exits = lr({ side }),
-        enemies = SPECIAL_ENEMIES[kind], rows = SPECIAL_ROWS[kind] }
+        enemies = SPECIAL_ENEMIES[kind], rows = SPECIAL_ROWS[kind],
+        machine = kind == "shop" and { tx = 10, ty = 11, kind = "healer" } or nil }
     end
     local enemies = kind == "miniboss" and VERTICAL_ENEMIES or nil
     list[#list + 1] = { id = kind .. "_u", type = kind, exits = { { side = "up" } },
-      enemies = enemies, rows = VERTICAL_ROWS }
+      enemies = enemies, rows = VERTICAL_ROWS,
+      machine = kind == "shop" and { tx = 10, ty = 11, kind = "healer" } or nil }
     list[#list + 1] = { id = kind .. "_d", type = kind,
-      exits = { { side = "down", tx = 7, ty = 11 } }, enemies = enemies, rows = VERTICAL_ROWS }
+      exits = { { side = "down", tx = 7, ty = 11 } }, enemies = enemies, rows = VERTICAL_ROWS,
+      machine = kind == "shop" and { tx = 10, ty = 11, kind = "healer" } or nil }
   end
   return list
 end

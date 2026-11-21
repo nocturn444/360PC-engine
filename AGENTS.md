@@ -31,7 +31,7 @@ No emojis in text.
 | `runtime/lua/` | The LÖVE layer that runs on the console (`boot.lua`, `config.lua`, `input.lua`, `save.lua`, `l360_gfx_stub.lua`). Shipped as `l360/` in the game folder. |
 | `runtime/shaders/` | The engine's own HLSL shaders. |
 | `engine/` | Generic engine layer in Lua: state, timestep, input, camera, pixel, pixelgrid, layers, entity, modifiers, rng, save, level, ui, text, audio, tune, anim, debug. [engine/README.md](engine/README.md), reference in [docs/ENGINE.md](docs/ENGINE.md). |
-| `engine/modules/` | Optional genre modules: `platformer`, `combat` (incl. `attacks`), `procgen` (graph, templates, roomtypes, floors, biomes, seeds, reach), `items`, `softbody`, `rooms`. [engine/modules/README.md](engine/modules/README.md) |
+| `engine/modules/` | Optional genre modules: `platformer`, `combat` (incl. `attacks`), `procgen` (graph, templates, roomtypes, floors, biomes, seeds, reach), `items`, `wallet`, `softbody`, `rooms`. [engine/modules/README.md](engine/modules/README.md) |
 | `lib/` | Third-party Lua libraries (`anim8`, `bump`), pinned, each with its LICENSE. |
 | `tools/` | Packaging, FTP install, deploy, shader build, LDtk converter, level editor, seed validator, `compat_check`, `check_libs`, `gen_api_subset`. [tools/README.md](tools/README.md) |
 | `tools/ci/build_console.sh` | The whole console build on Ubuntu (used by CI). |
@@ -39,7 +39,7 @@ No emojis in text.
 | `examples/` | `engine_demo`, `perf_platformer` (performance test), `slime` (soft body), `rooms` (generated map, enemies, attacks, floors, biomes: the game prototype). |
 | `tests/` | PC tests and console checks. [tests/README.md](tests/README.md) |
 | `toolchain/` | Scripts and patch to build LuaJIT for xsdk. |
-| `docs/` | Documentation: `ROADMAP`, `ENGINE`, `API_SUBSET`, `GAME_CONFIG`, `LEVELS`, `LEVEL_EDITOR`, `SHADERS`, `NEW_GAME`, `DEPLOY`, `CLOUD_BUILD`, `VERSIONING`. |
+| `docs/` | Documentation: `ROADMAP`, `ENGINE`, `API_SUBSET`, `GAME_CONFIG`, `LEVELS`, `LEVEL_EDITOR`, `SHADERS`, `NEW_GAME`, `DEPLOY`, `CLOUD_BUILD`, `VERSIONING`, `STATS`, `CONTENT`, `ECONOMY`, `COSMETICS`. |
 
 ## 3. Hard rules (do not break)
 

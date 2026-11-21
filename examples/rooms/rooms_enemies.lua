@@ -50,8 +50,9 @@ Fight.__index = Fight
 -- M.new(slime, grid, spots, opts): spots = { { x, y } ... } (the bottom centre of each enemy, room
 -- pixels); opts.boss (stronger enemies), opts.seed (their patrol pauses), opts.health (the
 -- slime's health carried over from the last room), opts.mode (the slime's attack, an index of
--- rooms_attacks), opts.on_slime_death; the biome's: opts.enemy_stats, opts.slime_stats
--- (combat.stats tables) and opts.color (the enemies' colour)
+-- rooms_attacks), opts.on_slime_death, opts.on_killed; the biome's: opts.enemy_stats,
+-- opts.slime_stats (a combat.stats table or a stat source), opts.slime_source/opts.slime_mods
+-- (the run's stats), opts.mob (the mob id of this room) and opts.color (the enemies' colour)
 function M.new(slime, grid, spots, opts)
   opts = opts or {}
   local self = setmetatable({ slime = slime, enemies = {}, stomps = 0, kills = 0, color = opts.color }, Fight)
@@ -59,28 +60,41 @@ function M.new(slime, grid, spots, opts)
   self.fight = combat.world.new()
   self.box = softbody.box(slime)
   local me = self
-  self.player = self.fight:fighter({ body = self.box, team = "player", params = opts.slime_stats or SLIME_STATS,
-    health = opts.health, on_hurt = function(_, hit) me.box:knock(hit) end,
+  local slime_stats = opts.slime_stats
+  local slime_source = opts.slime_source
+  if not slime_source and type(slime_stats) == "table" and type(slime_stats.get) == "function" then
+    slime_source = slime_stats
+  end
+  local slime_params = (not slime_source) and (slime_stats or SLIME_STATS) or nil
+  self.player = self.fight:fighter({ body = self.box, team = "player", stats = slime_source,
+    mods = opts.slime_mods, params = slime_params, health = opts.health,
+    on_hurt = function(_, hit) me.box:knock(hit) end,
     on_death = opts.on_slime_death })
   self.hurt = self.player:hurtbox({ w = 1, h = 1 })
-  self.stomp = self.player:hitbox({ w = 1, h = 6, damage = 1, knockback = 90, away = true, ky = -0.5 })
+  self.stomp = self.player:hitbox({ w = 1, h = 6, power = 1, knockback = 90, away = true, ky = -0.5 })
   -- the slime's attacks: shots and bombs stop at the room's solid tiles
   self.arsenal = combat.attacks.new(self.fight, { grid = grid, max_projectiles = 24 })
   self.attacks = {}
   for i = 1, #attack_configs do self.attacks[i] = self.arsenal:equip(self.player, attack_configs[i]) end
   self.mode = opts.mode or 1
+  self.on_killed = opts.on_killed
   self.fight.on_hit = function(hit)
-    if hit.killed and hit.target ~= me.player and hit.hitbox ~= me.stomp then me.kills = me.kills + 1 end
+    if hit.killed and hit.target ~= me.player and hit.hitbox ~= me.stomp then
+      me.kills = me.kills + 1
+    end
     if hit.hitbox == me.stomp then             -- a stomp landed: bounce off
       me.stomps = me.stomps + 1
       me.slime:set_velocity(nil, BOUNCE)
       if hit.killed then me.kills = me.kills + 1 end
     end
+    if hit.killed and hit.target ~= me.player and me.on_killed then
+      me.on_killed(hit.target.owner, hit)
+    end
   end
   local stream = rng.new(opts.seed or 1)
   for i = 1, #spots do
     local s = spots[i]
-    local agent = { target = self.box, rng = stream,
+    local agent = { target = self.box, rng = stream, index = i, mob = opts.mob,
       patrol_points = { { x = s.x - 40 }, { x = s.x + 40 } } }
     agent.body = platformer.controller.new(self.world, { x = s.x - W / 2, y = s.y - H, w = W, h = H,
       stats = setmetatable({ agent = agent }, EnemyStats), actions = { move_x = "move_x" } })

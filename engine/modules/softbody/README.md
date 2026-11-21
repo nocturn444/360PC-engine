@@ -50,6 +50,12 @@ end
 
 Every option is a field of the body and can change between steps (`slime.gravity = 0`).
 
+`radius`, `width` and `height` are the exception: changing those fields alone does not move the
+rest offsets or the spring lengths. Call `body:set_rest_shape({ width = 28 })` instead (any of
+the three keys, omitted ones keep their value). It rebuilds the rest ring in place, so a body
+acquired from a mutation can become a long slug, a tall one, or grow, and then settle into that
+shape. The points themselves are left where they are, so the change is a squash, not a teleport.
+
 ## Methods
 
 | Method | What it does |
@@ -58,6 +64,7 @@ Every option is a field of the body and can change between steps (`slime.gravity
 | `body:push(ax, ay)` | An acceleration for the next step only, in pixels / s^2 (call it every step to keep pushing). |
 | `body:impulse(vx, vy)` | A change of velocity for every point at the next step, in pixels / s (a jump). |
 | `body:set_velocity(vx, vy)` | Sets the mean velocity, keeping the wobble; nil keeps that axis. |
+| `body:set_rest_shape(opts)` | Changes the rest shape in place: `radius`, `width`, `height` (an omitted one keeps its value; 0 for width or height means `2 * radius`, as in `new`). Recomputes the rest offsets, the springs' rest lengths, `rest_length` and `rest_area`, without moving or resizing the points: the body then settles into the new shape. Allocates nothing. |
 | `softbody.box(body)` | A rectangle that follows the body for modules that think in boxes: `x, y, w, h, facing`. `box:sync()` after each step; `box:knock(hit)` turns a combat hit's knockback into the body's velocity (call it from the fighter's `on_hurt`). `examples/rooms` makes the slime a combat fighter with it. |
 | `body:move_to(x, y)` | Moves the centre there, keeping the velocity (a door, a respawn). |
 | `body:on_ground()`, `:on_wall()`, `:on_ceiling()` | Whether a point touched that kind of surface in the last step. `floor_count`, `wall_count`, `ceiling_count` give how many. |
