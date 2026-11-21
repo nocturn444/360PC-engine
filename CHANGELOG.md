@@ -82,6 +82,8 @@ All notable changes to 360PC-Engine. The format follows
   shapes; `softbody` gains `Body:set_rest_shape` for mutations that change the body and hitbox.
 - `examples/rooms/docs/`: `STATS.md`, `CONTENT.md`, `ECONOMY.md` and `COSMETICS.md` (the prototype's
   systems; the numbers in them are examples pending the owner's design decisions).
+- `examples/rooms`: `rooms_minimap.lua` draws the run's minimap from `nav:minimap()`, with a
+  white outline around the current room and data-driven pixel icons for the special room types.
 
 ### Changed
 - `engine.pixel` uses `"direct"` mode by default on PC too, so PC shows what the console shows.
