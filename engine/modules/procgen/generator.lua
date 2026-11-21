@@ -14,6 +14,11 @@
 --              is not "start", "boss" or an item room, by its weight.
 --   loops      true (default): neighbour rooms of the same zone whose exits face each other are
 --              joined, which makes loops; false keeps the map a tree.
+--   branching  0 to 1 (default 0.5): how much the filler rooms avoid the gaps between rooms
+--              that are already on the map. 0 is the old uniform pick among the open exits;
+--              higher values make open exits that grow outward win over the ones that would
+--              fill a gap, so the map spreads into separate branches instead of a compact
+--              block. 1 never fills a gap while another open exit is free.
 --   attempts   tries before giving up (default 50); each try goes on drawing from the same rng.
 --   check      optional function(map) -> true or false, message: the game's own rule; a map it
 --              refuses is thrown away and tried again.
@@ -44,6 +49,8 @@ local M = {}
 
 local OFF, SPAN = 4096, 8192
 local function key(x, y) return (x + OFF) * SPAN + (y + OFF) end
+
+local NEAR = { { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } }
 
 -- The tags a door needs: those of both exits and the zone lock, sorted, without repeats
 local function door_tags(e1, e2, lock)
@@ -103,6 +110,7 @@ end
 -- One try. Returns the map, or nil and why.
 local function attempt(g)
   local opts, set, P, rng = g.opts, g.set, g.pools, g.rng
+  local branching = opts.branching or 0
   local abilities = g.abilities
   local zones = #abilities + 1
   local rooms, doors, cells, frontier = {}, {}, {}, {}
@@ -144,6 +152,18 @@ local function attempt(g)
     return room.x + ox + templates.dx[ex.side], room.y + oy + templates.dy[ex.side], ex
   end
 
+  -- How many other rooms touch the cell an open exit leads to: filling such a cell makes the
+  -- map more compact instead of growing a branch.
+  local function gap_of(f)
+    local tx, ty = target(rooms[f.room], f.exit)
+    local n = 0
+    for d = 1, 4 do
+      local j = cells[key(tx + NEAR[d][1], ty + NEAR[d][2])]
+      if j and j ~= f.room then n = n + 1 end
+    end
+    return n
+  end
+
   -- The ways a template of the pool can be put behind a frontier entry
   local function candidates(pool, f)
     local room = rooms[f.room]
@@ -177,7 +197,22 @@ local function attempt(g)
     end
     while #open > 0 do
       tick()
-      local f, fi = rng:pick(open)
+      local f, fi
+      if branching > 0 then
+        local total, pen = 0, floor(branching * 100 + 0.5)
+        for i = 1, #open do
+          local gap, w = gap_of(open[i]), nil
+          if gap == 0 then w = 100 else w = 100 - pen * gap end
+          if w < 0 then w = 0 end
+          open[i].bweight, total = w, total + w
+        end
+        if total == 0 then
+          for i = 1, #open do open[i].bweight = 1 end
+        end
+        f, fi = rng:weighted(open, "bweight")
+      else
+        f, fi = rng:pick(open)
+      end
       local p = pool
       if p == "filler" then
         p = P.types and P.by_type[rng:weighted(P.types).name] or P.filler
@@ -415,8 +450,14 @@ function M.new(opts)
     if opts.seed == nil then error("procgen: give rng (an engine.rng generator) or seed", 2) end
     rng = Rng.new(opts.seed)
   end
+  local branching = opts.branching
+  if branching == nil then branching = 0.5 end
+  if type(branching) ~= "number" or branching < 0 or branching > 1 then
+    error("procgen: branching is a number from 0 to 1", 2)
+  end
   local o = { rooms = opts.rooms or 12, attempts = opts.attempts or 50, types = opts.types,
-    loops = opts.loops, check = opts.check, specials = opts.specials, boss_distance = opts.boss_distance }
+    loops = opts.loops, check = opts.check, specials = opts.specials, boss_distance = opts.boss_distance,
+    branching = branching }
   for i = 1, #(o.specials or {}) do
     local sp = o.specials[i]
     if type(sp) ~= "table" or type(sp.type) ~= "string" then error("procgen: specials[" .. i .. "] needs a type", 2) end

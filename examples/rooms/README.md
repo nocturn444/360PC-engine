@@ -29,6 +29,10 @@ by room with `engine/modules/rooms`, by the soft-body slime of [examples/slime](
   slime comes in, with the border opened where the map put a door.
 - The camera stays inside the room (`camera:setBounds(nav:bounds())`) and follows the slime;
   rooms of two cells scroll.
+- Maps branch in both directions: `rooms_data.lua` has rooms with up and down exits (a cross,
+  a shaft, T junctions and corners), and the border opens the middle three columns of the top
+  or bottom row for those doors. Together with `procgen`'s `branching` (0.5 by default) the
+  floor spreads into branches instead of a single long corridor.
 - Crossing a door starts a 0.3 s fade (`rooms.transition`); the room is swapped while the screen
   is black, and the slime arrives inside the next room by the door it came through.
 - The door into the second zone is locked (gold) until the slime touches the key in the vault

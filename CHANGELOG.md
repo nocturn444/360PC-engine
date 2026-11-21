@@ -48,6 +48,11 @@ All notable changes to 360PC-Engine. The format follows
   floor) or variable (by weight, unlocked, or depending on the run), read by `procgen.floors`
   (templates, room types, room count, difficulty); `items` entries can be limited to biomes;
   `examples/rooms` has six biomes with their enemies, colours and music, and a treasure item.
+- `procgen`: `branching` (0 to 1, default 0.5) makes the filler rooms avoid the gaps between
+  rooms already placed, so a floor spreads into branches instead of a compact block; it is
+  accepted by `procgen.generate`, `procgen.floors` and `procgen.seeds`. `examples/rooms` adds
+  vertical and junction rooms (cross, shaft, T, corners) and opens up/down doors, so generated
+  floors branch in both directions.
 - `procgen.roomtypes` and `procgen.floors`: special room types as modular data (count, chance,
   floors, distance from the start, minimum depth), with an Isaac-like default set (treasure,
   shop, miniboss). Special rooms are placed by the generator as dead ends (`specials`), and the
@@ -59,6 +64,9 @@ All notable changes to 360PC-Engine. The format follows
 ### Changed
 - `engine.pixel` uses `"direct"` mode by default on PC too, so PC shows what the console shows.
   `"canvas"` is still available on PC when asked for.
+- `procgen` maps generated from a seed are different now because `branching` defaults to 0.5;
+  pass `branching = 0` for the old uniform layout. The known answers in
+  `tests/console/procgen_check.lua`, the engine tests and the level hash procedure were updated.
 - The camera's `snap` is on by default.
 
 ## [0.1.0] - not tagged yet

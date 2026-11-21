@@ -8,7 +8,7 @@
 --   abilities   the ability tags, in the order the player finds them
 --   rooms       rooms per map (default 12)
 --   check       optional function(map) -> true, or false and a reason (the game's own rule)
---   types, loops, attempts   as procgen.generate takes them
+--   types, loops, branching, attempts   as procgen.generate takes them
 --   stream      the engine.rng stream the game generates levels with (default "level");
 --               false: the seed goes straight to procgen.generate
 --   plan, floor a run of floors instead (procgen.floors): floor `floor` (default 1) of `plan`,
@@ -36,7 +36,8 @@ function M.generate(spec, seed)
     return spec.plan:generate(n, Rng.streams(seed):get((spec.stream or "floor") .. n))
   end
   local opts = { templates = templates_of(spec), abilities = spec.abilities, rooms = spec.rooms,
-    check = spec.check, types = spec.types, loops = spec.loops, attempts = spec.attempts }
+    check = spec.check, types = spec.types, loops = spec.loops, branching = spec.branching,
+    attempts = spec.attempts }
   if spec.stream == false then opts.seed = seed
   else opts.rng = Rng.streams(seed):get(spec.stream or "level") end
   return generator.generate(opts)

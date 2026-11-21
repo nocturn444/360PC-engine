@@ -42,6 +42,7 @@ Plan.__index = Plan
 --               the floor's special rooms need.
 --   abilities   array, or function(n, plan) -> array: ability locks of floor n (default none)
 --   loops       true / false, or function(n, plan) -> boolean (default true)
+--   branching   0 to 1, or function(n, plan) -> number: the generator's branching (default 0.5)
 --   boss_distance  "far" (default) or "any": where the boss room goes
 --   attempts    the generator's attempts (default 50)
 --   options     function(opts, n, plan, rng): changes the generate options of floor n last
@@ -59,7 +60,8 @@ function M.new(def)
     error("floors: rooms is a table or a function", 2)
   end
   return setmetatable({ count = count, templates = def.templates, types = def.types, rooms = rooms,
-    abilities = def.abilities, loops = def.loops, boss_distance = def.boss_distance or "far",
+    abilities = def.abilities, loops = def.loops, branching = def.branching,
+    boss_distance = def.boss_distance or "far",
     attempts = def.attempts, options_fn = def.options, cache = {} }, Plan)
 end
 
@@ -118,13 +120,17 @@ function Plan:options(n, rng, biome)
   local loops = self.loops
   if biome and biome.loops ~= nil then loops = biome.loops end
   if type(loops) == "function" then loops = loops(n, self) end
+  local branching = self.branching
+  if biome and biome.branching ~= nil then branching = biome.branching end
+  if type(branching) == "function" then branching = branching(n, self) end
   local rooms = self:room_count(n, rng)
   if biome then rooms = floor(rooms * (biome.rooms_scale or 1) + 0.5) + (biome.rooms_add or 0) end
   local need = 2 + #(abilities or {})
   for i = 1, #(specials or {}) do need = need + specials[i].count end
   local opts = {
     templates = self:templates_for(n, biome), rng = rng, rooms = max(rooms, need), abilities = abilities,
-    loops = loops, specials = specials, boss_distance = self.boss_distance, attempts = self.attempts,
+    loops = loops, branching = branching, specials = specials, boss_distance = self.boss_distance,
+    attempts = self.attempts,
   }
   if self.options_fn then self.options_fn(opts, n, self, rng) end
   if biome and biome.options then biome.options(opts, n, self, rng, biome) end

@@ -310,6 +310,32 @@ check(play.biome.id == "cellar" and play.got == nil and play.bonus.max_health ==
 play:load_room(play.nav:enter(play.map.start))
 map, nav = play.map, play.nav
 
+-- an up or down door opens the middle three columns of the border row
+local vdoor, vroom, vexit
+for d, door in ipairs(map.doors) do
+  for _, e in ipairs({ { door.a, door.ea }, { door.b, door.eb } }) do
+    local ex = map.rooms[e[1]].template.exits[e[2]]
+    if ex.side == "up" or ex.side == "down" then vdoor, vroom, vexit = d, e[1], ex end
+  end
+  if vdoor then break end
+end
+check(vdoor ~= nil, "seed 1 floor 1 has an up or down door")
+if vdoor then
+  local door = map.doors[vdoor]
+  nav:enter(door.a == vroom and door.b or door.a)
+  local x, y = nav:go(vdoor)
+  play:load_room(x, y)
+  local row = vexit.side == "up" and 1 or play.grid.height
+  local open = true
+  for k = 9, 11 do open = open and play.grid:kind(vexit.offset * data.cell_w + k, row) == nil end
+  check(open, "an up or down door opens the border (" .. vexit.side .. ")")
+  local entered = nav.index
+  play.fight.player.invuln = 100
+  frames(30)
+  check(nav.index == entered, "the arrival of an up or down door lands inside (" .. nav.index .. ")")
+  play:load_room(nav:enter(map.start))
+end
+
 -- the room is drawn
 F.reset_calls(); love.draw()
 check(#F.find("rectangle") >= 5 and play.pixels.count > 150, "the room, the slime and the minimap are drawn")
