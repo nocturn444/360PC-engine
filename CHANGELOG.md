@@ -82,6 +82,9 @@ All notable changes to 360PC-Engine. The format follows
   shapes; `softbody` gains `Body:set_rest_shape` for mutations that change the body and hitbox.
 - `examples/rooms/docs/`: `STATS.md`, `CONTENT.md`, `ECONOMY.md` and `COSMETICS.md` (the prototype's
   systems; the numbers in them are examples pending the owner's design decisions).
+- `examples/rooms/rooms_shop.lua`: shop stock drawn once per room from the content pools with a
+  virus price, buying that spends and marks an offer sold and takes it from its pool, the
+  treasure / super treasure pedestal positions, and an optional offer draw.
 
 ### Changed
 - `engine.pixel` uses `"direct"` mode by default on PC too, so PC shows what the console shows.
