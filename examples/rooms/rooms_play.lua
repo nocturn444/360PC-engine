@@ -30,6 +30,7 @@ local W, H = 320, 180
 local TS, CW, CH = data.tile_size, data.cell_w, data.cell_h
 local MOVE, AIR_MOVE, JUMP, CHARGED_JUMP = 700, 300, 260, 380
 local SIZE = 40
+local ENEMY_H = 10                            -- the enemy box height (rooms_enemies.lua)
 local SEED = 1
 local FLOORS = 10
 
@@ -187,6 +188,7 @@ function play.load_room(self, x, y)
   local state = self.rooms_state[index]
   if not state then state = { enemies = {} }; self.rooms_state[index] = state end
   if not state.enemies then state.enemies = {} end
+  if not state.arrivals then state.arrivals = {} end
   self.room_state = state
   self.sealed = battle_sealed(self, index)
   self.grid = platformer.grid.new(build_rows(self, index), { tile_size = TS })
@@ -238,13 +240,16 @@ function play.load_room(self, x, y)
     if not ms then ms = {}; state.machines[1] = ms end
     self.machine = machines.new(mt.kind or "healer", (mt.tx - 1) * TS + 2, (mt.ty - 1) * TS + 4, ms)
   end
-  -- the room's enemies (none once it is cleared), and the slime as a fighter with the health it
-  -- had in the last room
+  -- the room's enemies: its template spots keep their index even when cleared (the saved dead
+  -- state removes them on the first step), then the enemies that fell in through a door
   local spots = {}
-  if not state.cleared then
-    for i, t in ipairs(template.enemies or {}) do
-      spots[i] = { x = (t.tx - 0.5) * TS, y = t.ty * TS }
-    end
+  local template_enemies = template.enemies or {}
+  for i, t in ipairs(template_enemies) do
+    spots[i] = { x = (t.tx - 0.5) * TS, y = t.ty * TS }
+  end
+  local base = #template_enemies
+  for k, a in ipairs(state.arrivals) do
+    spots[base + k] = { x = a.x, y = a.y + ENEMY_H / 2 }   -- the arrival is a centre
   end
   local health = self.fight and not self.fight.player.dead and self.fight.player.health or nil
   local kind = self.nav.room.type
@@ -265,8 +270,10 @@ function play.load_room(self, x, y)
     if saved.dead then
       e.fighter.dead = true
       e.fighter.health = 0
-    elseif saved.health and saved.health < e.fighter.health then
-      e.fighter.health = saved.health
+    else
+      local hp = saved.health
+      if not hp and i > base then hp = state.arrivals[i - base].health end
+      if hp and hp < e.fighter.health then e.fighter.health = hp end
     end
   end
   self.kills_before = self.kills
@@ -362,6 +369,33 @@ local function control(self, dt)
   end
 end
 
+-- An enemy whose body is past an edge leaves the room. With a door there it moves to the room on
+-- the other side, to appear there next time keeping its health; with none, or an exit that leads
+-- nowhere, it dies. Neither is a kill (no on_killed, no kill count, no drop).
+local function enemies_leaving(self)
+  for i = 1, #self.fight.enemies do
+    local e = self.fight.enemies[i]
+    local f = e.fighter
+    if not f.dead then
+      local body = e.body
+      local x, y = body.x + body.w / 2, body.y + body.h / 2
+      local _, door, side = self.nav:leaving(x, y)
+      if side then
+        local health = f.health
+        f.dead, f.health = true, 0
+        if door then
+          local target, entry = self.nav:through(door)
+          local ax, ay = self.nav:arrival(target, entry)
+          local ts = self.rooms_state[target]
+          if not ts then ts = { enemies = {} }; self.rooms_state[target] = ts end
+          ts.arrivals = ts.arrivals or {}
+          ts.arrivals[#ts.arrivals + 1] = { x = ax, y = ay, health = health }
+        end
+      end
+    end
+  end
+end
+
 function play:update(dt)
   self.fade:update(dt)
   if self.fade:busy() then return end            -- the room is frozen while the screen fades
@@ -376,6 +410,7 @@ function play:update(dt)
   control(self, dt)
   self.slime:step(dt, self.grid)
   self.fight:step(dt)
+  enemies_leaving(self)
   self.stats:update(dt)
   self.kills = self.kills_before + self.fight.kills
   -- remember the fight: the dead stay dead and a hurt enemy keeps its health next time
