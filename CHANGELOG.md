@@ -96,6 +96,8 @@ All notable changes to 360PC-Engine. The format follows
   currency in the run wallet; its first use is the super treasure room.
 - `examples/rooms`: `rooms_minimap.lua` draws the run's minimap from `nav:minimap()`, with a
   white outline around the current room and data-driven pixel icons for the special room types.
+- `examples/rooms`: `rooms_pacts.lua`, the pact room's mutualist larvae (one heart slot for one
+  mutation), and `stats:add_permanent` for the permanent health cost, saved with the run.
 
 ### Changed
 - `engine.pixel` uses `"direct"` mode by default on PC too, so PC shows what the console shows.
