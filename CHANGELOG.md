@@ -9,6 +9,8 @@ All notable changes to 360PC-Engine. The format follows
 ## [Unreleased]
 
 ### Added
+- `.github/workflows/opencode.yml`: run opencode from `/opencode` comments or a manual run,
+  owner only, always on a branch with a pull request ([docs/OPENCODE_CI.md](docs/OPENCODE_CI.md)).
 - `engine.pixelgrid`: shapes rasterized each frame into a small colour grid and drawn as
   pixel-aligned cells in one draw call.
 - `engine/modules/softbody`: a soft body (points on a ring, springs and pressure) that falls,
