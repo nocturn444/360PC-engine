@@ -36,7 +36,9 @@ Build, packaging and validation tools. The whole path from a new game to the con
   `Hdd1:/Games/<folder name>/`. Host, port, user, password and target come from arguments or
   `X360_FTP_*` variables. Uploads only changed files (size, and CRC-32 against the manifest of
   the last install), never deletes anything, never touches saves or the log; `--dry-run`,
-  `--force`. `python tools/install_ftp.py dist/<identity> --host <console IP>`.
+  `--force`. `--safe` opens a fresh connection for every file and checks its size on the console
+  (for FTP servers that mix consecutive transfers, like some Aurora builds).
+  `python tools/install_ftp.py dist/<identity> --host <console IP>`.
 - `level_editor/`: an interactive level editor made with LÖVE. It edits a level file's rooms
   (collision, doors, the item, entities, room fields and size), checks them and play-tests a
   room. `love tools/level_editor levels/world.lvl`, or `level_editor.bat` on Windows

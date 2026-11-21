@@ -45,9 +45,10 @@ python3 tools/deploy_android.py examples/rooms --branch my/branch
 
 It pulls the branch (`git pull --ff-only`; a different `--branch` is fetched and checked out
 first), finds the newest successful "Console build" run of that branch, downloads its
-`<identity>-console` artifact and uploads it with `tools/install_ftp.py`. It uses the same
-untracked `deploy.local.ini` as `deploy.py`. `--no-pull`, `--no-upload`, `--force` and
-`--dry-run` work as expected. It needs Python 3, `git` and the GitHub CLI logged in
+`<identity>-console` artifact and uploads it with `tools/install_ftp.py` in safe mode (one
+connection per file and a size check, because some Aurora FTP servers mix consecutive transfers).
+It uses the same untracked `deploy.local.ini` as `deploy.py`. `--no-pull`, `--no-upload`,
+`--force` and `--dry-run` work as expected. It needs Python 3, `git` and the GitHub CLI logged in
 (`gh auth login`). The workflow must have run on that branch: push it and run "Console build",
 or let a push to `main` build it.
 

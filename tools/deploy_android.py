@@ -10,8 +10,9 @@ The .xex is not built here: on a phone or tablet that cannot build it, this scri
        checked out first; --no-pull skips every git command);
     2. finds the newest successful "Console build" run of the branch on GitHub and downloads its
        <identity>-console artifact with the GitHub CLI (`gh`);
-    3. extracts it into dist/android/<identity> and uploads it with tools/install_ftp.py, which
-       sends only the files that changed and never touches saves or default.log.
+    3. extracts it into dist/android/<identity> and uploads it with tools/install_ftp.py in safe
+       mode (one FTP connection per file and a size check), which sends only the files that
+       changed and never touches saves or default.log.
 
 The console's settings come from the usual untracked deploy.local.ini (tools/deploy.example.ini
 shows every key), or from the X360_FTP_* environment variables. The script needs `gh` logged in
@@ -144,7 +145,7 @@ def upload(runner, game, folder, cfg, config, force, dry_run, env, log):
           "folder or the repository root, or pass --config")
     cp = deploy.load_config(path, env=env)
     target = deploy.console_target(cp, cfg)
-    argv, upload_env = deploy.upload_command(cp, folder, target, force=force, dry_run=dry_run)
+    argv, upload_env = deploy.upload_command(cp, folder, target, force=force, dry_run=dry_run, safe=True)
     result = _call(runner, argv, env=upload_env)
     if result.stdout.strip():
         log(result.stdout.strip())

@@ -3,13 +3,17 @@
 
     python tools/install_ftp.py dist/my_game --host 192.168.0.20
         [--target Hdd1:/Games/my_game] [--port 21] [--user xboxftp] [--password xboxftp]
-        [--dry-run] [--force]
+        [--dry-run] [--force] [--safe]
 
 The console must be on with Aurora running and its FTP server enabled (the defaults above are
 Aurora's). Only files that changed are uploaded: a file is left alone when the console has it
 with the same size and, if the last install left a package_manifest.txt there, the same CRC-32.
 --force uploads everything. Nothing is ever deleted or renamed on the console, and the save
 folder and default.log are never touched.
+
+Some Aurora FTP servers mix the data of consecutive files. --safe opens a fresh connection for
+every file and checks its size on the console, retrying with another connection if it is wrong.
+It is slower but reliable; the normal mode keeps one connection for the whole install.
 
 Every option can also come from the environment: X360_FTP_HOST, X360_FTP_PORT, X360_FTP_USER,
 X360_FTP_PASSWORD, X360_FTP_TARGET. Python 3.8 or later, standard library only.
@@ -119,8 +123,10 @@ class Installer:
     """Mirrors a package folder into the current FTP folder. Only CWD, MKD, LIST, RETR of the
     manifest and STOR: never DELE, RMD or RNFR."""
 
-    def __init__(self, ftp, log=print, dry_run=False, force=False):
+    def __init__(self, ftp, log=print, dry_run=False, force=False, reconnect=None, safe=False):
         self.ftp, self.log, self.dry_run, self.force = ftp, log, dry_run, force
+        self.reconnect, self.safe = reconnect, safe
+        self.path = []                  # the folders from the drive down to the current one
         self.stats = {"uploaded": 0, "unchanged": 0, "bytes": 0, "folders_created": 0, "extra": 0}
 
     # -- moving around -------------------------------------------------------------------
@@ -136,12 +142,14 @@ class Installer:
         self._cwd("/")
         for name in (drive, "/" + drive, drive + ":"):
             if self._cwd(name):
+                self.path = [name]
                 return
         raise InstallError("the console's FTP has no drive %s (Aurora shows Hdd1, Usb0, Usb1...)" % drive)
 
     def enter(self, name):
         """into a folder, creating it if needed. False (dry run only): it does not exist yet."""
         if self._cwd(name):
+            self.path.append(name)
             return True
         if self.dry_run:
             return False
@@ -151,6 +159,7 @@ class Installer:
             pass                    # the cwd below says whether it is usable anyway
         if not self._cwd(name):
             raise InstallError("could not create or open the folder %s on the console" % name)
+        self.path.append(name)
         self.stats["folders_created"] += 1
         return True
 
@@ -160,6 +169,26 @@ class Installer:
                 self.ftp.sendcmd("CDUP")
             except ftplib.all_errors as e:
                 raise InstallError("could not go back to the parent folder on the console: %s" % e)
+        if self.path:
+            self.path.pop()
+
+    def _reopen(self):
+        """A fresh connection at the current folder (safe mode: Aurora can mix two files)."""
+        if not self.reconnect:
+            return False
+        try:
+            self.ftp.quit()
+        except ftplib.all_errors:
+            try:
+                self.ftp.close()
+            except Exception:
+                pass
+        self.ftp = self.reconnect()
+        self._cwd("/")
+        for name in self.path:
+            if not self._cwd(name):
+                raise InstallError("could not go back to /%s after reconnecting" % "/".join(self.path))
+        return True
 
     # -- reading the console ---------------------------------------------------------------
     def listing(self):
@@ -179,6 +208,13 @@ class Installer:
                 out[entry[0].lower()] = entry
         return out
 
+    def remote_size(self, name):
+        """The size of a file on the console, or None when it is not there (no LIST needed)."""
+        try:
+            return self.ftp.size(name)
+        except ftplib.all_errors:
+            return None
+
     def remote_manifest(self):
         chunks = []
         try:
@@ -193,11 +229,25 @@ class Installer:
         if self.dry_run:
             self.log("  would upload %s (%d bytes)" % (rel, size))
         else:
-            try:
-                with open(path, "rb") as f:
-                    self.ftp.storbinary("STOR " + name, f)
-            except ftplib.all_errors as e:
-                raise InstallError("could not upload %s: %s" % (rel, e))
+            attempts = 2 if self.safe else 1
+            got = None
+            for attempt in range(1, attempts + 1):
+                if self.safe:
+                    self._reopen()
+                try:
+                    with open(path, "rb") as f:
+                        self.ftp.storbinary("STOR " + name, f)
+                except ftplib.all_errors as e:
+                    raise InstallError("could not upload %s: %s" % (rel, e))
+                if not self.safe:
+                    break
+                got = self.remote_size(name)
+                if got == size:
+                    break
+                self.log("  %s: the console says %s bytes, expected %d; retrying" % (rel, got, size))
+            if self.safe and got != size:
+                raise InstallError("could not upload %s: the console says %s bytes, expected %d"
+                  % (rel, got, size))
             self.log("  uploaded %s (%d bytes)" % (rel, size))
         self.stats["uploaded"] += 1
         self.stats["bytes"] += size
@@ -210,7 +260,7 @@ class Installer:
         known_files = known["files"] if known else {}
         if known is None:
             self.log("  no package manifest on the console: comparing sizes only")
-        self._mirror_dir(tree, "", True, known_files, protected)
+        self._mirror_dir(tree, "", True, known_files, protected, known is not None)
         manifest = Path(folder) / MANIFEST
         if manifest.is_file():
             # last, so that an interrupted install never leaves a manifest that claims too much
@@ -222,17 +272,25 @@ class Installer:
                 self.stats["unchanged"] += 1
         return self.stats
 
-    def _mirror_dir(self, tree, rel, exists, known_files, protected):
-        remote = self.listing() if exists else {}
+    def _mirror_dir(self, tree, rel, exists, known_files, protected, list_remote):
+        # Aurora's LIST hangs on an empty folder (it opens the data connection and never ends
+        # it). A first install has no manifest, so it compares sizes with SIZE and never lists;
+        # later installs have a manifest and their folders are not empty, so LIST is safe.
+        remote = self.listing() if exists and list_remote else {}
         prefix = rel + "/" if rel else ""
         local_names = set()
         for name, path in tree.get(rel, []):
             local_names.add(name.lower())
             if rel == "" and name == MANIFEST:
                 continue
-            there = remote.get(name.lower())
             size = path.stat().st_size
-            changed = self.force or there is None or there[1] != size
+            if not exists or self.force:
+                changed = True
+            elif list_remote:
+                there = remote.get(name.lower())
+                changed = there is None or there[1] != size
+            else:
+                changed = self.remote_size(name) != size
             if not changed and prefix + name in known_files:
                 changed = known_files[prefix + name] != (size, crc32_of(path))
             if changed:
@@ -243,14 +301,15 @@ class Installer:
         for d in subdirs:
             local_names.add(d.lower())
             entered = self.enter(d)
-            self._mirror_dir(tree, prefix + d, entered, known_files, protected)
+            self._mirror_dir(tree, prefix + d, entered, known_files, protected, list_remote)
             if entered:
                 self.up()
-        for key, entry in sorted(remote.items()):
-            if key in local_names or (rel == "" and (key in protected or key in PROTECTED_FILES)):
-                continue
-            self.stats["extra"] += 1
-            self.log("  on the console but not in the package (left alone): %s%s" % (prefix, entry[0]))
+        if list_remote:
+            for key, entry in sorted(remote.items()):
+                if key in local_names or (rel == "" and (key in protected or key in PROTECTED_FILES)):
+                    continue
+                self.stats["extra"] += 1
+                self.log("  on the console but not in the package (left alone): %s%s" % (prefix, entry[0]))
 
 
 def connect(host, port=DEFAULT_PORT, user=DEFAULT_USER, password=DEFAULT_PASSWORD, timeout=30,
@@ -277,7 +336,7 @@ def connect(host, port=DEFAULT_PORT, user=DEFAULT_USER, password=DEFAULT_PASSWOR
 
 
 def install(folder, host, target=None, port=DEFAULT_PORT, user=DEFAULT_USER, password=DEFAULT_PASSWORD,
-            dry_run=False, force=False, timeout=30, log=print, ftp_factory=ftplib.FTP):
+            dry_run=False, force=False, timeout=30, log=print, ftp_factory=ftplib.FTP, safe=False):
     """uploads the package in <folder>; returns the stats, with "target" as the path used"""
     folder = Path(folder)
     if not (folder / "main.lua").is_file():
@@ -288,9 +347,12 @@ def install(folder, host, target=None, port=DEFAULT_PORT, user=DEFAULT_USER, pas
     parts = parse_target(target or "%s/%s" % (DEFAULT_DRIVE_PATH, folder.resolve().name))
     shown = "%s:/%s/" % (parts[0], "/".join(parts[1:]))
     log("%s -> %s on %s%s" % (folder, shown, clean_host(host), " (dry run)" if dry_run else ""))
-    ftp = connect(host, port, user, password, timeout, ftp_factory)
+    def opener():
+        return connect(host, port, user, password, timeout, ftp_factory)
+    ftp = opener()
+    inst = None
     try:
-        inst = Installer(ftp, log, dry_run, force)
+        inst = Installer(ftp, log, dry_run, force, reconnect=opener, safe=safe)
         inst.enter_drive(parts[0])
         exists = True
         for name in parts[1:]:
@@ -309,11 +371,12 @@ def install(folder, host, target=None, port=DEFAULT_PORT, user=DEFAULT_USER, pas
             ", %d on the console that are not in the package" % stats["extra"] if stats["extra"] else ""))
         return stats
     finally:
+        current = inst.ftp if inst else ftp
         try:
-            ftp.quit()
+            current.quit()
         except ftplib.all_errors:
             try:
-                ftp.close()
+                current.close()
             except ftplib.all_errors:
                 pass
 
@@ -330,13 +393,14 @@ def main(argv=None, log=print, ftp_factory=ftplib.FTP):
                     help="folder on the console (default: %s/<package folder name>)" % DEFAULT_DRIVE_PATH)
     ap.add_argument("--dry-run", action="store_true", help="list what would be uploaded; change nothing")
     ap.add_argument("--force", action="store_true", help="upload every file, changed or not")
+    ap.add_argument("--safe", action="store_true", help="one connection per file and check its size")
     ap.add_argument("--timeout", type=float, default=30)
     args = ap.parse_args(argv)
     try:
         if not args.folder.is_dir():
             raise InstallError("%s is not a folder" % args.folder)
         install(args.folder, args.host, args.target, args.port, args.user, args.password, args.dry_run,
-                args.force, args.timeout, log, ftp_factory)
+                args.force, args.timeout, log, ftp_factory, safe=args.safe)
         return 0
     except InstallError as e:
         print("install_ftp: " + str(e), file=sys.stderr)

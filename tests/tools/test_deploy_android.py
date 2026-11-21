@@ -100,6 +100,7 @@ class DeployAndroidCase(unittest.TestCase):
         self.assertTrue((deploy_android.BASE / "dist" / "android" / self.identity / "default.xex").is_file())
         self.assertEqual(up[0].env["X360_FTP_PASSWORD"], "s3cret")
         self.assertIn("Hdd1:/Games/" + self.identity, up[0].argv)
+        self.assertIn("--safe", up[0].argv)
         self.assertNotIn("s3cret", " ".join(up[0].argv))
 
     def test_no_upload_stops_after_download(self):

@@ -180,7 +180,7 @@ def console_target(cp, cfg):
     return cp.get("console", "target").strip() or "%s/%s" % (DEFAULT_DRIVE_PATH, cfg["identity"])
 
 
-def upload_command(cp, out, target, force=False, dry_run=False):
+def upload_command(cp, out, target, force=False, dry_run=False, safe=False):
     """argv and environment for install_ftp.py; the password goes in the environment only."""
     host = cp.get("console", "host").strip()
     if not host:
@@ -192,6 +192,8 @@ def upload_command(cp, out, target, force=False, dry_run=False):
         argv.append("--force")
     if dry_run:
         argv.append("--dry-run")
+    if safe:
+        argv.append("--safe")
     env = dict(os.environ, X360_FTP_PASSWORD=cp.get("console", "password"))
     env.pop("X360_FTP_TARGET", None)
     return argv, env

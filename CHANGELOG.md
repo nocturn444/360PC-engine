@@ -63,6 +63,10 @@ All notable changes to 360PC-Engine. The format follows
 - `engine.pixel` uses `"direct"` mode by default on PC too, so PC shows what the console shows.
   `"canvas"` is still available on PC when asked for.
 - The camera's `snap` is on by default.
+- `tools/install_ftp.py`: a first install no longer runs `LIST` on an empty folder (Aurora's
+  `LIST` hangs there); it compares sizes with `SIZE` instead. `--safe` opens a fresh connection
+  for every file and checks its size, for Aurora FTP servers that mix consecutive transfers;
+  `tools/deploy_android.py` uses it.
 
 ## [0.1.0] - not tagged yet
 

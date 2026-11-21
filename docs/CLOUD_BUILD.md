@@ -44,8 +44,9 @@ install the artifact, safest first:
 2. **Android/Termux, or a device that stays on at home** (Raspberry Pi, old laptop): run
    `python3 tools/deploy_android.py <game> [--branch NAME]`. It pulls the branch, downloads the
    newest successful artifact of that branch with the GitHub CLI (`gh auth login`) and uploads
-   it with `tools/install_ftp.py`, using `deploy.local.ini`; only the changed files are
-   uploaded. `--no-upload` downloads it only. See [DEPLOY.md](DEPLOY.md).
+   it with `tools/install_ftp.py` in safe mode (one connection per file, size checked), using
+   `deploy.local.ini`; only the changed files are uploaded. `--no-upload` downloads it only.
+   See [DEPLOY.md](DEPLOY.md).
 3. **A self-hosted runner or a VPN** (for example Tailscale on that same home device) lets the
    workflow upload to the console itself. It needs that device anyway, plus a secret token.
 4. **Opening the console's FTP to the internet** (port forwarding) is not recommended: FTP
