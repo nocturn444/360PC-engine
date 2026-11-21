@@ -32,16 +32,28 @@ local plan = procgen.floors.new({ count = FLOORS, templates = data.templates(), 
 
 local play = { plan = plan, biomes = biomes.new(FLOORS) }
 
+-- A boss or miniboss room with enemies still alive is an arena: its doors stay shut until the
+-- fight is won. A cleared room (or one without enemies) opens them again.
+local function battle_sealed(self, index)
+  local r = self.map.rooms[index]
+  if r.type ~= "boss" and r.type ~= "miniboss" then return false end
+  local state = self.rooms_state[index]
+  if state and state.cleared then return false end
+  return #(r.template.enemies or {}) > 0
+end
+
 -- The room's rows with its doors opened: rows 9..11 of the exit's cell, in the first or last
--- column. An exit without a door, or a locked door the slime cannot pass yet, stays a wall.
+-- column. An exit without a door, a locked door the slime cannot pass yet, or a sealed arena
+-- stays a wall.
 local function build_rows(self, index)
   local r = self.map.rooms[index]
   local rows = {}
   for i, row in ipairs(r.template.rows) do rows[i] = row end
   self.locked = {}
+  local sealed = self.sealed
   for e, exit in ipairs(r.template.exits) do
     local door = r.doors[e]
-    local open = door and self.nav:can_pass(door, self.abilities)
+    local open = door and self.nav:can_pass(door, self.abilities) and not sealed
     if exit.side == "left" or exit.side == "right" then
       local col = exit.side == "left" and 1 or #rows[1]
       for k = 9, 11 do
@@ -50,7 +62,7 @@ local function build_rows(self, index)
           rows[y] = rows[y]:sub(1, col - 1) .. "." .. rows[y]:sub(col + 1)
         end
       end
-      if door and not open then
+      if door and not open and not sealed then
         self.locked[#self.locked + 1] = { x = (col - 1) * TS + 4, y = (exit.offset * CH + 8) * TS,
           w = TS - 8, h = 3 * TS }
       end
@@ -62,7 +74,7 @@ local function build_rows(self, index)
           rows[row] = rows[row]:sub(1, x - 1) .. "." .. rows[row]:sub(x + 1)
         end
       end
-      if door and not open then
+      if door and not open and not sealed then
         self.locked[#self.locked + 1] = { x = (exit.offset * CW + 8) * TS, y = (row - 1) * TS + 4,
           w = 3 * TS, h = TS - 8 }
       end
@@ -73,7 +85,12 @@ end
 
 -- Builds the current room's grid and what is drawn from it; with x, y, puts the slime there
 function play.load_room(self, x, y)
-  self.grid = platformer.grid.new(build_rows(self, self.nav.index), { tile_size = TS })
+  local index = self.nav.index
+  local state = self.rooms_state[index]
+  if not state then state = { enemies = {} }; self.rooms_state[index] = state end
+  self.room_state = state
+  self.sealed = battle_sealed(self, index)
+  self.grid = platformer.grid.new(build_rows(self, index), { tile_size = TS })
   -- solid tiles merged into horizontal runs once per room: a few rectangles a row to draw
   local runs, ones = {}, {}
   for ty = 1, self.grid.height do
@@ -92,10 +109,13 @@ function play.load_room(self, x, y)
     end
   end
   self.runs, self.ones = runs, ones
-  -- the room's enemies, and the slime as a fighter with the health it had in the last room
+  -- the room's enemies (none once it is cleared), and the slime as a fighter with the health it
+  -- had in the last room
   local spots = {}
-  for i, t in ipairs(self.nav.room.template.enemies or {}) do
-    spots[i] = { x = (t.tx - 0.5) * TS, y = t.ty * TS }
+  if not state.cleared then
+    for i, t in ipairs(self.nav.room.template.enemies or {}) do
+      spots[i] = { x = (t.tx - 0.5) * TS, y = t.ty * TS }
+    end
   end
   local health = self.fight and not self.fight.player.dead and self.fight.player.health or nil
   local kind = self.nav.room.type
@@ -108,6 +128,18 @@ function play.load_room(self, x, y)
     slime_stats = combat.stats.new({ max_health = 5 + bonus.max_health, attack_damage = 1 + bonus.damage,
       invuln_time = 1.0 + bonus.invuln }),
     on_slime_death = function() self.dead = true end })
+  -- what the room remembers: the dead stay dead and a hurt enemy keeps its health
+  for i = 1, #spots do
+    local saved = state.enemies[i]
+    if not saved then saved = {}; state.enemies[i] = saved end
+    local e = self.fight.enemies[i]
+    if saved.dead then
+      e.fighter.dead = true
+      e.fighter.health = 0
+    elseif saved.health and saved.health < e.fighter.health then
+      e.fighter.health = saved.health
+    end
+  end
   self.kills_before = self.kills
   local item = self.nav.room.grants and not self.abilities[self.nav.room.grants] and self.nav.room.template.item
   self.item = item and { x = (item.tx - 1) * TS + 4, y = (item.ty - 1) * TS + 4, tag = self.nav.room.grants } or nil
@@ -138,6 +170,7 @@ function play.new_run(self)
   self.pool:new_run()
   self.bonus = loot.no_bonus()
   self.kills, self.got = 0, nil
+  self.rooms_state = {}
 end
 
 -- Floor n: its biome (chosen when the last one ends, from what the run did), a fresh map from
@@ -150,6 +183,7 @@ function play.new_floor(self, n)
   self.map = assert(plan:generate(n, self.streams:get("floor" .. n), self.biome))
   self.nav = rooms.nav.new(self.map, { cell_w = CW * TS, cell_h = CH * TS, tile_size = TS })
   self.abilities, self.taken, self.loot = {}, {}, {}
+  self.rooms_state, self.room_state = {}, nil
 end
 
 function play:enter()
@@ -206,6 +240,22 @@ function play:update(dt)
   self.slime:step(dt, self.grid)
   self.fight:step(dt)
   self.kills = self.kills_before + self.fight.kills
+  -- remember the fight: the dead stay dead and a hurt enemy keeps its health next time
+  local state = self.room_state
+  for i = 1, #self.fight.enemies do
+    local e = self.fight.enemies[i]
+    local saved = state.enemies[i]
+    if not saved then saved = {}; state.enemies[i] = saved end
+    saved.dead = e.fighter.dead
+    saved.health = e.fighter.health
+  end
+  -- a won fight clears the room; a boss or miniboss arena then opens its doors
+  if not state.cleared and self.fight:alive() == 0 then
+    state.cleared = true
+    if self.nav.room.type == "boss" or self.nav.room.type == "miniboss" then
+      play.load_room(self)
+    end
+  end
   local cx, cy = self.slime:center()
   -- the key: picked up by touching it; the room is rebuilt so its locked doors open
   local it = self.item

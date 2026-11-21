@@ -207,6 +207,22 @@ for _ = 1, 300 do
   if p.health < hp then bitten = true; break end
 end
 check(bitten, "an enemy bites the slime when it is close (" .. p.health .. " of " .. hp .. ")")
+-- the room remembers its fight: dead enemies do not come back and a hurt one keeps its health
+play.rooms_state[hall] = nil
+play:load_room(nav:enter(hall))
+play.fight.enemies[1].fighter.dead = true
+play.fight.enemies[1].fighter.health = 0
+frames(1)
+check(play.rooms_state[hall].enemies[1].dead, "the room saves the enemies it lost")
+play.rooms_state[hall] = { cleared = false, enemies = {
+  { dead = true, health = 0 },
+  { dead = false, health = 1 },
+} }
+play:load_room(nav:enter(hall))
+check(play.fight.enemies[1].fighter.dead and play.fight.enemies[2].fighter.health == 1,
+  "a room remembers its dead enemies and their health")
+play.rooms_state[hall] = nil
+
 -- the slime's three attacks: the switch key cycles them, each one hurts an enemy
 local names = {}
 for i = 1, 3 do
@@ -217,6 +233,7 @@ check(names[1] == "melee" and names[2] == "ranged" and names[3] == "explosive"
   and play.fight:current().name == "melee", "switch cycles melee, ranged, explosive and back")
 local reach = { melee = 14, ranged = 40, explosive = 40 }
 for mode = 1, 3 do
+  play.rooms_state[hall] = nil
   play:load_room(nav:enter(hall))
   local fight = play.fight
   fight.mode = mode
@@ -287,10 +304,16 @@ check(not play.treasure, "and is gone when the slime comes back")
 -- the boss room: cleared, a stairway leads to the next floor, a new and bigger map
 local floor0, rooms0 = play.floor, #play.map.rooms
 play:load_room(nav:enter(play.map.boss))
-check(play.fight:alive() > 0 and not play.stairs, "the boss room holds its enemies, no stairs yet")
+check(play.fight:alive() > 0 and not play.stairs and play.sealed,
+  "the boss room holds its enemies and its doors, no stairs yet")
 for _, e in ipairs(play.fight.enemies) do e.fighter.dead = true end
 frames(2)
 check(play.stairs, "cleared: the stairway appears")
+check(not play.sealed, "and the boss doors open")
+play:load_room(nav:enter(play.map.boss))
+check(play.fight:alive() == 0 and not play.sealed, "a cleared boss room stays cleared")
+frames(1)
+check(play.stairs, "and the stairs are still there")
 play.fight.player.invuln = 10
 slime:move_to(play.stairs.x + TS_HALF, play.stairs.y - 4); slime:set_velocity(0, 0)
 frames(40)
@@ -334,6 +357,22 @@ if vdoor then
   frames(30)
   check(nav.index == entered, "the arrival of an up or down door lands inside (" .. nav.index .. ")")
   play:load_room(nav:enter(map.start))
+end
+
+-- a miniboss room seals its doors too, and opens them when the fight is won
+local mb, mb_floor
+for n = 1, 10 do
+  play.new_floor(play, n)
+  for i, r in ipairs(play.map.rooms) do if r.type == "miniboss" then mb, mb_floor = i, n; break end end
+  if mb then break end
+end
+if mb then
+  play:load_room(play.nav:enter(mb))
+  check(play.sealed and #play.fight.enemies > 0, "a miniboss room seals its doors (floor " .. mb_floor .. ")")
+  play.fight.player.invuln = 100
+  for _, e in ipairs(play.fight.enemies) do e.fighter.dead = true end
+  frames(2)
+  check(not play.sealed and play.fight:alive() == 0, "and opens them when it is cleared")
 end
 
 -- the room is drawn
