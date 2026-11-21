@@ -80,6 +80,9 @@ All notable changes to 360PC-Engine. The format follows
   action, one use per machine).
 - `examples/rooms`: cosmetic mutations (colours, eyes, shape, limbs) and optional physical rest
   shapes; `softbody` gains `Body:set_rest_shape` for mutations that change the body and hitbox.
+- `examples/rooms`: casino machines in `rooms_casino.lua`: a single-use genetic lottery that can
+  give or take a mutation (gain chance from luck) and a slot machine that spends virus for a
+  weighted prize, each keeping its own persistent state.
 - `examples/rooms/docs/`: `STATS.md`, `CONTENT.md`, `ECONOMY.md` and `COSMETICS.md` (the prototype's
   systems; the numbers in them are examples pending the owner's design decisions).
 
