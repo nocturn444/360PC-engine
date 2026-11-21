@@ -82,6 +82,8 @@ All notable changes to 360PC-Engine. The format follows
   shapes; `softbody` gains `Body:set_rest_shape` for mutations that change the body and hitbox.
 - `examples/rooms/docs/`: `STATS.md`, `CONTENT.md`, `ECONOMY.md` and `COSMETICS.md` (the prototype's
   systems; the numbers in them are examples pending the owner's design decisions).
+- `examples/rooms`: `rooms_pacts.lua`, the pact room's mutualist larvae (one heart slot for one
+  mutation), and `stats:add_permanent` for the permanent health cost, saved with the run.
 
 ### Changed
 - `engine.pixel` uses `"direct"` mode by default on PC too, so PC shows what the console shows.
