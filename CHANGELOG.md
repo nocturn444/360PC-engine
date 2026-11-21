@@ -53,6 +53,8 @@ All notable changes to 360PC-Engine. The format follows
   accepted by `procgen.generate`, `procgen.floors` and `procgen.seeds`. `examples/rooms` adds
   vertical and junction rooms (cross, shaft, T, corners) and opens up/down doors, so generated
   floors branch in both directions.
+- `examples/rooms`: boss and miniboss rooms seal their doors until their enemies are dead, and
+  every room remembers its enemies (the dead stay dead and a hurt one keeps its health).
 - `procgen.roomtypes` and `procgen.floors`: special room types as modular data (count, chance,
   floors, distance from the start, minimum depth), with an Isaac-like default set (treasure,
   shop, miniboss). Special rooms are placed by the generator as dead ends (`specials`), and the

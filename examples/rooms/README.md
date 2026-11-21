@@ -19,9 +19,10 @@ by room with `engine/modules/rooms`, by the soft-body slime of [examples/slime](
   and the core, relic in the ruins). Touching it gives its bonus for the rest of the run and
   heals the slime. The shop is only a labelled room for now. The miniboss room holds two of the
   biome's stronger enemies.
-- Once the boss room is cleared, a stairway opens in its floor. Going down it, behind a fade,
-  leads to the next floor, a new map. The slime keeps its health. After floor 10 the run starts
-  again at floor 1.
+- A boss or miniboss room shuts its doors while its enemies are alive: the slime has to win the
+  fight (or fall) before it can leave. Once the boss is cleared, a stairway opens in its floor.
+  Going down it, behind a fade, leads to the next floor, a new map. The slime keeps its health.
+  After floor 10 the run starts again at floor 1.
 - The minimap colours the room types: boss red, treasure gold, shop green, miniboss orange.
   The floor number is shown top left.
 
@@ -42,7 +43,8 @@ by room with `engine/modules/rooms`, by the soft-body slime of [examples/slime](
   combat world with the slime, which combat sees through `softbody.box`. Landing on an enemy
   while falling fast hurts it and bounces the slime off; a bite hurts the slime (5 HP, shown top
   left) and knocks it back, and it blinks while it cannot be hurt. At 0 HP it goes back to the
-  start room, healed. A room's enemies are back when the slime comes back to it.
+  start room, healed. A room remembers its enemies: the dead stay dead and a hurt enemy keeps its
+  health when the slime comes back. The state lasts for the run (a new floor has a new map).
 - The slime's attacks (`rooms_attacks.lua`, example `combat.attacks` configs): a melee arc in
   front of it, a ranged shot, and a bomb thrown low that bounces, blows on touching an enemy
   or after its fuse, and pushes everything in its radius away. One mode at a time, switched

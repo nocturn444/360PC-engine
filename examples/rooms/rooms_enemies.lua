@@ -5,8 +5,8 @@
 -- body while it falls) and bounces off; an enemy's bite hurts the slime and knocks it back.
 -- The slime also has three attacks (rooms_attacks.lua, combat.attacks configs): melee, ranged
 -- and explosive, one at a time; Fight:attack() triggers the current one.
--- Everything here is rebuilt when a room is entered, so a room's enemies are back when the
--- slime comes back to it.
+-- Everything here is rebuilt when a room is entered; the play state then restores the room's
+-- enemies (the dead stay dead and a hurt one keeps its health).
 local platformer = require("engine.modules.platformer")
 local combat = require("engine.modules.combat")
 local softbody = require("engine.modules.softbody")
