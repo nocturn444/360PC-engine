@@ -12,7 +12,9 @@
 -- Use one rng stream per floor ("floor1", "floor2"...): a floor's map then depends only on the
 -- run's seed and its number (and its biome), never on what happened on the floors before.
 --
--- With biomes (procgen.biomes), pass the floor's biome: plan:generate(n, rng, biome). A biome
+-- With biomes (procgen.biomes), pass the floor's biome: plan:generate(n, rng, biome). Pass the
+-- game's run table last (plan:generate(n, rng, biome, run)) to give room type chance/count
+-- functions the run's counters; both the run and the biome are optional. A biome
 -- table may hold, all optional:
 --   templates   templates of its own (replace the plan's); else the plan's templates whose
 --               `biomes` field lists it, plus those without a `biomes` field
@@ -107,13 +109,14 @@ function Plan:room_count(n, rng)
 end
 
 -- The options of procgen.generate for floor n, drawing from rng (the same rng the map is then
--- generated with: generate(n, rng) does both). biome: the floor's biome table, optional.
-function Plan:options(n, rng, biome)
+-- generated with: generate(n, rng) does both). biome: the floor's biome table, optional; run:
+-- the game's table for room type chance/count functions, optional.
+function Plan:options(n, rng, biome, run)
   if type(n) ~= "number" or n < 1 or n > self.count or n ~= floor(n) then
     error("floors: floor " .. tostring(n) .. " is not 1 to " .. self.count, 2)
   end
   local types = (biome and biome.types) or self.types
-  local specials = types and types:specials(n, self.count, rng) or nil
+  local specials = types and types:specials(n, self.count, rng, run) or nil
   local abilities = self.abilities
   if biome and biome.abilities ~= nil then abilities = biome.abilities end
   if type(abilities) == "function" then abilities = abilities(n, self) end
@@ -147,9 +150,10 @@ local function stamp(self, map, n, biome)
 end
 
 -- The map of floor n, or nil and the reason. map.floor, map.floors, map.progress (0..1), and
--- with a biome map.biome (its id), map.biome_def and map.difficulty are set.
-function Plan:generate(n, rng, biome)
-  local m, err = generator.generate(self:options(n, rng, biome))
+-- with a biome map.biome (its id), map.biome_def and map.difficulty are set. `run` (optional)
+-- goes to the room types' chance/count functions.
+function Plan:generate(n, rng, biome, run)
+  local m, err = generator.generate(self:options(n, rng, biome, run))
   if not m then return nil, err end
   return stamp(self, m, n, biome)
 end

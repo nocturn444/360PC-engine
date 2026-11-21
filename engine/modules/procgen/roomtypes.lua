@@ -1,13 +1,25 @@
 -- procgen.roomtypes: special room types as modular data. Each type says how many rooms of it a
 -- floor gets, from which floor, with what chance and where (far from the start, near it,
--- anywhere); `specials(floor, total, rng)` turns the definitions into the `specials` list the
--- generator takes. A new type is one more define: the generator never names a type.
+-- anywhere); `specials(floor, total, rng, run)` turns the definitions into the `specials` list
+-- the generator takes. A new type is one more define: the generator never names a type.
 --
 --   local types = procgen.roomtypes.new()
 --   types:define("shop", { count = 1, max_floor = -2 })
---   types:define("miniboss", { min_floor = 2, chance = function(floor) return 0.2 + 0.1 * floor end,
+--   types:define("vault", { count = 1, max = 2, replaces = "shop" })
+--   types:define("miniboss", { min_floor = 2, chance = function(floor, total, run)
+--       return 0.2 + 0.1 * floor + (run and run.kills or 0) * 0.001 end,
 --     distance = "far", min_depth = 3 })
---   local specials = types:specials(floor, 10, rng)  -- for generate({ specials = specials, ... })
+--   local specials = types:specials(floor, 10, rng, run)  -- for generate({ specials = specials, ... })
+--
+-- `run` is optional: any table owned by the game (its counters for the run). It is passed to
+-- chance(floor, total, run) and count(floor, total, rng, run), so a chance can depend on what
+-- happened earlier in the run. Calls without it work as before.
+--
+-- A type with `replaces` turns another type off on a floor where it has a room (see define).
+-- Replacing types are evaluated first, in definition order, then the others in definition order;
+-- the rng is drawn in that order, so the same rng state gives the same specials. The output list
+-- stays in definition order. Replacements are applied once, directly to the target type (there
+-- is no separate chain rule).
 --
 -- Templates of a special type (template.type == the name) are only used for that type; every
 -- room of a special type is a dead end. "start", "boss" and "normal" are not special types.
@@ -23,8 +35,10 @@ function M.new() return setmetatable({ list = {}, by_name = {} }, Types) end
 
 -- types:define(name, def) adds or replaces a type (it keeps its place in the order when
 -- replaced; the order is part of a generated map). def fields, all optional:
---   count       a whole number (1), { min, max } (a draw), or function(floor, total, rng) -> n
---   chance      0..1 (1), or function(floor, total) -> 0..1: whether the floor gets the type at all
+--   count       a whole number (1), { min, max } (a draw), or function(floor, total, rng, run) -> n
+--   chance      0..1 (1), or function(floor, total, run) -> 0..1: whether the floor gets the type
+--   max         a whole number >= 0: the most rooms of this type on a floor (after count)
+--   replaces    a type name: on a floor where this type has a room, that type gets none
 --   min_floor   first floor with this type (1)
 --   max_floor   last floor (the last one); a negative number counts from the end: -1 is the last
 --               floor, -2 the one before it
@@ -42,6 +56,13 @@ function Types:define(name, def)
   end
   if type(c) == "table" and not (type(c[1]) == "number" and type(c[2]) == "number" and c[1] <= c[2]) then
     error("roomtypes: " .. name .. ".count { min, max } needs min <= max", 2)
+  end
+  local mx = def.max
+  if mx ~= nil and (type(mx) ~= "number" or mx < 0 or mx ~= floor(mx)) then
+    error("roomtypes: " .. name .. ".max is a whole number >= 0", 2)
+  end
+  if def.replaces ~= nil and type(def.replaces) ~= "string" then
+    error("roomtypes: " .. name .. ".replaces is a type name", 2)
   end
   if def.distance ~= nil and def.distance ~= "any" and def.distance ~= "far" and def.distance ~= "near" then
     error("roomtypes: " .. name .. ".distance is \"any\", \"far\" or \"near\"", 2)
@@ -74,39 +95,76 @@ local function last_floor(v, total)
 end
 
 -- How many rooms of a type floor `n` (of `total`) gets: 0 when out of its floors or when its
--- chance says no. Draws from rng (an engine.rng generator) for chance and ranges, in a fixed
--- order: the same rng state gives the same answer.
-function Types:count(name, n, total, rng)
+-- chance says no, then at most `max`. Draws from rng (an engine.rng generator) for chance and
+-- ranges, in a fixed order: the same rng state gives the same answer.
+function Types:count(name, n, total, rng, run)
   local t = self.by_name[name]
   if not t then error("roomtypes: unknown type " .. tostring(name), 2) end
   if n < (t.min_floor or 1) or n > last_floor(t.max_floor, total) then return 0 end
   local ch = t.chance
-  if type(ch) == "function" then ch = ch(n, total) end
+  if type(ch) == "function" then ch = ch(n, total, run) end
   if ch ~= nil and ch < 1 then
     if ch <= 0 or rng:float() >= ch then return 0 end
   end
   local c = t.count
-  if c == nil then return 1 end
-  if type(c) == "function" then
-    c = c(n, total, rng)
+  if c == nil then c = 1
+  elseif type(c) == "function" then
+    c = c(n, total, rng, run)
     if type(c) ~= "number" or c < 0 or c ~= floor(c) then
       error("roomtypes: " .. name .. ".count returned " .. tostring(c) .. " (a whole number >= 0)", 2)
     end
-    return c
+  elseif type(c) == "table" then
+    c = rng:int(c[1], c[2])
   end
-  if type(c) == "table" then return rng:int(c[1], c[2]) end
+  if t.max ~= nil and c > t.max then c = t.max end
   return c
+end
+
+-- Checks the replaces fields: the target has to be defined, and two types may not replace each
+-- other (longer chains are not handled; see the header).
+local function check_replaces(self)
+  for i = 1, #self.list do
+    local name = self.list[i]
+    local other = self.by_name[name].replaces
+    if other ~= nil then
+      local o = self.by_name[other]
+      if not o then
+        error("roomtypes: " .. name .. " replaces unknown type " .. tostring(other), 3)
+      end
+      if other == name then error("roomtypes: " .. name .. " replaces itself", 3) end
+      if o.replaces == name then
+        error("roomtypes: " .. name .. " and " .. other .. " replace each other", 3)
+      end
+    end
+  end
 end
 
 -- The generator's `specials` for floor n of total: { { type, count, distance, min_depth }... }
 -- in the order of the definitions. A type with no room on that floor stays in the list with
--- count 0, so its templates are still kept out of the ordinary rooms.
-function Types:specials(n, total, rng)
+-- count 0, so its templates are still kept out of the ordinary rooms. Types with `replaces` are
+-- evaluated before the others (each group in definition order), so their rng draws come first;
+-- then an active type sets its target's count to 0. `run` is the game's table for chance/count.
+function Types:specials(n, total, rng, run)
+  check_replaces(self)
+  local counts = {}
+  for pass = 1, 2 do
+    for i = 1, #self.list do
+      local name = self.list[i]
+      if (self.by_name[name].replaces ~= nil) == (pass == 1) then
+        counts[name] = self:count(name, n, total, rng, run)
+      end
+    end
+  end
+  for i = 1, #self.list do
+    local name = self.list[i]
+    local other = self.by_name[name].replaces
+    if other ~= nil and counts[name] > 0 then counts[other] = 0 end
+  end
   local out = {}
   for i = 1, #self.list do
     local name = self.list[i]
     local t = self.by_name[name]
-    out[i] = { type = name, count = self:count(name, n, total, rng), distance = t.distance or "any",
+    out[i] = { type = name, count = counts[name], distance = t.distance or "any",
       min_depth = t.min_depth or 1 }
   end
   return out

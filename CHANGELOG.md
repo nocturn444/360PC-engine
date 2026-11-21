@@ -66,6 +66,9 @@ All notable changes to 360PC-Engine. The format follows
   boss can go far from the start (`boss_distance`). A run of floors grows from floor to floor
   (rooms, special rooms, templates by floor). `examples/rooms` is now a ten-floor run with
   stairs after each boss.
+- `procgen.roomtypes`: `chance` and `count` functions receive the game's `run` table (so a
+  chance can depend on what happened earlier in the run), `replaces` turns another type off on
+  a floor, and `max` caps a type's count; `procgen.floors` passes the run through.
 - `run_pc.bat`: double-click to update the repository and open a game on the PC with LOVE.
 - `engine/modules/wallet`: a small bag of named integer currencies for a run (`virus` in the
   example), with add/can/spend, no negative amounts, and plain-data state for a run save.
