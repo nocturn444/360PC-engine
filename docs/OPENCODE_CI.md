@@ -12,7 +12,11 @@ so the owner can hand work to an AI agent from a phone (GitHub app or browser), 
    `OPENCODE_MODEL`. Value: a `provider/model` id. Default when unset:
    `opencode-go/deepseek-v4.1-flash` (OpenCode Go plan). On the pay-as-you-go Zen plan use
    `opencode/deepseek-v4.1-flash`. `opencode models` in a terminal lists the exact ids.
-3. **Protect `main` (recommended).** Settings > Rules > Rulesets > New branch ruleset, target
+3. **Let Actions open pull requests.** Settings > Actions > General > Workflow permissions:
+   check "Allow GitHub Actions to create and approve pull requests" and save. Without it the run
+   pushes its branch but fails with "GitHub Actions is not permitted to create or approve pull
+   requests".
+4. **Protect `main` (recommended).** Settings > Rules > Rulesets > New branch ruleset, target
    the default branch, enable "Restrict deletions", "Block force pushes" and
    "Require a pull request before merging" (0 approvals is fine), add the owner as a bypass
    actor. The workflow already keeps the agent off `main`; this is the hard guarantee.
