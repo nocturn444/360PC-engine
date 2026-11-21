@@ -488,6 +488,22 @@ F.keys.left = true; love.update(1 / 60); F.keys.left = nil
 F.keys["return"] = true; love.update(1 / 60); F.keys["return"] = nil
 check(engine.states:top() == play and play.floor == 1, "Yes restarts the run at floor 1")
 
+-- reopening starts on Resume, not on the last button used; Quit game confirms (No focused),
+-- then quits. tap() releases the key for a frame so the next press is a new one.
+local function tap(key) F.keys[key] = true; love.update(1 / 60); F.keys[key] = nil; love.update(1 / 60) end
+tap("escape")
+check(engine.states:top() == pause, "Escape pauses again")
+tap("return")
+check(engine.states:top() == play, "the menu reopens with Resume focused")
+tap("escape"); tap("down"); tap("down"); tap("return")
+check(not F.quit and engine.states:top() == pause, "Quit game asks first")
+tap("return")
+check(not F.quit and engine.states:top() == pause, "No (focused by default) goes back to the menu")
+tap("return")
+check(engine.states:top() == play, "and the menu is back on Resume")
+tap("escape"); tap("down"); tap("down"); tap("return"); tap("left"); tap("return")
+check(F.quit == true, "Yes on Quit game leaves the game")
+
 -- the room is drawn
 F.reset_calls(); love.draw()
 check(#F.find("rectangle") >= 5 and play.pixels.count > 150, "the room, the slime and the minimap are drawn")

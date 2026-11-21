@@ -18,9 +18,12 @@ local function set_message(text)
   if main then main.dirty = true end        -- showing or hiding it changes the layout
 end
 
-local function show(screen)
+-- Each page opens on its safe default (Resume, or No on a confirmation), whatever was focused
+-- the last time, so a stray press after reopening the menu does nothing harmful.
+local function show(screen, focus)
   active = screen
   screen:enter()
+  screen:focus(focus)
 end
 
 local function restart_run()
@@ -35,11 +38,11 @@ local function quit_game()
 end
 
 local function confirm_screen(title, on_yes)
-  local no = ui.button({ id = "no", label = "No", on_press = function() show(main) end })
+  local no = ui.button({ id = "no", label = "No", on_press = function() show(main, "resume") end })
   local screen = ui.screen({
     transparent = true,
     dim = true,
-    on_back = function() show(main) end,
+    on_back = function() show(main, "resume") end,
     root = ui.vstack({ background = true, wrap = true, align = "stretch", spacing = 4,
       ui.label({ text = title, align = "center" }),
       ui.hstack({ spacing = 4, align = "center",
@@ -48,7 +51,6 @@ local function confirm_screen(title, on_yes)
       }),
     }),
   })
-  screen:focus("no")                        -- No by default, so a stray press is harmless
   return screen
 end
 
@@ -62,9 +64,9 @@ local function ensure()
     root = ui.vstack({ background = true, wrap = true, align = "stretch", spacing = 4,
       ui.label({ text = "Paused", align = "center" }),
       message,
-      ui.button({ label = "Resume", on_press = function() engine.states:pop() end }),
-      ui.button({ label = "Restart run", on_press = function() show(confirm_restart) end }),
-      ui.button({ label = "Quit game", on_press = function() show(confirm_quit) end }),
+      ui.button({ id = "resume", label = "Resume", on_press = function() engine.states:pop() end }),
+      ui.button({ label = "Restart run", on_press = function() show(confirm_restart, "no") end }),
+      ui.button({ label = "Quit game", on_press = function() show(confirm_quit, "no") end }),
     }),
   })
   confirm_restart = confirm_screen("Restart run?", restart_run)
@@ -88,7 +90,7 @@ function M:enter(previous, reason, joystick)
   else
     set_message(nil)
   end
-  show(main)
+  show(main, "resume")
 end
 
 function M:exit()
@@ -99,7 +101,7 @@ end
 function M:input(input)
   if not active then return end
   if input:pressed("pause") then            -- Start / P / Escape again
-    if active == main then engine.states:pop() else show(main) end
+    if active == main then engine.states:pop() else show(main, "resume") end
     return
   end
   active:input(input)
