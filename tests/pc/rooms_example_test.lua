@@ -15,7 +15,9 @@ local function read(path)
 end
 
 -- 1. Files and config
-for _, name in ipairs({ "game.lua", "conf.lua", "main.lua", "rooms_play.lua", "rooms_data.lua", "rooms_biomes.lua", "rooms_items.lua", "README.md" }) do
+for _, name in ipairs({ "game.lua", "conf.lua", "main.lua", "rooms_play.lua", "rooms_data.lua", "rooms_biomes.lua",
+  "rooms_stats.lua", "rooms_content.lua", "rooms_mutations.lua", "rooms_consumables.lua", "rooms_look.lua",
+  "rooms_pickups.lua", "rooms_obstacles.lua", "rooms_machines.lua", "README.md" }) do
   check(read("examples/rooms/" .. name), "examples/rooms/" .. name .. " exists")
 end
 local Config = dofile("runtime/lua/config.lua")
@@ -72,20 +74,6 @@ for seed = 1, 200 do
 end
 for _, id in ipairs({ "cellar", "caves", "garden", "forge", "ruins", "core" }) do check(seen[id], "biome " .. id .. " comes up") end
 check(B.enemy_stats(B.list[6], true).max_health > B.enemy_stats(B.list[1], true).max_health, "the core's boss is stronger")
--- the treasure items: biome items only in their biomes
-local pool = require("rooms_items").pool()
-for _, id in ipairs({ "caves", "garden", "forge", "ruins" }) do
-  local got = {}
-  local r = Rng.new(7)
-  for k = 1, 200 do local e = pool:draw(r, { room = "treasure", biome = id }); got[e.id] = true end
-  for _, e in ipairs(require("rooms_items").entries) do
-    if e.biomes and got[e.id] then
-      local ok = false
-      for _, x in ipairs(e.biomes) do ok = ok or x == id end
-      check(ok, e.id .. " only in its biomes (" .. id .. ")")
-    end
-  end
-end
 for _, t in ipairs(data.templates()) do
   local rows = t.rows
   check(#rows == (t.h or 1) * data.cell_h and #rows[1] == (t.w or 1) * data.cell_w, t.id .. ": rows fit its cells")
@@ -275,33 +263,43 @@ check(play.fight.player.health == play.fight.player.stats:get("max_health"), "wi
 -- the floor is in its biome, the enemies are the biome's
 check(play.biome and play.map.biome == play.biome.id and play.music == play.biome.music, "the floor has its biome and music")
 check(play.floor > 2 or play.biome.id == "cellar", "floors 1 and 2 are in the cellar")
--- the treasure room: an item of the biome on the pedestal, the slime's for the run
+-- the treasure room: one mutation on the pedestal, the slime's for the run
 local function find(kind)
   for i, r in ipairs(play.map.rooms) do if r.type == kind then return i end end
 end
 local tr = find("treasure")
 check(tr, "the floor has a treasure room")
+local carapace
+for _, e in ipairs(require("rooms_content").mutations) do if e.id == "example_carapace" then carapace = e end end
+check(carapace, "the carapace mutation exists")
+play.loot[tr] = carapace
+play.taken[tr] = nil
 play:load_room(nav:enter(tr))
 local item = play.treasure and play.treasure.entry
-check(item, "an item on the pedestal")
+check(item == carapace, "the carapace on the pedestal")
 local again = item
 play:load_room(nav:enter(tr))
-check(play.treasure and play.treasure.entry == again, "the same item when the slime comes back")
-local before = { max = play.fight.player.stats:get("max_health"), bonus = {} }
-for k, v in pairs(play.bonus) do before.bonus[k] = v end
+check(play.treasure and play.treasure.entry == again, "the same mutation when the slime comes back")
+local before = { jump = play.stats:get("jump"), speed = play.stats:get("speed"),
+  damage = play.stats:get("damage"), shield = play.stats:get("shield"),
+  health = play.stats:get("health"), limbs = #play.look.limbs }
 play.fight.player.health = 1
 slime:move_to(play.treasure.x + 4, play.treasure.y); slime:set_velocity(0, 0)
 frames(10)
-check(not play.treasure and play.got == item and play.pool:taken_count(item.id) == 1, "the item is taken: " .. item.id)
-local changed = false
-for k, v in pairs(play.bonus) do changed = changed or v ~= before.bonus[k] end
-check(changed, "its bonus counts for the run")
-check(play.fight.player.health == play.fight.player.stats:get("max_health"), "and the slime is healed")
-if item.bonus.max_health then check(play.fight.player.stats:get("max_health") == before.max + item.bonus.max_health, "more max health") end
+check(not play.treasure and play.got == item and play.pools.mutations:taken_count(item.id) == 1,
+  "the mutation is taken: " .. item.id)
+check(play.mutations[#play.mutations] == item, "it joins the run's mutations")
+check(play.fight.player.health == 1, "it does not heal the slime")
+local changed = before.jump ~= play.stats:get("jump") or before.speed ~= play.stats:get("speed")
+  or before.damage ~= play.stats:get("damage") or before.shield ~= play.stats:get("shield")
+  or before.health ~= play.stats:get("health") or before.limbs ~= #play.look.limbs
+check(changed, "its stats or its look changed")
+local sh, shmax = play.stats:shield()
+check(shmax == 2 and sh == 2, "the carapace fills two shield points")
 play:load_room(nav:enter(tr))
-check(not play.treasure, "and is gone when the slime comes back")
+check(not play.treasure, "and it is gone when the slime comes back")
 
--- the boss room: cleared, a stairway leads to the next floor, a new and bigger map
+-- the boss room: cleared, a mutation, a stairway, a new and bigger map
 local floor0, rooms0 = play.floor, #play.map.rooms
 play:load_room(nav:enter(play.map.boss))
 check(play.fight:alive() > 0 and not play.stairs and play.sealed,
@@ -319,7 +317,7 @@ slime:move_to(play.stairs.x + TS_HALF, play.stairs.y - 4); slime:set_velocity(0,
 frames(40)
 check(play.floor == floor0 + 1 and play.nav.index == play.map.start, "down the stairs: floor " .. play.floor .. ", at its start")
 check(#play.map.rooms >= rooms0 and play.map.floor == play.floor, "the next floor is generated (" .. #play.map.rooms .. " rooms)")
-check(play.got == item and play.pool:taken_count(item.id) == 1, "the item stays for the run")
+check(play.pools.mutations:taken_count(item.id) == 1, "the mutation stays for the run")
 -- the biomes change along the run: by floor 10, the core
 local ids = { play.biome.id }
 while play.floor < 10 do
@@ -329,20 +327,93 @@ end
 play:load_room(play.nav:enter(play.map.start))
 check(play.biome.id == "core" and #play.map.rooms > 0, "the last floor is the core (" .. table.concat(ids, ",") .. ")")
 play.new_floor(play, 1)
-check(play.biome.id == "cellar" and play.got == nil and play.bonus.max_health == 0 and play.pool:taken_count(item.id) == 0, "a new run: the cellar again, nothing taken")
+check(play.biome.id == "cellar" and play.got == nil and play.stats:get("jump") == 1
+  and play.stats:get("speed") == 1 and play.stats:get("shield") == 0
+  and play.wallet:get("virus") == 0 and #play.mutations == 0
+  and play.pools.mutations:taken_count(item.id) == 0, "a new run: the cellar again, nothing taken")
 play:load_room(play.nav:enter(play.map.start))
 map, nav = play.map, play.nav
 
+-- pickups: the start room has a heart (full health: one virus) and a virus pickup
+local start_room = play.map.start
+local function pickup_of(kind)
+  for i, p in ipairs(play.pickups) do if p.kind == kind then return p, i end end
+end
+local heart = pickup_of("heart")
+check(heart, "the start room has a heart")
+local wallet0 = play.wallet:get("virus")
+play.fight.player.health = play.stats:get("health")
+slime:move_to(heart.x, heart.y); slime:set_velocity(0, 0)
+frames(2)
+check(play.wallet:get("virus") == wallet0 + 1, "a heart at full health becomes one virus")
+check(not pickup_of("heart"), "the heart is gone")
+local virus_pickup = pickup_of("virus")
+check(virus_pickup, "the start room has a virus pickup")
+local wallet1 = play.wallet:get("virus")
+slime:move_to(virus_pickup.x, virus_pickup.y); slime:set_velocity(0, 0)
+frames(2)
+check(play.wallet:get("virus") == wallet1 + 2, "the virus pickup adds two")
+check(not pickup_of("virus"), "the virus pickup is gone")
+
+-- an obstacle: a breakable crate drops virus and stays broken
+local crate_room
+for n = 1, 10 do
+  if n > 1 then play.new_floor(play, n); nav = play.nav end
+  for i, r in ipairs(play.map.rooms) do
+    if r.template.obstacles and r.template.obstacles[1] then crate_room = i; break end
+  end
+  if crate_room then break end
+end
+check(crate_room, "a floor has a room with an obstacle")
+play:load_room(nav:enter(crate_room))
+crate = play.obstacles[1]
+crate.def.virus.chance = 1
+play.slime.facing = 1
+play.slime:move_to(crate.x - 12, crate.y + 6); play.slime:set_velocity(0, 0)
+F.keys.x = true; frames(2); F.keys.x = nil; frames(2)
+check(require("rooms_obstacles").is_broken(crate), "the attack breaks the crate")
+local dropped = pickup_of("virus")
+if dropped then play.slime:move_to(dropped.x, dropped.y); play.slime:set_velocity(0, 0); frames(2) end
+check(not dropped or play.wallet:get("virus") > wallet1 + 2, "the crate drops virus")
+crate.def.virus.chance = 0.35
+play:load_room(nav:enter(crate_room))
+check(require("rooms_obstacles").is_broken(play.obstacles[1]), "the broken crate stays broken")
+
+-- a machine with accepts_money: the healer spends virus and heals once
+local shop = find("shop")
+check(shop, "the floor has a shop")
+play:load_room(nav:enter(shop))
+local machine = play.machine
+check(machine and machine.def.accepts_money, "the shop has a machine that accepts money")
+play.wallet:add("virus", machine.def.price)
+play.fight.player.health = 1
+play.slime:move_to(machine.x + 6, machine.y + 6); play.slime:set_velocity(0, 0)
+frames(1)
+F.keys.e = true; frames(2); F.keys.e = nil; frames(2)
+check(play.fight.player.health == play.stats:get("health"), "the healer fills the health")
+check(machine.state.used == 1, "the machine remembers its use")
+local price = machine.def.price
+play.wallet:add("virus", price)
+play.fight.player.health = 1
+F.keys.e = true; frames(2); F.keys.e = nil; frames(2)
+check(play.fight.player.health == 1 and machine.state.used == 1, "a used machine does not heal again")
+play:load_room(nav:enter(play.map.start))
+map, nav = play.map, play.nav
+
 -- an up or down door opens the middle three columns of the border row
-local vdoor, vroom, vexit
-for d, door in ipairs(map.doors) do
-  for _, e in ipairs({ { door.a, door.ea }, { door.b, door.eb } }) do
-    local ex = map.rooms[e[1]].template.exits[e[2]]
-    if ex.side == "up" or ex.side == "down" then vdoor, vroom, vexit = d, e[1], ex end
+local vdoor, vroom, vexit, vfloor
+for n = 2, 10 do
+  play.new_floor(play, n); map, nav = play.map, play.nav
+  for d, door in ipairs(map.doors) do
+    for _, e in ipairs({ { door.a, door.ea }, { door.b, door.eb } }) do
+      local ex = map.rooms[e[1]].template.exits[e[2]]
+      if ex.side == "up" or ex.side == "down" then vdoor, vroom, vexit, vfloor = d, e[1], ex, n end
+    end
+    if vdoor then break end
   end
   if vdoor then break end
 end
-check(vdoor ~= nil, "seed 1 floor 1 has an up or down door")
+check(vdoor ~= nil, "a floor has an up or down door")
 if vdoor then
   local door = map.doors[vdoor]
   nav:enter(door.a == vroom and door.b or door.a)

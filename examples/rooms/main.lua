@@ -23,6 +23,7 @@ engine.run({
       jump = { keys = { "space", "up", "w" }, buttons = { "a" } },
       attack = { keys = { "x", "j" }, buttons = { "x" } },
       switch = { keys = { "c", "k", "tab" }, buttons = { "y" } },
+      interact = { keys = { "e", "f" }, buttons = { "b" } },
       quit = { keys = { "escape" } },         -- on the console, hold Back for 3 s
     },
     axes = {

@@ -7,36 +7,36 @@
 --   colors      walls and ledges
 --   music       the track engine.audio plays on its floors (audio:music(biome.music, { fade = 1 }))
 --   rooms_add   rooms more (or fewer) than the plan gives the floor
--- Items of a biome are entries of rooms_items.lua with `biomes = { id }`.
+-- Mutations of a biome are entries of rooms_mutations.lua with `biomes = { id }`.
 local procgen = require("engine.modules.procgen")
 
 local M = {}
 
 M.list = {
   { id = "cellar", name = "CELLAR", fixed = "first", span = 2, difficulty = 1, music = "music/cellar",
-    mobs = { health = 2, damage = 1, color = { 0.85, 0.55, 0.25 } },
-    boss = { health = 6, damage = 2, color = { 0.85, 0.30, 0.55 } },
+    mobs = { id = "cellar_mob", health = 2, damage = 1, color = { 0.85, 0.55, 0.25 } },
+    boss = { id = "cellar_boss", health = 6, damage = 2, color = { 0.85, 0.30, 0.55 } },
     colors = { wall = { 0.20, 0.22, 0.30 }, ledge = { 0.45, 0.48, 0.58 } } },
   { id = "caves", name = "CAVES", span = { 1, 3 }, weight = 3, difficulty = 2, music = "music/caves", rooms_add = 1,
-    mobs = { health = 2, damage = 1, color = { 0.55, 0.70, 0.90 } },
-    boss = { health = 7, damage = 2, color = { 0.35, 0.45, 0.95 } },
+    mobs = { id = "caves_mob", health = 2, damage = 1, color = { 0.55, 0.70, 0.90 } },
+    boss = { id = "caves_boss", health = 7, damage = 2, color = { 0.35, 0.45, 0.95 } },
     colors = { wall = { 0.16, 0.20, 0.26 }, ledge = { 0.40, 0.55, 0.65 } } },
   { id = "garden", name = "GARDEN", span = 2, weight = 2, difficulty = 2, music = "music/garden",
-    mobs = { health = 3, damage = 1, color = { 0.50, 0.80, 0.35 } },
-    boss = { health = 8, damage = 2, color = { 0.30, 0.65, 0.25 } },
+    mobs = { id = "garden_mob", health = 3, damage = 1, color = { 0.50, 0.80, 0.35 } },
+    boss = { id = "garden_boss", health = 8, damage = 2, color = { 0.30, 0.65, 0.25 } },
     colors = { wall = { 0.16, 0.26, 0.18 }, ledge = { 0.45, 0.65, 0.40 } } },
   { id = "forge", name = "FORGE", span = { 1, 2 }, weight = 2, min_floor = 5, difficulty = 3, music = "music/forge",
-    mobs = { health = 3, damage = 2, color = { 0.95, 0.45, 0.20 } },
-    boss = { health = 9, damage = 3, color = { 0.90, 0.25, 0.15 } },
+    mobs = { id = "forge_mob", health = 3, damage = 2, color = { 0.95, 0.45, 0.20 } },
+    boss = { id = "forge_boss", health = 9, damage = 3, color = { 0.90, 0.25, 0.15 } },
     colors = { wall = { 0.30, 0.18, 0.14 }, ledge = { 0.75, 0.45, 0.25 } } },
   { id = "ruins", name = "RUINS", span = 1, weight = 4, difficulty = 3, music = "music/ruins",
     when = function(run) return run and (run.kills or 0) >= 12 end,
-    mobs = { health = 3, damage = 1, color = { 0.80, 0.75, 0.55 } },
-    boss = { health = 9, damage = 2, color = { 0.70, 0.60, 0.30 } },
+    mobs = { id = "ruins_mob", health = 3, damage = 1, color = { 0.80, 0.75, 0.55 } },
+    boss = { id = "ruins_boss", health = 9, damage = 2, color = { 0.70, 0.60, 0.30 } },
     colors = { wall = { 0.28, 0.26, 0.22 }, ledge = { 0.62, 0.58, 0.45 } } },
   { id = "core", name = "CORE", fixed = "last", span = 1, difficulty = 5, music = "music/core", rooms_add = -2,
-    mobs = { health = 4, damage = 2, color = { 0.85, 0.35, 0.85 } },
-    boss = { health = 14, damage = 3, color = { 1.00, 0.30, 0.60 } },
+    mobs = { id = "core_mob", health = 4, damage = 2, color = { 0.85, 0.35, 0.85 } },
+    boss = { id = "core_boss", health = 14, damage = 3, color = { 1.00, 0.30, 0.60 } },
     colors = { wall = { 0.22, 0.12, 0.26 }, ledge = { 0.60, 0.35, 0.70 } } },
 }
 

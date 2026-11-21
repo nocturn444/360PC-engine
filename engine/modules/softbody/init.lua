@@ -93,6 +93,64 @@ function M.new(opts)
   return self
 end
 
+-- Body:set_rest_shape(opts): changes the rest shape in place, without moving the points.
+-- opts.radius, opts.width, opts.height (any omitted one keeps its current value); width and
+-- height 0 mean 2 * radius, as in softbody.new. Recomputes the rest offsets, the springs' rest
+-- lengths, rest_length and rest_area: the body then pulls back to (and inflates to) the new
+-- shape. Allocated nothing; safe to call on an acquisition, not every frame.
+function Body:set_rest_shape(opts)
+  opts = opts or {}
+  local radius, width, height = opts.radius, opts.width, opts.height
+  if radius ~= nil then
+    assert(type(radius) == "number", "softbody.set_rest_shape: radius is a number")
+    assert(radius > 0, "softbody.set_rest_shape: radius > 0")
+  else
+    radius = self.radius
+  end
+  if width ~= nil then
+    assert(type(width) == "number", "softbody.set_rest_shape: width is a number")
+    assert(width >= 0, "softbody.set_rest_shape: width >= 0")
+  else
+    width = self.width
+  end
+  if height ~= nil then
+    assert(type(height) == "number", "softbody.set_rest_shape: height is a number")
+    assert(height >= 0, "softbody.set_rest_shape: height >= 0")
+  else
+    height = self.height
+  end
+  self.radius, self.width, self.height = radius, width, height
+  local rx = width > 0 and width / 2 or radius
+  local ry = height > 0 and height / 2 or radius
+  local n = self.n
+  local rest_x, rest_y, rest = self.rest_x, self.rest_y, self.rest
+  for i = 1, n do
+    local a = 2 * pi * (i - 1) / n
+    rest_x[i], rest_y[i] = rx * cos(a), ry * sin(a)
+  end
+  local total = 0
+  for i = 1, n do
+    local j = i == n and 1 or i + 1
+    local dx, dy = rest_x[j] - rest_x[i], rest_y[j] - rest_y[i]
+    local d = sqrt(dx * dx + dy * dy)
+    rest[i] = d
+    total = total + d
+  end
+  self.rest_length = total / n
+  -- the rest ring's area, around the mean of the rest offsets (its centre)
+  local mx, my = 0, 0
+  for i = 1, n do mx, my = mx + rest_x[i], my + rest_y[i] end
+  mx, my = mx / n, my / n
+  local a, px, py = 0, rest_x[n] - mx, rest_y[n] - my
+  for i = 1, n do
+    local qx, qy = rest_x[i] - mx, rest_y[i] - my
+    a = a + px * qy - qx * py
+    px, py = qx, qy
+  end
+  self.rest_area = 0.5 * a
+  return self
+end
+
 -- The area inside the ring (positive while the ring is not turned inside out)
 function Body:area()
   local x, y, n = self.x, self.y, self.n

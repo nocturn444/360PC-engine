@@ -874,10 +874,13 @@ Optional, loaded by the game that wants them; nothing above requires one.
 - `engine/modules/items`: weighted item pools drawn with the run's `"loot"` stream, filtered by
   room type and the run's tags, with unique items per run and entries that permanent unlocks add.
   Reference: [engine/modules/items/README.md](../engine/modules/items/README.md).
+- `engine/modules/wallet`: named integer currencies for a run, with add/can/spend (never
+  negative) and plain-data state for a run save. Reference:
+  [engine/modules/wallet/README.md](../engine/modules/wallet/README.md).
 - `engine/modules/softbody`: a soft body (points on a ring, springs and pressure) that falls,
-  rolls and squashes against a tile grid, with an outline ready for `engine.pixelgrid`. It needs
-  no other module. Reference:
-  [engine/modules/softbody/README.md](../engine/modules/softbody/README.md).
+  rolls and squashes against a tile grid, with an outline ready for `engine.pixelgrid` and a
+  `set_rest_shape` setter for bodies whose rest shape changes. It needs no other module.
+  Reference: [engine/modules/softbody/README.md](../engine/modules/softbody/README.md).
 - `engine/modules/rooms`: plays a procgen map one room at a time: the current room, leaving by
   an exit, where its door leads and where the body arrives, locked doors, explored rooms for the
   minimap and the run's save, and fade or slide transitions. Reference:

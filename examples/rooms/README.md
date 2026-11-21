@@ -12,19 +12,53 @@ by room with `engine/modules/rooms`, by the soft-body slime of [examples/slime](
   floors 1 and 2 and the core is always floor 10. In between come the caves (1 to 3 floors), the
   garden (2), the forge (1 or 2, from floor 5), and the ruins (1), which only open once the slime
   has 12 kills. Each biome has a difficulty, its own enemies (health, bite, colour), wall
-  colours, a music track name and a few rooms more or fewer. The HUD shows its name.
-- The treasure room holds an item (`rooms_items.lua`, `engine/modules/items`) drawn for the
-  floor's biome from the run's `"loot"` stream: more max health, a higher jump, more speed, and
-  items found only in some biomes (crystal in the caves, moss in the garden, ember in the forge
-  and the core, relic in the ruins). Touching it gives its bonus for the rest of the run and
-  heals the slime. The shop is only a labelled room for now. The miniboss room holds two of the
-  biome's stronger enemies.
+  colours, a music track name and a few rooms more or fewer. The HUD shows its name. Each biome's
+  mob has an id (`rooms_biomes.lua`), so the content pools can vary by mob.
 - A boss or miniboss room shuts its doors while its enemies are alive: the slime has to win the
-  fight (or fall) before it can leave. Once the boss is cleared, a stairway opens in its floor.
-  Going down it, behind a fade, leads to the next floor, a new map. The slime keeps its health.
-  After floor 10 the run starts again at floor 1.
+  fight (or fall) before it can leave. The first clear gives one mutation, and the boss opens a
+  stairway. Going down it, behind a fade, leads to the next floor, a new map. The slime keeps its
+  health and everything the run gave it. After floor 10 the run starts again at floor 1.
 - The minimap colours the room types: boss red, treasure gold, shop green, miniboss orange.
-  The floor number is shown top left.
+  The floor number and the run's resources are shown top left.
+
+## Stats and mutations
+
+The six run stats are `luck`, `jump`, `speed`, `damage`, `shield` and `health`
+(`rooms_stats.lua`, [docs/STATS.md](../../docs/STATS.md)). Bases: luck 5 (0..10), jump and speed
+multipliers 1.0, damage 1, shield capacity 0, health 5. Jump and speed scale movement; damage
+scales the three attacks (`power` in `rooms_attacks.lua`); health is the maximum, not the current
+health.
+
+The treasure room holds exactly one mutation, drawn for the floor and the current build from the
+content pools (`rooms_content.lua`, `rooms_mutations.lua`,
+[docs/CONTENT.md](../../docs/CONTENT.md)). It is not a choice: touching it is enough. Mutations
+are unique or stackable, can require a build tag, can gain weight from synergy tags, and can be
+restricted by biome, floor, room or mob. The three example mutations are a jump/antenna change, a
+shield/shell change and a speed/legs change; they are placeholders to be replaced.
+
+Every mutation also changes the slime's look (`rooms_look.lua`,
+[docs/COSMETICS.md](../../docs/COSMETICS.md)): colour, eyes, shape or new limbs. A mutation with
+`body` changes the soft body's rest shape, so its hitbox follows; one without it only changes the
+drawing. The legs example is wider and faster; it does not add a new walking model.
+
+The shield is a resource, not flat armour: damage hits the shield first, overflow goes to health,
+and after `5 + 2.5 * capacity` seconds without a hit it refills. The HUD shows `SH current/max`.
+
+## Consumables, virus and machines
+
+- A normal heart heals 1; at full health it becomes one virus. Hearts can drop from mobs and are
+  in the start room for testing.
+- Virus is the run's currency. It comes from broken crates, a chance when a room is cleared, and
+  (as a hook) future machines; it is spent at machines that accept money. The start room has a
+  small virus pickup.
+- Breakable crates are non-solid props: attack them in front or fall on them. A broken crate stays
+  broken while the room exists and can drop virus.
+- The shop template has a test healer (`rooms_machines.lua`): `accepts_money = true`, 5 virus,
+  one use, fills the health. Each machine has its own state. Interact with it when close.
+- Pools, drops and pickups are described in [docs/ECONOMY.md](../../docs/ECONOMY.md) and
+  [docs/CONTENT.md](../../docs/CONTENT.md). The shop stock is deliberately not implemented yet.
+
+## Rooms and movement
 
 - Only the current room exists: its collision grid is built from the template's rows when the
   slime comes in, with the border opened where the map put a door.
@@ -41,14 +75,14 @@ by room with `engine/modules/rooms`, by the soft-body slime of [examples/slime](
 - Enemies (`rooms_enemies.lua`): platformer controller bodies in a bump world made from the
   room's grid, each run by a patrol / chase / attack state machine (`combat.behaviours`), in one
   combat world with the slime, which combat sees through `softbody.box`. Landing on an enemy
-  while falling fast hurts it and bounces the slime off; a bite hurts the slime (5 HP, shown top
-  left) and knocks it back, and it blinks while it cannot be hurt. At 0 HP it goes back to the
-  start room, healed. A room remembers its enemies: the dead stay dead and a hurt enemy keeps its
-  health when the slime comes back. The state lasts for the run (a new floor has a new map).
+  while falling fast hurts it and bounces the slime off; a bite hurts the slime and knocks it
+  back, and it blinks while it cannot be hurt. At 0 HP it goes back to the start room, healed. A
+  room remembers its enemies: the dead stay dead and a hurt enemy keeps its health when the slime
+  comes back. The state lasts for the floor.
 - The slime's attacks (`rooms_attacks.lua`, example `combat.attacks` configs): a melee arc in
   front of it, a ranged shot, and a bomb thrown low that bounces, blows on touching an enemy
   or after its fuse, and pushes everything in its radius away. One mode at a time, switched
-  with the switch button and shown under the health; the mode is kept from room to room.
+  with the switch button; the mode is kept from room to room.
 - A minimap in the corner shows the explored rooms (`nav:minimap()`), the current one in yellow.
 
 | Action | Keyboard | Controller |
@@ -58,13 +92,21 @@ by room with `engine/modules/rooms`, by the soft-body slime of [examples/slime](
 | Squash (let go on the ground: a higher jump) | Down, S | d-pad down |
 | Attack | X, J | X |
 | Switch attack (melee, ranged, explosive) | C, K, Tab | Y |
+| Interact (machine) | E, F | B |
 | Quit | Escape | Hold Back 3 s |
 
 The rooms are in `rooms_data.lua` as rows of strings, the shape LDtk levels read by
 `engine.level` also give. Run it on PC from the repository root: `love examples/rooms`.
 
-What to look at on the console: the fade hides the room change (no frame of the old or new
-room in the wrong place), the camera never shows outside the room, and the frame stays at 30
-FPS in the two-by-two room with its three enemies.
+The HUD is provisional: HP, virus, shield/luck, floor/biome and the last mutation are text drawn
+with `engine.text`, so it works on the console without a TTF.
 
-Test: `luajit -joff tests/pc/rooms_example_test.lua`.
+What to look at on the console: the fade hides the room change (no frame of the old or new
+room in the wrong place), the camera never shows outside the room, the extra limbs stay inside
+the pixel grid, and the frame stays at 30 FPS in the two-by-two room with its three enemies.
+
+Tests: `luajit -joff tests/pc/rooms_example_test.lua`,
+`luajit -joff tests/pc/rooms_stats_test.lua`,
+`luajit -joff tests/pc/rooms_content_test.lua`,
+`luajit -joff tests/pc/rooms_economy_test.lua`,
+`luajit -joff tests/pc/rooms_look_test.lua`.

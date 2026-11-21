@@ -24,7 +24,7 @@ function T.no_new_globals(before)
 end
 
 local names = { "state_test", "timestep_test", "input_test", "camera_test", "pixel_test",
-  "layers_test", "anim_test", "entity_test", "modifiers_test", "rng_test", "save_test", "ui_test", "pixelgrid_test", "softbody_test", "rooms_test", "tune_test", "text_test", "audio_test", "platformer_test", "combat_test", "attacks_test", "procgen_test", "floors_test", "items_test", "seeds_test", "debug_test", "level_test", "engine_test", "demo_test" }
+  "layers_test", "anim_test", "entity_test", "modifiers_test", "rng_test", "save_test", "ui_test", "pixelgrid_test", "softbody_test", "softbody_shape_test", "wallet_test", "rooms_test", "tune_test", "text_test", "audio_test", "platformer_test", "combat_test", "attacks_test", "procgen_test", "floors_test", "items_test", "seeds_test", "debug_test", "level_test", "engine_test", "demo_test" }
 if arg[1] then names = { unpack(arg) } end
 
 local jit_on = jit and jit.status()
