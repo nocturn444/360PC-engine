@@ -39,7 +39,7 @@ No emojis in text.
 | `examples/` | `engine_demo`, `perf_platformer` (performance test), `slime` (soft body), `rooms` (generated map, enemies, attacks, floors, biomes, stats, content, economy, cosmetics: the game prototype; its own docs are in `examples/rooms/docs/`). |
 | `tests/` | PC tests and console checks. [tests/README.md](tests/README.md) |
 | `toolchain/` | Scripts and patch to build LuaJIT for xsdk. |
-| `docs/` | Documentation: `ROADMAP`, `ENGINE`, `API_SUBSET`, `GAME_CONFIG`, `LEVELS`, `LEVEL_EDITOR`, `SHADERS`, `NEW_GAME`, `DEPLOY`, `CLOUD_BUILD`, `VERSIONING`. Engine docs only: a game's own docs go in its folder. |
+| `docs/` | Documentation: `ROADMAP`, `ENGINE`, `API_SUBSET`, `GAME_CONFIG`, `LEVELS`, `LEVEL_EDITOR`, `SHADERS`, `NEW_GAME`, `DEPLOY`, `CLOUD_BUILD`, `OPENCODE_CI`, `VERSIONING`. Engine docs only: a game's own docs go in its folder. |
 
 ## 3. Hard rules (do not break)
 
@@ -96,6 +96,9 @@ No emojis in text.
   that conversation).
 - **Keep CI green.** A push to `main` (except Markdown and `docs/` only) triggers the console
   build; a red run means the owner cannot get a `.xex`.
+- **opencode in GitHub Actions** ([docs/OPENCODE_CI.md](docs/OPENCODE_CI.md)): if you are
+  running there, the workflow handles branches, pushes and the pull request. Do not push,
+  switch to `main` or merge; just make the change, run the tests and summarize what you did.
 - **Do not touch** `.github/workflows/`, `tools/ci/`, `tools/package.py`,
   `tools/audio_convert.py`, `tools/shaders/`, `toolchain/`, `runtime/XSDK_VERSION`,
   `run_pc.bat` or `deploy_console.bat` without a clear reason stated in the PR. These are the
