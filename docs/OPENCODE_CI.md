@@ -45,3 +45,5 @@ opencode reads `AGENTS.md` automatically. Review and merge its pull requests you
 - Pull requests opened with the workflow's `GITHUB_TOKEN` do not start other workflows, so the
   console build does not run by itself on them: start it from Actions > Console build >
   Run workflow and pick the PR's branch.
+
+Tested end to end on 2026-11-21.
