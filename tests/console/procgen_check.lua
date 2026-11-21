@@ -50,12 +50,12 @@ local function hash(o)
   return m and procgen.hash(m) or ("no map: " .. tostring(err))
 end
 
-check("seed 360, 16 rooms", hash({ seed = 360, rooms = 16, abilities = ABIL }), 2831968984)
-check("seed 1, 16 rooms", hash({ seed = 1, rooms = 16, abilities = ABIL }), 2422284910)
-check("seed 'hello', 30 rooms", hash({ seed = "hello", rooms = 30, abilities = ABIL }), 1173747109)
-check("streams(12345) level, 16 rooms", hash({ rng = rng.streams(12345):get("level"), rooms = 16, abilities = ABIL }), 2181236771)
-check("seed 7, no loops", hash({ seed = 7, rooms = 16, abilities = ABIL, loops = false }), 1978648010)
-check("seed 7, shops", hash({ seed = 7, rooms = 16, abilities = ABIL, types = { normal = 1, shop = 3 } }), 1376559717)
+check("seed 360, 16 rooms", hash({ seed = 360, rooms = 16, abilities = ABIL }), 2752255524)
+check("seed 1, 16 rooms", hash({ seed = 1, rooms = 16, abilities = ABIL }), 4051614553)
+check("seed 'hello', 30 rooms", hash({ seed = "hello", rooms = 30, abilities = ABIL }), 1412230188)
+check("streams(12345) level, 16 rooms", hash({ rng = rng.streams(12345):get("level"), rooms = 16, abilities = ABIL }), 721847579)
+check("seed 7, no loops", hash({ seed = 7, rooms = 16, abilities = ABIL, loops = false }), 3039181901)
+check("seed 7, shops", hash({ seed = 7, rooms = 16, abilities = ABIL, types = { normal = 1, shop = 3 } }), 2981819364)
 
 log(string.format("== procgen: %d of %d wrong ==", bad, total))
 return bad

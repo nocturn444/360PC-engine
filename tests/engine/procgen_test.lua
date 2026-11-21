@@ -132,7 +132,7 @@ T.check(P.hash(P.generate(opts(0, { rng = s1:get("level") }))) == P.hash(P.gener
   "a level stream of the run's streams")
 -- Known answer: the same on the PC with or without the JIT and on the console
 -- (tests/console/procgen_check.lua checks this number on hardware)
-local KNOWN = 2831968984
+local KNOWN = 2752255524
 local known = P.hash(P.generate({ templates = rooms(), seed = 360, rooms = 16, abilities = ABIL }))
 T.check(known == KNOWN, "known hash for seed 360: " .. known)
 local lines = {}
@@ -171,6 +171,43 @@ for seed = 1, 40 do
   for _, d in ipairs(m.doors) do if d.loop then looped = looped + 1 end end
 end
 T.check(looped > 0, "loops join neighbours of a zone (" .. looped .. " loops in 40 maps)")
+-- branching: the default avoids filling the gaps between rooms more than branching = 0
+local function touching_without_door(m)
+  local cells, linked, seen = {}, {}, {}
+  for _, r in ipairs(m.rooms) do
+    for x = r.x, r.x + r.w - 1 do
+      for y = r.y, r.y + r.h - 1 do cells[x .. "," .. y] = r.index end
+    end
+  end
+  for _, d in ipairs(m.doors) do linked[math.min(d.a, d.b) .. "," .. math.max(d.a, d.b)] = true end
+  local n = 0
+  for _, r in ipairs(m.rooms) do
+    for x = r.x, r.x + r.w - 1 do
+      for y = r.y, r.y + r.h - 1 do
+        for _, d in ipairs({ { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } }) do
+          local o = cells[(x + d[1]) .. "," .. (y + d[2])]
+          if o and o ~= r.index then
+            local a, b = math.min(o, r.index), math.max(o, r.index)
+            if not linked[a .. "," .. b] and not seen[a .. "," .. b] then
+              seen[a .. "," .. b], n = true, n + 1
+            end
+          end
+        end
+      end
+    end
+  end
+  return n
+end
+local gaps0, gapsd = 0, 0
+for seed = 1, 20 do
+  gaps0 = gaps0 + touching_without_door(assert(P.generate(opts(seed, { branching = 0 }))))
+  gapsd = gapsd + touching_without_door(assert(P.generate(opts(seed))))
+end
+T.check(gapsd < gaps0, "branching: the default fills fewer gaps (" .. gapsd .. " vs " .. gaps0 .. ")")
+T.check(not pcall(P.generator.new, { templates = rooms(), seed = 1, branching = 2 }),
+  "branching: a value above 1 is an error")
+T.check(not pcall(P.generator.new, { templates = rooms(), seed = 1, branching = "x" }),
+  "branching: a non-number is an error")
 local shops, normals = 0, 0
 for seed = 1, 20 do
   local m = assert(P.generate(opts(seed, { types = { normal = 1 } })))
@@ -191,7 +228,7 @@ T.check(m0 == nil and err0:find("too few rooms", 1, true), "too few rooms for th
 local calls = 0
 local mc = P.generate(opts(8, { check = function(m) calls = calls + 1; return calls >= 3, "not yet" end }))
 T.check(mc and mc.attempts >= 3 and calls == 3, "check: a refused map is tried again")
-local mx, errx = P.generate(opts(8, { attempts = 2, check = function() return false, "never" end }))
+local mx, errx = P.generate(opts(1, { attempts = 2, check = function() return false, "never" end }))
 T.check(mx == nil and errx:find("2 attempts", 1, true) and errx:find("never", 1, true), "out of attempts: the last reason")
 local no_items = rooms()
 for i = #no_items, 1, -1 do if no_items[i].item then table.remove(no_items, i) end end

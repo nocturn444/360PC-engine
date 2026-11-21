@@ -42,15 +42,30 @@ local function build_rows(self, index)
   for e, exit in ipairs(r.template.exits) do
     local door = r.doors[e]
     local open = door and self.nav:can_pass(door, self.abilities)
-    local col = exit.side == "left" and 1 or #rows[1]
-    for k = 9, 11 do
-      local y = exit.offset * CH + k
-      if open then
-        rows[y] = rows[y]:sub(1, col - 1) .. "." .. rows[y]:sub(col + 1)
+    if exit.side == "left" or exit.side == "right" then
+      local col = exit.side == "left" and 1 or #rows[1]
+      for k = 9, 11 do
+        local y = exit.offset * CH + k
+        if open then
+          rows[y] = rows[y]:sub(1, col - 1) .. "." .. rows[y]:sub(col + 1)
+        end
       end
-    end
-    if door and not open then
-      self.locked[#self.locked + 1] = { x = (col - 1) * TS, y = (exit.offset * CH + 8) * TS }
+      if door and not open then
+        self.locked[#self.locked + 1] = { x = (col - 1) * TS + 4, y = (exit.offset * CH + 8) * TS,
+          w = TS - 8, h = 3 * TS }
+      end
+    else
+      local row = exit.side == "up" and 1 or #rows
+      for k = 9, 11 do
+        local x = exit.offset * CW + k
+        if open then
+          rows[row] = rows[row]:sub(1, x - 1) .. "." .. rows[row]:sub(x + 1)
+        end
+      end
+      if door and not open then
+        self.locked[#self.locked + 1] = { x = (exit.offset * CW + 8) * TS, y = (row - 1) * TS + 4,
+          w = 3 * TS, h = TS - 8 }
+      end
     end
   end
   return rows
@@ -287,7 +302,7 @@ function play:draw(alpha)
   g.setColor(colors.ledge[1], colors.ledge[2], colors.ledge[3], 1)
   for i = 1, #self.ones do local r = self.ones[i]; g.rectangle("fill", r[1], r[2], r[3], 3) end
   g.setColor(0.95, 0.75, 0.20, 1)
-  for i = 1, #self.locked do local l = self.locked[i]; g.rectangle("fill", l.x + 4, l.y, TS - 8, 3 * TS) end
+  for i = 1, #self.locked do local l = self.locked[i]; g.rectangle("fill", l.x, l.y, l.w, l.h) end
   if self.item then g.rectangle("fill", self.item.x, self.item.y, 8, 8) end
   local tr = self.treasure
   if tr then

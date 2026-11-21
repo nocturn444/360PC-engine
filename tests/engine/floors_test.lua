@@ -181,6 +181,10 @@ T.check(not pcall(P.floors.new, { count = 0, templates = rooms() }), "count >= 1
 -- seeds: a floor of a plan, the same hash as generating it by hand
 local h = P.seeds.hash({ plan = plan, floor = 4 }, 77)
 T.check(h == P.hash(plan:generate(4, Rng.streams(77):get("floor4"))), "seeds.hash with a plan and a floor")
+local b0 = P.floors.new({ count = 1, templates = rooms(), rooms = { first = 12, last = 12 }, branching = 0 })
+local bd = P.floors.new({ count = 1, templates = rooms(), rooms = { first = 12, last = 12 } })
+T.check(P.hash(assert(b0:generate(1, Rng.new(21)))) ~= P.hash(assert(bd:generate(1, Rng.new(21)))),
+  "branching goes from the plan to the generator")
 
 ---------------------------------------------------------------------------
 -- biomes

@@ -2,8 +2,9 @@
 -- platformer.grid takes). A map cell is 20 x 12 tiles of 16 pixels (320 x 192): a little more
 -- than the screen (320 x 180), so the camera moves a little inside a one-cell room and more in
 -- the bigger ones. "#" solid, "=" one-way, "." empty. Every room is closed by a border; the play
--- state opens rows 9 to 11 of a cell's first or last column where the map put a door, and keeps
--- a locked door shut until the player has its ability.
+-- state opens rows 9 to 11 of a cell's first or last column for a left or right door, or the
+-- middle three columns of the first or last row for an up or down door, and keeps a locked door
+-- shut until the player has its ability.
 --
 -- enemies: the tiles enemies stand on at first (the tile above the floor), read by the play state.
 --
@@ -34,7 +35,9 @@ local SPECIAL_ENEMIES = { miniboss = { { tx = 10, ty = 11 }, { tx = 14, ty = 11 
 
 local function lr(...)
   local out = {}
-  for i, e in ipairs({ ... }) do out[i] = { side = e[1], offset = e[2] or 0 } end
+  for i, e in ipairs({ ... }) do
+    out[i] = { side = e[1], offset = e[2] or 0, tx = e[3], ty = e[4] }
+  end
   return out
 end
 
@@ -74,6 +77,16 @@ for i, row in ipairs(TALL) do
 end
 HUB[1] = ("#"):rep(40); HUB[24] = ("#"):rep(40)
 
+local FULL = "####################"
+local PLATFORM = "#........===.......#"
+-- Junction rooms keep a closed border: the play state opens the middle three columns of the top
+-- or bottom row where the map put an up or down door, just like it opens the side doors. The
+-- one-way platforms are three rows apart, so the slime can climb a shaft.
+local VERTICAL_ROWS = {
+  FULL, "#..................#", PLATFORM, "#..................#", "#..................#", PLATFORM,
+  "#..................#", "#..................#", PLATFORM, "#..................#", "#..................#",
+  FULL,
+}
 -- A new list each call: procgen.templates fills in defaults in place
 function M.templates()
   local list = {
@@ -123,6 +136,18 @@ function M.templates()
       exits = lr({ "left", 0 }, { "left", 1 }, { "right", 0 }, { "right", 1 }) },
     { id = "hub", w = 2, h = 2, rows = HUB, enemies = { { tx = 8, ty = 23 }, { tx = 32, ty = 23 }, { tx = 13, ty = 11 } },
       exits = lr({ "left", 0 }, { "left", 1 }, { "right", 0 }, { "right", 1 }) },
+    -- Junction and vertical rooms: branches in both directions instead of one long corridor
+    { id = "cross", weight = 2, rows = VERTICAL_ROWS, enemies = { { tx = 4, ty = 11 }, { tx = 16, ty = 11 } },
+      exits = lr({ "left" }, { "right" }, { "up" }, { "down", 0, 7, 11 }) },
+    { id = "shaft", weight = 2, rows = VERTICAL_ROWS, exits = lr({ "up" }, { "down", 0, 7, 11 }) },
+    { id = "tee_u", weight = 2, rows = VERTICAL_ROWS, enemies = { { tx = 4, ty = 11 }, { tx = 16, ty = 11 } },
+      exits = lr({ "left" }, { "right" }, { "up" }) },
+    { id = "tee_d", weight = 2, rows = VERTICAL_ROWS, enemies = { { tx = 4, ty = 11 }, { tx = 16, ty = 11 } },
+      exits = lr({ "left" }, { "right" }, { "down", 0, 7, 11 }) },
+    { id = "corner_lu", weight = 1, rows = VERTICAL_ROWS, exits = lr({ "left" }, { "up" }) },
+    { id = "corner_ru", weight = 1, rows = VERTICAL_ROWS, exits = lr({ "right" }, { "up" }) },
+    { id = "corner_ld", weight = 1, rows = VERTICAL_ROWS, exits = lr({ "left" }, { "down", 0, 7, 11 }) },
+    { id = "corner_rd", weight = 1, rows = VERTICAL_ROWS, exits = lr({ "right" }, { "down", 0, 7, 11 }) },
     { id = "vault_l", item = { tx = 10, ty = 11 }, exits = lr({ "left" }), rows = {
       "####################",
       "#..................#",
@@ -151,6 +176,10 @@ function M.templates()
       "#..................#",
       "####################",
     } },
+    { id = "vault_u", item = { tx = 10, ty = 11 }, exits = { { side = "up" } },
+      rows = VERTICAL_ROWS },
+    { id = "vault_d", item = { tx = 5, ty = 11 }, exits = { { side = "down", tx = 7, ty = 11 } },
+      rows = VERTICAL_ROWS },
     { id = "lair_l", type = "boss", exits = lr({ "left" }), enemies = { { tx = 12, ty = 11 }, { tx = 16, ty = 11 } }, rows = {
       "####################",
       "#..................#",
@@ -179,13 +208,25 @@ function M.templates()
       "#..................#",
       "####################",
     } },
+    { id = "lair_u", type = "boss", exits = { { side = "up" } },
+      enemies = { { tx = 4, ty = 11 }, { tx = 16, ty = 11 } },
+      rows = VERTICAL_ROWS },
+    { id = "lair_d", type = "boss", exits = { { side = "down", tx = 7, ty = 11 } },
+      enemies = { { tx = 4, ty = 11 }, { tx = 16, ty = 11 } },
+      rows = VERTICAL_ROWS },
   }
   -- The special rooms (procgen.roomtypes): one cell, one door, so each is a dead end
+  local VERTICAL_ENEMIES = { { tx = 4, ty = 11 }, { tx = 16, ty = 11 } }
   for _, kind in ipairs({ "treasure", "shop", "miniboss" }) do
     for _, side in ipairs({ "left", "right" }) do
       list[#list + 1] = { id = kind .. "_" .. side:sub(1, 1), type = kind, exits = lr({ side }),
         enemies = SPECIAL_ENEMIES[kind], rows = SPECIAL_ROWS[kind] }
     end
+    local enemies = kind == "miniboss" and VERTICAL_ENEMIES or nil
+    list[#list + 1] = { id = kind .. "_u", type = kind, exits = { { side = "up" } },
+      enemies = enemies, rows = VERTICAL_ROWS }
+    list[#list + 1] = { id = kind .. "_d", type = kind,
+      exits = { { side = "down", tx = 7, ty = 11 } }, enemies = enemies, rows = VERTICAL_ROWS }
   end
   return list
 end

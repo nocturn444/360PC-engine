@@ -15,7 +15,7 @@ local map = assert(procgen.generate({ templates = spec.templates, rooms = spec.r
 T.check(hash == procgen.hash(map) and attempts == map.attempts, "seeds.hash is the hash of the run's level stream")
 T.check(seeds.hash(spec, 360) == hash, "and the same again")
 local plain = { templates = spec.templates, rooms = 16, abilities = spec.abilities, stream = false }
-T.check(seeds.hash(plain, 1) == 2422284910, "stream = false: the seed itself (procgen_check's known answer)")
+T.check(seeds.hash(plain, 1) == 4051614553, "stream = false: the seed itself (procgen_check's known answer)")
 
 -- format and parse
 local entries = {}

@@ -85,7 +85,10 @@ is part of the result.
 1. A `start` template goes at cell 0, 0.
 2. The rooms that are not start, boss or item rooms are split evenly over `#abilities + 1` zones.
    Each zone grows from its own open exits:
-   - one open exit is picked at random;
+   - one open exit is picked, with a weight from `branching` (default 0.5): an exit whose
+     target cell would touch other rooms (filling a gap) gets less weight than one that grows
+     outward, so the map spreads into branches instead of a compact block. 0 is the plain
+     uniform pick, 1 never fills a gap while another open exit is free;
    - then a template whose exit fits and whose cells are free (by weight; with `opts.types`, a
      type by weight first).
 3. The first room of zone k hangs off an earlier zone through a door that needs `abilities[k]`.
@@ -176,6 +179,7 @@ map.
 | `rooms` | `{ first, last, jitter }` or `function(n, plan, rng)`. The count never drops below what the floor's special rooms need. |
 | `abilities` | An array, or `function(n, plan)`. |
 | `loops` | `true` / `false`, or `function(n, plan)`. |
+| `branching` | 0 to 1, or `function(n, plan)`: the generator's branching (default 0.5); a biome's `branching` wins. |
 | `boss_distance` | `"far"` (the default) or `"any"`. |
 | `attempts` | The generator's attempts. |
 | `options` | `function(opts, n, plan, rng)`: the game's last word on floor n's options. |
@@ -240,7 +244,7 @@ with `biomes` in `engine/modules/items`, and its music is a name for `engine.aud
 `procgen.seeds` (`seeds.lua`) turns one seed into one layout hash, the same way everywhere:
 `seeds.hash(spec, seed)` returns `hash, attempts` (or `nil, reason`), where `spec` is a table
 of the game's: `templates` (or a function returning them), `abilities`, `rooms`, and
-optionally `check`, `types`, `loops`, `attempts` and `stream` (the `engine.rng` stream the
+optionally `check`, `types`, `loops`, `branching`, `attempts` and `stream` (the `engine.rng` stream the
 game generates levels with, default `"level"`: the map is the one
 `rng.streams(seed):get("level")` gives; `stream = false` passes the seed straight to
 `generate`). `seeds.format` / `seeds.parse` write and read a hash list, and
