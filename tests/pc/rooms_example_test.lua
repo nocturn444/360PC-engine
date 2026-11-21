@@ -1,7 +1,8 @@
 -- examples/rooms: boots on the console's boot (tests/pc/boot_pc.lua) and runs on the engine
 -- tests' fake love: the slime starts in the start room, walks out through a door behind a fade,
 -- arrives inside the next room, a locked door holds until the key is picked up, the minimap
--- marks what was explored, and the room is drawn.
+-- marks what was explored, an enemy that falls through a pit turns up in the room below, and
+-- the room is drawn.
 -- Usage, from the repository root: luajit -joff tests/pc/rooms_example_test.lua   (must end with "OK:")
 package.path = "./?.lua;./?/init.lua;./tests/engine/?.lua;./examples/rooms/?.lua;" .. package.path
 local checks = 0
@@ -444,6 +445,62 @@ if mb then
   for _, e in ipairs(play.fight.enemies) do e.fighter.dead = true end
   frames(2)
   check(not play.sealed and play.fight:alive() == 0, "and opens them when it is cleared")
+end
+
+-- an enemy that falls out through a pit moves to the room below; past an edge with no door it dies
+local pit_room, pit_exit, pit_floor
+for n = 1, 10 do
+  play.new_floor(play, n)
+  for i, r in ipairs(play.map.rooms) do
+    if #(r.template.enemies or {}) > 0 and r.type ~= "boss" and r.type ~= "miniboss" then
+      for e, ex in ipairs(r.template.exits) do
+        if ex.side == "down" and r.doors[e] then pit_room, pit_exit = i, e; break end
+      end
+    end
+    if pit_room then break end
+  end
+  if pit_room then pit_floor = n; break end
+end
+check(pit_room ~= nil, "some floor has a room with enemies and a door down")
+if pit_room then
+  map, nav = play.map, play.nav
+  play:load_room(nav:enter(pit_room))
+  play.fight.player.invuln = 100
+  local r = map.rooms[pit_room]
+  local cw, ch = data.cell_w * data.tile_size, data.cell_h * data.tile_size
+  local ox = P.templates.exit_cell(r.template, r.template.exits[pit_exit])
+  local target, entry = nav:through(r.doors[pit_exit])
+  local fe = play.fight.enemies[1]
+  local before_alive, kills0 = play.fight:alive(), play.kills
+  fe.fighter.health = fe.fighter.health - 1
+  local hp = fe.fighter.health
+  fe.body:teleport(ox * cw + cw / 2, r.h * ch + 4)
+  frames(2)
+  local arr = play.rooms_state[target] and play.rooms_state[target].arrivals
+  check(fe.fighter.dead and play.room_state.enemies[1].dead, "an enemy past the pit is gone from its room")
+  check(play.kills == kills0, "and it is not a kill")
+  check(arr and #arr == 1 and arr[1].health == hp, "it is waiting in the room below with its health")
+  local tcount = #(map.rooms[target].template.enemies or {})
+  play:load_room(nav:enter(target, entry))
+  local arrived = play.fight.enemies[tcount + 1]
+  check(arrived and not arrived.fighter.dead and arrived.fighter.health == hp, "the room below has it")
+  play:load_room(nav:enter(pit_room))
+  check(play.fight:alive() == before_alive - 1, "it does not come back where it fell from")
+  -- past an edge with no door: it just dies
+  local other
+  for _, e in ipairs(play.fight.enemies) do if not e.fighter.dead then other = e; break end end
+  if other then
+    local kills1 = play.kills
+    other.body:teleport(-40, -40)                        -- above the top left corner
+    local _, door = nav:leaving(-40 + other.body.w / 2, -40 + other.body.h / 2)
+    local n_arr = 0
+    for _, st in pairs(play.rooms_state) do n_arr = n_arr + #(st.arrivals or {}) end
+    frames(2)
+    local n_arr2 = 0
+    for _, st in pairs(play.rooms_state) do n_arr2 = n_arr2 + #(st.arrivals or {}) end
+    check(other.fighter.dead and play.kills == kills1, "an enemy past an edge dies, not as a kill")
+    check(door or n_arr2 == n_arr, "and with no door there it goes nowhere")
+  end
 end
 
 -- the room is drawn
