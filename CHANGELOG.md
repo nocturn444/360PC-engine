@@ -88,6 +88,9 @@ All notable changes to 360PC-Engine. The format follows
 - `examples/rooms`: `rooms_spawn.lua`, the spawn rules of the new special rooms (casino, super
   treasure, pact, trap, obstacle) as data and pure functions, plus the per-floor run state
   (casino, trap, obstacle, treasure skipped) they read. Not wired into the map yet.
+- `examples/rooms`: bonus keys (`bonus_key`, a pale cyan `KEY+` pickup) for optional locks, a
+  separate `bonus_keys` content pool with a `0.05` mob roll scaled by luck, and the `bonus_key`
+  currency in the run wallet; its first use is the super treasure room.
 
 ### Changed
 - `engine.pixel` uses `"direct"` mode by default on PC too, so PC shows what the console shows.
