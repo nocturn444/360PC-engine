@@ -98,6 +98,9 @@ All notable changes to 360PC-Engine. The format follows
   white outline around the current room and data-driven pixel icons for the special room types.
 - `examples/rooms`: `rooms_pacts.lua`, the pact room's mutualist larvae (one heart slot for one
   mutation), and `stats:add_permanent` for the permanent health cost, saved with the run.
+- `examples/rooms/rooms_shop.lua`: shop stock drawn once per room from the content pools with a
+  virus price, buying that spends and marks an offer sold and takes it from its pool, the
+  treasure / super treasure pedestal positions, and an optional offer draw.
 
 ### Changed
 - `engine.pixel` uses `"direct"` mode by default on PC too, so PC shows what the console shows.
