@@ -8,9 +8,11 @@ local M = {}
 
 M.tuning = { larvae = 2, cost = 1 }
 
--- pacts.new(x, y, state) -> a larva at x, y (top-left). `state` is the room's persistent table
--- for this larva; `used` says its pact is taken. Nil makes a fresh one.
-function M.new(x, y, state)
+-- pacts.new(x, y, state, source) -> a larva at x, y (top-left). `state` is the room's persistent
+-- table for this larva; `used` says its pact is taken. Nil makes a fresh one. `source` is the
+-- permanent modifier's unique key in the run (e.g. "pact:<floor>:<room>:<i>"): two larvae at the
+-- same x, y on different floors must not share it.
+function M.new(x, y, state, source)
   if type(x) ~= "number" or type(y) ~= "number" then
     error("pacts: new needs numeric x and y", 2)
   end
@@ -18,7 +20,10 @@ function M.new(x, y, state)
   if type(state) ~= "table" then error("pacts: state is a table", 2) end
   if state.used == nil then state.used = false end
   if type(state.used) ~= "boolean" then error("pacts: state.used is a boolean", 2) end
-  return { x = x, y = y, state = state, source = "pact:" .. x .. ":" .. y }
+  if type(source) ~= "string" or source == "" then
+    error("pacts: source is a non-empty string", 2)
+  end
+  return { x = x, y = y, state = state, source = source }
 end
 
 -- pacts.can_accept(larva, stats) -> allowed, reason. Reasons: "used" and "too weak" (one heart

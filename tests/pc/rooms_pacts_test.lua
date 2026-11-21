@@ -14,7 +14,7 @@ local function fresh() return S.new({}) end
 
 -- Accept lowers the max health by one and marks the larva
 local stats = fresh()
-local larva = P.new(0, 0, {})
+local larva = P.new(0, 0, {}, "pact:1:0:0")
 check(stats:get("health") == 5, "the base health")
 local ok, reason = P.can_accept(larva, stats)
 check(ok == true and reason == nil, "a fresh pact can be accepted")
@@ -30,17 +30,29 @@ check(stats:get("health") == 4, "the second accept does not cost again")
 
 -- Two larvae are independent, each with its own heart slot
 stats = fresh()
-local a = P.new(0, 0, {})
-local b = P.new(16, 0, {})
+local a = P.new(0, 0, {}, "pact:1:0:0")
+local b = P.new(16, 0, {}, "pact:1:0:1")
 check(P.accept(a, stats) and stats:get("health") == 4, "the first larva takes one slot")
 check(P.accept(b, stats) and stats:get("health") == 3, "the second larva takes another")
 check(P.tuning.larvae == 2 and P.tuning.cost == 1, "the tuning numbers")
+
+-- Same position on different floors: distinct sources allow both pacts
+stats = fresh()
+local same_a = P.new(0, 0, {}, "pact:1:0:0")
+local same_b = P.new(0, 0, {}, "pact:2:0:0")
+check(P.accept(same_a, stats) == true and stats:get("health") == 4, "the first pact takes a slot")
+check(P.accept(same_b, stats) == true and stats:get("health") == 3, "the same spot can pact again")
+check(stats:get("health") == 5 - 2, "two pacts lower max health by two")
+
+-- The source must be a non-empty string
+check(not pcall(P.new, 0, 0, {}, nil), "a nil source errors")
+check(not pcall(P.new, 0, 0, {}, ""), "an empty source errors")
 
 -- Refuses at the health minimum: a pact never takes the last slot
 stats = fresh()
 check(stats:add_permanent("health", -4, "test:weak"), "bring the health to its minimum")
 check(stats:get("health") == 1, "health is at the minimum")
-local weak = P.new(0, 0, {})
+local weak = P.new(0, 0, {}, "pact:1:0:0")
 ok, reason = P.can_accept(weak, stats)
 check(not ok and reason == "too weak", "a pact refuses at the minimum")
 check(P.accept(weak, stats) == false and stats:get("health") == 1, "accept refuses too")
@@ -49,9 +61,9 @@ check(weak.state.used == false, "a refused pact does not mark the larva used")
 -- The used state persists through a new larva built with the same state
 stats = fresh()
 local state = {}
-local first = P.new(4, 8, state)
+local first = P.new(4, 8, state, "pact:1:0:0")
 check(P.accept(first, stats) == true and first.state.used == true, "the first larva takes it")
-local again = P.new(4, 8, state)
+local again = P.new(4, 8, state, "pact:1:0:0")
 check(again.state.used == true, "the used state comes back")
 ok, reason = P.can_accept(again, stats)
 check(not ok and reason == "used", "the rebuilt larva is still used")
@@ -71,10 +83,10 @@ local function fake_g()
   return g
 end
 local g = fake_g()
-P.draw(P.new(0, 0, {}), g, true)
+P.draw(P.new(0, 0, {}, "pact:1:0:0"), g, true)
 check(g.text == "PACT -1 HP" and g.calls > 0, "a fresh larva shows its pact when near")
 g = fake_g()
-P.draw(P.new(0, 0, { used = true }), g, true)
+P.draw(P.new(0, 0, { used = true }, "pact:1:0:0"), g, true)
 check(g.text == nil and g.calls > 0, "a used larva is drawn without the label")
 
 print("OK: " .. checks .. " checks")
