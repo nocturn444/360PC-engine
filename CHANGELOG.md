@@ -91,6 +91,8 @@ All notable changes to 360PC-Engine. The format follows
 - `examples/rooms`: bonus keys (`bonus_key`, a pale cyan `KEY+` pickup) for optional locks, a
   separate `bonus_keys` content pool with a `0.05` mob roll scaled by luck, and the `bonus_key`
   currency in the run wallet; its first use is the super treasure room.
+- `examples/rooms`: `rooms_minimap.lua` draws the run's minimap from `nav:minimap()`, with a
+  white outline around the current room and data-driven pixel icons for the special room types.
 
 ### Changed
 - `engine.pixel` uses `"direct"` mode by default on PC too, so PC shows what the console shows.
