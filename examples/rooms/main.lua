@@ -19,6 +19,7 @@ engine.run({
     actions = {
       left = { keys = { "left", "a" }, buttons = { "dpleft" } },
       right = { keys = { "right", "d" }, buttons = { "dpright" } },
+      up = { keys = { "up", "w" }, buttons = { "dpup" }, axes = { "lefty-" } },
       down = { keys = { "down", "s" }, buttons = { "dpdown" } },
       jump = { keys = { "space", "up", "w" }, buttons = { "a" } },
       attack = { keys = { "x", "j" }, buttons = { "x" } },

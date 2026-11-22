@@ -64,6 +64,9 @@ function F.install(opts)
   function g.print(...) rec("print", ...) end
   function g.printf(...) rec("printf", ...) end
   function g.line(...) rec("line", ...) end
+  local line_width = 1
+  function g.setLineWidth(w) line_width = w; rec("setLineWidth", w) end
+  function g.getLineWidth() return line_width end
   -- a font with 6x8 characters, wrapping at spaces
   local font = { kind = "font" }
   function font:getWidth(s) return 6 * #tostring(s) end
