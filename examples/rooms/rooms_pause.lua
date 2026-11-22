@@ -6,6 +6,10 @@ local ui = engine.ui
 
 local M = { transparent = true }
 
+-- The built-in pixel font: the console has no TTF, so the menu draws its text with rectangles.
+local theme = { font = engine.text.font(1) }
+local MESSAGE = "CONTROLLER DISCONNECTED. RECONNECT IT AND PRESS A."
+
 local main, confirm_restart, confirm_quit
 local active
 local message
@@ -26,6 +30,9 @@ local function show(screen, focus)
   screen:focus(focus)
 end
 
+-- The page on screen (nil when the pause state is not entered); for tests and debugging.
+function M:page() return active end
+
 local function restart_run()
   engine.states:pop()
   local play = engine.states:top()
@@ -42,6 +49,7 @@ local function confirm_screen(title, on_yes)
   local screen = ui.screen({
     transparent = true,
     dim = true,
+    theme = theme,
     on_back = function() show(main, "resume") end,
     root = ui.vstack({ background = true, wrap = true, align = "stretch", spacing = 4,
       ui.label({ text = title, align = "center" }),
@@ -56,10 +64,11 @@ end
 
 local function ensure()
   if main then return end
-  message = ui.label({ id = "message", text = "", align = "center", visible = false })
+  message = ui.label({ id = "message", text = "", width = 140, align = "center", visible = false })
   main = ui.screen({
     transparent = true,
     dim = true,
+    theme = theme,
     on_back = function() engine.states:pop() end,
     root = ui.vstack({ background = true, wrap = true, align = "stretch", spacing = 4,
       ui.label({ text = "Paused", align = "center" }),
@@ -86,7 +95,7 @@ function M:enter(previous, reason, joystick)
   audio = game_audio(previous)
   if audio then audio:pause() end
   if reason == "controller" then
-    set_message("Controller disconnected. Reconnect it and press A to continue.")
+    set_message(MESSAGE)
   else
     set_message(nil)
   end
@@ -117,11 +126,11 @@ end
 
 -- engine.autopause emits this after pushing us (a hint for the message below the title).
 function M:controllerlost(joystick)
-  set_message("Controller disconnected. Reconnect it and press A to continue.")
+  set_message(MESSAGE)
 end
 
 function M:controllerback(joystick)
-  set_message("Controller connected.")
+  set_message("CONTROLLER CONNECTED.")
 end
 
 return M

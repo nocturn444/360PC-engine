@@ -96,6 +96,14 @@ local function text_col(g, th, w, focused)
   col(g, w.disabled and th.text_disabled or focused and th.text_focus or th.text)
 end
 
+-- Text with the theme's font: an engine.text font draws itself (rectangles, so it works on the
+-- console without a TTF); a real LÖVE font goes through love.graphics.
+local function printf(g, th, text, x, y, w, align)
+  local f = th.font
+  if f and f.printf then return f:printf(text, x, y, w, align) end
+  return g.printf(text, x, y, w, align)
+end
+
 ---------------------------------------------------------------------------
 -- Widgets
 ---------------------------------------------------------------------------
@@ -137,7 +145,7 @@ function Label:measure(th, font)
 end
 function Label:draw(g, th)
   col(g, self.color or (self.dim and th.text_dim) or th.text)
-  g.printf(self.text, self.x, self.y, self.w, self.align or "left")
+  printf(g, th, self.text, self.x, self.y, self.w, self.align or "left")
 end
 function Label:setText(text)
   if text ~= self.text then self.text = text; relayout(self) end
@@ -156,7 +164,7 @@ function Button:draw(g, th, focused)
   local on = focused == self
   box(g, th, self, on)
   text_col(g, th, self, on)
-  g.printf(self.label, self.x + self.pad, self.y + floor((self.h - self.fh) / 2),
+  printf(g, th, self.label, self.x + self.pad, self.y + floor((self.h - self.fh) / 2),
     self.w - 2 * self.pad, self.align or "center")
 end
 function Button:accept(screen)
@@ -178,7 +186,7 @@ function Toggle:draw(g, th, focused)
   local ty = self.y + floor((self.h - fh) / 2)
   box(g, th, self, on)
   text_col(g, th, self, on)
-  g.printf(self.label, self.x + pad, ty, self.w - 3 * pad - fh, "left")
+  printf(g, th, self.label, self.x + pad, ty, self.w - 3 * pad - fh, "left")
   local bx = self.x + self.w - pad - fh
   outline(g, bx, ty, fh, fh, th.border)
   if self.value then
@@ -229,7 +237,7 @@ function Slider:draw(g, th, focused)
   local ty = self.y + floor((self.h - fh) / 2)
   box(g, th, self, on)
   text_col(g, th, self, on)
-  if self.label then g.printf(self.label, self.x + pad, ty, self.w - 3 * pad - track, "left") end
+  if self.label then printf(g, th, self.label, self.x + pad, ty, self.w - 3 * pad - track, "left") end
   local tx, my = self.x + self.w - pad - track, self.y + floor(self.h / 2) - 1
   local f = self.max > self.min and (self.value - self.min) / (self.max - self.min) or 0
   col(g, th.track)
@@ -346,7 +354,7 @@ function List:draw(g, th, focused)
       g.rectangle("fill", ix, iy, iw, ih)
     end
     text_col(g, th, self, on and i == self.selected)
-    g.printf(self.labels[i], ix + pad, iy + floor((ih - fh) / 2), iw - 2 * pad,
+    printf(g, th, self.labels[i], ix + pad, iy + floor((ih - fh) / 2), iw - 2 * pad,
       self.align or (vertical and "left" or "center"))
   end
   if more then                                   -- the scroll bar
@@ -462,10 +470,10 @@ function Card:draw(g, th, focused)
     y = y + self.icon_h + pad
   end
   col(g, self.disabled and th.text_disabled or on and th.focus or th.text)
-  g.printf(tostring(c.name or ""), x, y, inner, "center")
+  printf(g, th, tostring(c.name or ""), x, y, inner, "center")
   if c.description then
     col(g, self.disabled and th.text_disabled or th.text_dim)
-    g.printf(c.description, x, y + self.name_h + pad, inner, "center")
+    printf(g, th, c.description, x, y + self.name_h + pad, inner, "center")
   end
 end
 
@@ -759,8 +767,9 @@ function Screen:draw()
   local g, th = love.graphics, self.theme
   if self.dirty then self:layout() end
   local r, gg, b, a = g.getColor()
-  local old = th.font and g.getFont()
-  if th.font then g.setFont(th.font) end
+  local real_font = th.font and not th.font.printf
+  local old = real_font and g.getFont()
+  if real_font then g.setFont(th.font) end
   if self.dim then
     col(g, th.dim)
     g.rectangle("fill", 0, 0, self.width, self.height)

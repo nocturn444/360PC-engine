@@ -529,6 +529,17 @@ check(engine.controls.joystick == pad, "the pad is the one in use")
 for i = #F.pads, 1, -1 do if F.pads[i] == pad then table.remove(F.pads, i) end end
 love.joystickremoved(pad)
 check(engine.states:top() == pause and pause.reason == "controller", "losing the pad in use auto-pauses")
+local page = pause:page()
+check(page and page.root.w <= 320 and page.root.h <= 180,
+  "the controller message wraps: the pause menu fits the screen")
+local inside = true
+for _, w in ipairs(page.widgets) do
+  if w.x < 0 or w.y < 0 or w.x + w.w > 320 or w.y + w.h > 180 then inside = false end
+end
+check(inside and #page.widgets >= 3, "its buttons stay inside the 320 x 180 screen")
+F.reset_calls(); pause:draw(0)
+check(#F.find("printf") == 0 and #F.find("setFont") == 0,
+  "the menu draws its text with engine.text rectangles, not love.graphics")
 F.keys["return"] = true; love.update(1 / 60); F.keys["return"] = nil
 check(engine.states:top() == play, "Resume after the controller was lost")
 

@@ -43,6 +43,30 @@ F.reset_calls()
 T.check(text.draw("~", 0, 0) == 0 and #F.find("rectangle") == 0, "a character the font lacks is blank")
 T.check(text.lines({ "A", "B" }, 0, 0) == text.draw("A", 0, 0) + text.draw("B", 0, 6), "lines: one under the other")
 
+-- a Font-like adapter for engine.ui: one object per scale, measuring, wrapping and rectangles
+local one, two = text.font(1), text.font(2)
+T.check(text.font(1) == one and one ~= two, "font(scale) caches one object per scale")
+T.check(one:getWidth("AB") == 7 and two:getWidth("AB") == 14, "the adapter measures through width")
+T.check(one:getHeight() == 6 and two:getHeight() == 12, "and its height is the line height")
+local widest, lines = one:getWrap("ONE TWO THREE", 30)
+T.check(widest == 26 and #lines == 2 and lines[1] == "ONE TWO" and lines[2] == "THREE",
+  "getWrap wraps at spaces and returns the widest line")
+local empty, elines = one:getWrap("", 30)
+T.check(empty == 0 and #elines == 1 and elines[1] == "", "getWrap of an empty string")
+F.reset_calls()
+one:printf("A", 10, 20, 40, "center")
+local first = F.find("rectangle")[1]
+T.check(first and first[3] == 28 and first[4] == 20, "printf centres the line in the limit")
+F.reset_calls()
+one:printf("A", 10, 20, 40, "right")
+first = F.find("rectangle")[1]
+T.check(first and first[3] == 47, "printf aligns right")
+F.reset_calls()
+one:printf("ONE TWO", 0, 0, 12, "left")
+local ys = {}
+for _, c in ipairs(F.find("rectangle")) do ys[c[4]] = true end
+T.check(ys[0] and ys[6] and ys[10] and not ys[11], "printf draws wrapped lines one line height apart")
+
 -- nothing allocated per draw
 local real = love.graphics.rectangle
 love.graphics.rectangle = function() end
@@ -53,6 +77,17 @@ local grown = collectgarbage("count") - before
 collectgarbage("restart")
 love.graphics.rectangle = real
 T.check(grown < 1, "draw allocates nothing (" .. grown .. " KB)")
+
+-- printf allocates nothing once the lines are wrapped and cached
+one:printf("CACHED TEXT", 0, 0, 100, "left")
+love.graphics.rectangle = function() end
+collectgarbage(); collectgarbage("stop")
+before = collectgarbage("count")
+for _ = 1, 200 do one:printf("CACHED TEXT", 0, 0, 100, "left") end
+grown = collectgarbage("count") - before
+collectgarbage("restart")
+love.graphics.rectangle = real
+T.check(grown < 1, "printf allocates nothing after the first wrap (" .. grown .. " KB)")
 
 T.check(require("engine").text == text, "engine.text")
 T.no_new_globals(globals)

@@ -9,6 +9,14 @@
 --   text.draw("SEED 1234", 4, 4)                  -- the current colour, scale 1
 --   text.draw("PAUSED", 100, 80, 2)               -- each font pixel 2 x 2
 --   local w, h = text.width("PAUSED", 2), text.height(2)
+--
+-- text.font(scale) returns a Font-like object (one per scale, cached) for code that expects a
+-- LÖVE font, such as engine.ui: getWidth(s), getHeight() (the line height), getWrap(s, limit)
+-- (word wrap: the widest line and its lines) and printf(s, x, y, limit, align) (draws the
+-- wrapped lines with text.draw, aligned left, center or right). getWrap allocates because it
+-- runs on layout; printf keeps the wrapped lines per string and limit, so drawing allocates
+-- nothing. Give it to a screen as theme = { font = text.font(1) } and the menus draw with
+-- rectangles on the console, with no TTF.
 local byte, floor = string.byte, math.floor
 
 local M = {}
@@ -107,6 +115,74 @@ function M.lines(list, x, y, scale)
   local n = 0
   for i = 1, #list do n = n + M.draw(list[i], x, y + (i - 1) * 6 * scale, scale) end
   return n
+end
+
+-- Word wrap like love.graphics Font:getWrap: lines and their widest width, split at spaces and
+-- newlines (a word longer than the limit stays on its own line). Allocates: it is for layout.
+local function wrap(s, limit, scale)
+  local lines, widest = {}, 0
+  for para in (tostring(s) .. "\n"):gmatch("(.-)\n") do
+    local line, lw = "", 0
+    for word in para:gmatch("%S+") do
+      local ww = M.width(word, scale)
+      local sep = line == "" and 0 or 4 * scale
+      if line ~= "" and lw + sep + ww > limit then
+        lines[#lines + 1] = line
+        if lw > widest then widest = lw end
+        line, lw = word, ww
+      elseif sep > 0 then
+        line, lw = line .. " " .. word, lw + sep + ww
+      else
+        line, lw = word, ww
+      end
+    end
+    lines[#lines + 1] = line
+    if lw > widest then widest = lw end
+  end
+  lines.w = widest
+  return lines
+end
+
+local FONTS = {}
+
+-- text.font(scale): a Font-like object (cached per scale) for engine.ui and anything else that
+-- takes a LÖVE font. getWrap is for layout; printf reuses the wrapped lines, so drawing does
+-- not allocate.
+function M.font(scale)
+  scale = scale or 1
+  local f = FONTS[scale]
+  if f then return f end
+  f = { scale = scale, cache = {} }
+  function f:getWidth(s) return M.width(tostring(s), scale) end
+  function f:getHeight() return M.line_height * scale end
+  function f:getWrap(s, limit)
+    limit = limit or 1e6
+    local by = self.cache[s]
+    if not by then by = {}; self.cache[s] = by end
+    local lines = by[limit]
+    if not lines then lines = wrap(s, limit, scale); by[limit] = lines end
+    return lines.w, lines
+  end
+  function f:printf(s, x, y, limit, align)
+    limit = limit or 1e6
+    local by = self.cache[s]
+    if not by then by = {}; self.cache[s] = by end
+    local lines = by[limit]
+    if not lines then lines = wrap(s, limit, scale); by[limit] = lines end
+    local lh = M.line_height * scale
+    for i = 1, #lines do
+      local line = lines[i]
+      local dx = 0
+      if align == "center" or align == "right" then
+        local lw = M.width(line, scale)
+        if align == "center" then dx = floor((limit - lw) / 2)
+        else dx = limit - lw end
+      end
+      M.draw(line, x + dx, y + (i - 1) * lh, scale)
+    end
+  end
+  FONTS[scale] = f
+  return f
 end
 
 return M

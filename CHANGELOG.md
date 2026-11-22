@@ -129,6 +129,11 @@ All notable changes to 360PC-Engine. The format follows
 - `examples/rooms`: an enemy that falls through a pit now moves to the room below, keeping its
   health, instead of vanishing and respawning at its spawn spot. Past an edge with no door it
   dies, without counting as a kill or dropping anything.
+- `engine.ui` draws its text with the theme's font: a new `engine.text.font(scale)` adapter
+  measures, wraps and draws with the built-in rectangles, so menus show text on the console
+  without `default_font`; `examples/rooms` uses it for its pause menu.
+- `examples/rooms`: the "controller disconnected" message has a fixed width, so an auto-pause
+  no longer stretches the pause menu and its buttons off the screen.
 
 ## [0.1.0] - not tagged yet
 
