@@ -23,6 +23,8 @@ local pickups = require("rooms_pickups")
 local obstacles = require("rooms_obstacles")
 local machines = require("rooms_machines")
 local looks = require("rooms_look")
+local rooms_spawn = require("rooms_spawn")
+local minimap = require("rooms_minimap")
 local wallet = require("engine.modules.wallet")
 local combat = require("engine.modules.combat")
 
@@ -34,17 +36,18 @@ local ENEMY_H = 10                            -- the enemy box height (rooms_ene
 local SEED = 1
 local FLOORS = 10
 
--- The run: 10 floors from 6 rooms to 18, the special rooms of rooms_data.types(), a key per floor
+-- The run: 10 floors from 11 rooms to 21, the special rooms of rooms_data.types(), a key per floor
 local plan = procgen.floors.new({ count = FLOORS, templates = data.templates(), types = data.types(),
-  rooms = { first = 6, last = 18 }, abilities = { "key" } })
+  rooms = { first = 11, last = 21 }, abilities = { "key" } })
 
 local play = { plan = plan, biomes = biomes.new(FLOORS) }
 
 -- A boss or miniboss room with enemies still alive is an arena: its doors stay shut until the
--- fight is won. A cleared room (or one without enemies) opens them again.
+-- fight is won. Trap rooms seal the same way. A cleared room (or one without enemies) opens
+-- them again.
 local function battle_sealed(self, index)
   local r = self.map.rooms[index]
-  if r.type ~= "boss" and r.type ~= "miniboss" then return false end
+  if r.type ~= "boss" and r.type ~= "miniboss" and r.type ~= "trap" then return false end
   local state = self.rooms_state[index]
   if state and state.cleared then return false end
   return #(r.template.enemies or {}) > 0
@@ -297,6 +300,32 @@ function play.load_room(self, x, y)
     self.camera:setBounds(self.nav:bounds())
     self.camera:setPosition(x, y)
   end
+  self.last_health = self.fight.player.health
+end
+
+-- What happened on the floor that just ended, for rooms_spawn.end_floor. A room counts as
+-- entered when the slime has visited it at least once.
+local function floor_summary(self)
+  local summary = { shop_existed = false, shop_entered = false, casino_appeared = false,
+    treasure_existed = false, treasure_entered = false, trap_count = 0, obstacle_appeared = false,
+    damaged = self.floor_damaged == true }
+  for i, r in ipairs(self.map.rooms) do
+    local entered = (self.nav.visits[i] or 0) > 0
+    if r.type == "shop" then
+      summary.shop_existed = true
+      if entered then summary.shop_entered = true end
+    elseif r.type == "casino" then
+      summary.casino_appeared = true
+    elseif r.type == "treasure" then
+      summary.treasure_existed = true
+      if entered then summary.treasure_entered = true end
+    elseif r.type == "trap" then
+      summary.trap_count = summary.trap_count + 1
+    elseif r.type == "obstacle" then
+      summary.obstacle_appeared = true
+    end
+  end
+  return summary
 end
 
 -- A new run: the seed's streams, a path through the biomes, nothing taken yet
@@ -311,6 +340,7 @@ function play.new_run(self)
   if self.pixels then looks.palette(self.look, self.pixels) end
   if self.slime then self.slime:set_rest_shape({ radius = 9, width = 0, height = 0 }) end
   self.kills, self.got = 0, nil
+  self.spawn = rooms_spawn.new_state()
   self.rooms_state = {}
 end
 
@@ -318,14 +348,19 @@ end
 -- its own stream, the key to find again, the slime at the start
 function play.new_floor(self, n)
   if n == 1 then play.new_run(self) end
+  if n > 1 and self.map and self.spawn then
+    rooms_spawn.end_floor(self.spawn, floor_summary(self))
+  end
   self.floor = n
   self.biome = self.path:enter(n, { kills = self.kills, floor = n }, self.streams:get("biomes"))
   self.music = self.biome.music      -- a game with tracks: audio:music(self.music, { fade = 1 })
-  self.map = assert(plan:generate(n, self.streams:get("floor" .. n), self.biome))
+  self.map = assert(plan:generate(n, self.streams:get("floor" .. n), self.biome,
+    { spawn = self.spawn, luck = self.stats:get("luck") }))
   self.nav = rooms.nav.new(self.map, { cell_w = CW * TS, cell_h = CH * TS, tile_size = TS })
   self.abilities, self.taken, self.loot = {}, {}, {}
   self.rooms_state, self.room_state = {}, nil
   self.message, self.message_time = nil, nil
+  self.floor_damaged = false
 end
 
 function play:enter()
@@ -406,6 +441,7 @@ function play:update(dt)
   if self.fade:busy() then return end            -- the room is frozen while the screen fades
   if self.dead then                               -- back to the start room, healed, behind a fade
     self.dead, self.deaths = false, self.deaths + 1
+    self.floor_damaged = true                       -- a death counts as damage for the floor
     self.fade:start(function()
       self.fight.player.dead = true                -- so the next room starts at full health
       play.load_room(self, self.nav:enter(self.map.start))
@@ -415,6 +451,10 @@ function play:update(dt)
   control(self, dt)
   self.slime:step(dt, self.grid)
   self.fight:step(dt)
+  if self.last_health and self.fight.player.health < self.last_health then
+    self.floor_damaged = true
+  end
+  self.last_health = self.fight.player.health
   enemies_leaving(self)
   self.stats:update(dt)
   self.kills = self.kills_before + self.fight.kills
@@ -515,6 +555,7 @@ function play:update(dt)
       play.new_floor(self, self.floor % FLOORS + 1)
       play.load_room(self, self.nav:enter(self.map.start))
       self.fight.player.health = health
+      self.last_health = health
     end)
     return
   end
@@ -554,29 +595,16 @@ local function draw_slime(self, alpha)
   px:draw(ox, oy)
 end
 
-local TYPE_COLORS = {
-  normal = { 0.5, 0.6, 0.8 }, start = { 0.5, 0.6, 0.8 }, boss = { 0.8, 0.3, 0.3 },
-  treasure = { 0.95, 0.75, 0.2 }, shop = { 0.35, 0.8, 0.45 }, miniboss = { 0.9, 0.5, 0.25 },
-}
-local LABELS = { treasure = "TREASURE", shop = "SHOP", miniboss = "MINIBOSS", boss = "BOSS" }
+local MINIMAP_CELL = 7
+local MINIMAP_OPTS = { cell = MINIMAP_CELL }
+local LABELS = { treasure = "TREASURE", super_treasure = "SUPER TREASURE", shop = "SHOP",
+  casino = "CASINO", pact = "PACT", miniboss = "MINIBOSS", boss = "BOSS", trap = "TRAP",
+  obstacle = "OBSTACLE" }
 
 local function draw_minimap(self)
-  local g, mm = love.graphics, self.nav:minimap()
-  local S = 5
-  local x0, y0 = W - mm.w * S - 4, 4
-  for cy = 1, mm.h do
-    for cx = 1, mm.w do
-      local c = mm.cells[(cy - 1) * mm.w + cx]
-      if c and c.explored then
-        if c.room == self.nav.index then g.setColor(0.95, 0.95, 0.6, 1)
-        else
-          local col = TYPE_COLORS[c.type] or TYPE_COLORS.normal
-          g.setColor(col[1], col[2], col[3], 1)
-        end
-        g.rectangle("fill", x0 + (cx - 1) * S, y0 + (cy - 1) * S, S - 1, S - 1)
-      end
-    end
-  end
+  local mm = self.nav:minimap()
+  local x0, y0 = W - mm.w * MINIMAP_CELL - 4, 4
+  minimap.draw(love.graphics, mm, self.nav.index, x0, y0, MINIMAP_OPTS)
 end
 
 function play:draw(alpha)
