@@ -109,6 +109,24 @@ refuses(text:gsub('%["tiles_w"%]=20,', '["tiles_w"]=19,', 1), "bad size in tiles
 local missing, why = Level.load("levels/none.lvl")
 T.check(missing == nil and why:find("cannot read levels/none.lvl", 1, true), "a missing file is reported, not raised")
 
+-- props (docs/PROPS.md): the shape of a room's optional list
+local function with_props(props)
+  local _, data = Save.parse(text)
+  data.rooms[1].props = props
+  return Save.serialize(data)
+end
+local prop_lvl = assert(Level.from_text(with_props({
+  { type = "vine", tx = 4, ty = 2, h = 6 },
+  { type = "spikes", tx = 8, ty = 3, w = 3, fields = { damage = 2 } },
+})))
+T.check(#prop_lvl.rooms[1].props == 2 and prop_lvl.rooms[1].props[1].type == "vine"
+  and prop_lvl.rooms[1].props[1].h == 6 and prop_lvl.rooms[1].props[2].fields.damage == 2,
+  "a room's props list is read and kept")
+refuses(with_props({ { tx = 1, ty = 1 } }), "prop 1 is broken", "a prop without a type")
+refuses(with_props({ { type = "vine", tx = 0, ty = 1 } }), "prop 1 is broken", "a prop on tile 0")
+refuses(with_props({ { type = "vine", tx = 1, ty = 1, w = 1.5 } }), "prop 1 is broken", "a prop of 1.5 tiles")
+refuses(with_props({ { type = "vine", tx = 1, ty = 1, fields = 3 } }), "prop 1 is broken", "a prop whose fields are not a table")
+
 ---------------------------------------------------------------------------
 -- procgen takes the rooms as templates
 ---------------------------------------------------------------------------

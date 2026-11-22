@@ -164,6 +164,14 @@ function M.resize_room(data, room, w, h)
     if e.x + e.w <= tw * ts and e.y + e.h <= th * ts then ents[#ents + 1] = e end
   end
   room.entities = ents
+  if room.props then
+    local kept_props = {}
+    for _, p in ipairs(room.props) do
+      local pw, ph = p.w or 1, p.h or 1
+      if p.tx + pw - 1 <= tw and p.ty + ph - 1 <= th then kept_props[#kept_props + 1] = p end
+    end
+    room.props = #kept_props > 0 and kept_props or nil
+  end
   for _, layer in ipairs(room.layers) do
     local t, out = layer.tiles, {}
     for i = 1, #t, 5 do
@@ -400,6 +408,115 @@ function M.fields_text(fields)
     if type(v) ~= "table" then parts[#parts + 1] = k .. "=" .. tostring(v) end
   end
   return table.concat(parts, ", ")
+end
+
+---------------------------------------------------------------------------
+-- Props (docs/PROPS.md): the catalog entry has the type's defaults and limits
+---------------------------------------------------------------------------
+local function prop_size(prop) return prop.w or 1, prop.h or 1 end
+
+-- The top-most prop covering a tile, and its index
+function M.prop_at(room, tx, ty)
+  for i = #(room.props or {}), 1, -1 do
+    local p = room.props[i]
+    local w, h = prop_size(p)
+    if tx >= p.tx and ty >= p.ty and tx < p.tx + w and ty < p.ty + h then return p, i end
+  end
+  return nil
+end
+
+-- Adds a prop of a catalog type on tile (tx, ty), with the type's default size. Returns it.
+function M.add_prop(room, type_, tx, ty, entry)
+  if not entry then return nil, "no catalog entry for " .. tostring(type_) end
+  local w, h = entry.w or 1, entry.h or 1
+  local max_tx = max(1, room.tiles_w - w + 1)
+  local max_ty = max(1, room.tiles_h - h + 1)
+  local p = { type = type_, tx = max(1, min(max_tx, tx)), ty = max(1, min(max_ty, ty)), w = w, h = h }
+  room.props = room.props or {}
+  room.props[#room.props + 1] = p
+  return p
+end
+
+-- Moves a prop so its top left corner is on tile (tx, ty), kept inside the room.
+function M.move_prop(room, prop, tx, ty)
+  local w, h = prop_size(prop)
+  local nx = max(1, min(max(1, room.tiles_w - w + 1), tx))
+  local ny = max(1, min(max(1, room.tiles_h - h + 1), ty))
+  if nx == prop.tx and ny == prop.ty then return false end
+  prop.tx, prop.ty = nx, ny
+  return true
+end
+
+-- Resizes a prop to w x h tiles: only along its catalog entry's `resizable` axes, within
+-- its min / max and inside the room. Returns true when the size changed.
+function M.resize_prop(room, prop, entry, w, h)
+  if not entry then return false end
+  local res = entry.resizable
+  local cw, ch = prop_size(prop)
+  if res == "x" then h = ch
+  elseif res == "y" then w = cw
+  elseif res ~= "xy" then return false end
+  local min_w = (entry.min and entry.min.w) or 1
+  local min_h = (entry.min and entry.min.h) or 1
+  local max_w = (entry.max and entry.max.w) or room.tiles_w
+  local max_h = (entry.max and entry.max.h) or room.tiles_h
+  max_w = min(max_w, room.tiles_w - prop.tx + 1)
+  max_h = min(max_h, room.tiles_h - prop.ty + 1)
+  w = max(min_w, min(max_w, floor(w or cw)))
+  h = max(min_h, min(max_h, floor(h or ch)))
+  if w == cw and h == ch then return false end
+  prop.w, prop.h = w, h
+  return true
+end
+
+-- Whether a value fits a catalog field spec; nil when it does, else the reason.
+local function field_value_error(spec, value)
+  local t = spec.type
+  if t == "bool" then
+    if type(value) ~= "boolean" then return "is true or false" end
+  elseif t == "string" then
+    if type(value) ~= "string" then return "is a string" end
+  elseif t == "enum" then
+    for _, option in ipairs(spec.options or {}) do if option == value then return nil end end
+    return "is one of " .. table.concat(spec.options or {}, ", ")
+  else
+    if type(value) ~= "number" or value ~= value then return "is a number" end
+    if t == "integer" and value ~= floor(value) then return "is a whole number" end
+    if spec.min and value < spec.min then return "is >= " .. spec.min end
+    if spec.max and value > spec.max then return "is <= " .. spec.max end
+  end
+  return nil
+end
+
+-- Sets one field of a prop, checked against its catalog entry. A value equal to the default
+-- (or nil) is removed from the prop's fields. Returns true, or false and the reason.
+function M.set_prop_field(prop, entry, key, value)
+  local spec
+  for _, f in ipairs(entry and entry.fields or {}) do if f.key == key then spec = f; break end end
+  if not spec then return false, "the type has no field " .. tostring(key) end
+  if value == nil or value == spec.default then
+    if prop.fields then
+      prop.fields[key] = nil
+      if next(prop.fields) == nil then prop.fields = nil end
+    end
+    return true
+  end
+  local why = field_value_error(spec, value)
+  if why then return false, "field " .. key .. " " .. why end
+  prop.fields = prop.fields or {}
+  prop.fields[key] = value
+  return true
+end
+
+function M.remove_prop(room, prop)
+  for i, p in ipairs(room.props or {}) do
+    if p == prop then
+      table.remove(room.props, i)
+      if #room.props == 0 then room.props = nil end
+      return true
+    end
+  end
+  return false
 end
 
 ---------------------------------------------------------------------------

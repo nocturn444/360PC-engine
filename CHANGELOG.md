@@ -20,6 +20,12 @@ All notable changes to 360PC-Engine. The format follows
   breakable crate props with persistent broken state and virus drops, spikes that cost hearts and
   knock the slime back, statues that fire their attack on the enemy team, and wide platforms the
   slime slides off. `rooms_obstacles.lua` is gone.
+- `tools/ldtk_convert.py`: LDtk entities whose definition has the `prop` tag are written to the
+  room's `props` list instead of `entities` (type, top left tile, size in tiles, fields), with
+  the same deterministic output; the room's `props` key is left out when it has no props.
+- `tools/level_editor`: a Props tool with `--props <catalog>`: pick a type by category, place,
+  move, resize within its limits, edit its fields and delete it, drawing its editor colour and
+  glyph. Without the catalog the editor leaves a room's props untouched.
 - `engine.init` / `engine.run`: optional `autopause = { state, controller, focus }` pushes a
   pause state when the gamepad in use is disconnected or the window loses the focus, with the new
   `controllerlost(joystick)` and `controllerback(joystick)` hooks; a state can opt out with

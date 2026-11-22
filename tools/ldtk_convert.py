@@ -229,6 +229,36 @@ def _entity_box(ent, layer):
     return _whole(x), _whole(y), w, h
 
 
+def _entity_defs(project):
+    """({uid: definition}, {identifier lower case: definition}) from defs.entities"""
+    by_uid, by_name = {}, {}
+    for definition in (project.get("defs") or {}).get("entities") or []:
+        uid, name = definition.get("uid"), definition.get("identifier")
+        if uid is not None:
+            by_uid[uid] = definition
+        if isinstance(name, str):
+            by_name[name.lower()] = definition
+    return by_uid, by_name
+
+
+def _entity_def(ent, defs):
+    """The definition of an entity: its defUid when it is usable, else its __identifier"""
+    by_uid, by_name = defs
+    name = ent.get("__identifier")
+    from_uid = by_uid.get(ent.get("defUid"))
+    from_name = by_name.get(name.lower()) if isinstance(name, str) else None
+    if from_uid is not None and (from_name is None or _same(name, from_uid.get("identifier"))):
+        return from_uid
+    return from_name if from_name is not None else from_uid
+
+
+def _is_prop(ent, defs):
+    definition = _entity_def(ent, defs)
+    if not definition:
+        return False
+    return any(isinstance(tag, str) and tag.lower() == "prop" for tag in definition.get("tags") or [])
+
+
 def _whole(v):
     return int(v) if v == math.floor(v) else v
 
@@ -287,7 +317,7 @@ def _exit(ent, layer, name, tile, tiles_w, tiles_h, cell):
     return out
 
 
-def _room(level, project, opts, tile, kinds, cell, tileset_index, warn):
+def _room(level, project, opts, tile, kinds, cell, tileset_index, entity_defs, warn):
     name = level["identifier"]
     px_w, px_h = level.get("pxWid"), level.get("pxHei")
     if not isinstance(px_w, int) or not isinstance(px_h, int) or px_w <= 0 or px_h <= 0:
@@ -317,6 +347,7 @@ def _room(level, project, opts, tile, kinds, cell, tileset_index, warn):
     }
 
     collision = [0] * (tiles_w * tiles_h)
+    props = []
     # LDtk lists layers from the top one to the bottom one: go bottom to top
     for layer in reversed(level.get("layerInstances") or []):
         lname, ltype = layer.get("__identifier"), layer.get("__type")
@@ -352,6 +383,20 @@ def _room(level, project, opts, tile, kinds, cell, tileset_index, warn):
             room["layers"].append({"name": lname, "tileset": uid, "tiles": flat})
         for ent in layer.get("entityInstances") or []:
             ename = ent.get("__identifier")
+            if _is_prop(ent, entity_defs):
+                box = _entity_box(ent, layer)
+                x, y, w, h = box
+                if x < 0 or y < 0 or x + w > tiles_w * tile or y + h > tiles_h * tile:
+                    raise ConvertError("level %s: prop %s at %s is outside the level: move it inside"
+                                       % (name, ename, ent.get("px")))
+                fields, _ = _fields(ent.get("fieldInstances"))
+                prop = {"type": str(ename).lower(), "tx": int(math.floor(x / tile)) + 1,
+                        "ty": int(math.floor(y / tile)) + 1,
+                        "w": max(1, int(math.ceil(w / tile))), "h": max(1, int(math.ceil(h / tile)))}
+                if fields:
+                    prop["fields"] = fields
+                props.append(prop)
+                continue
             if _same(ename, opts.exit):
                 room["exits"].append(_exit(ent, layer, name, tile, tiles_w, tiles_h, cell))
                 continue
@@ -369,6 +414,9 @@ def _room(level, project, opts, tile, kinds, cell, tileset_index, warn):
             room["entities"].append({"name": ename, "iid": ent.get("iid"), "x": box[0], "y": box[1],
                                      "w": box[2], "h": box[3], "tx": tx, "ty": ty, "fields": fields})
     room["collision"] = collision
+    if props:
+        props.sort(key=lambda p: (p["tx"], p["ty"], p["type"]))
+        room["props"] = props
 
     # a stable order whatever the order they were placed in: by side, then along the side
     room["exits"].sort(key=lambda e: (SIDES.index(e["side"]), e["offset"]))
@@ -408,7 +456,9 @@ def convert(project_path, opts, warn=None):
         cell = (min_w // tile, min_h // tile)
 
     tileset_defs = {ts.get("uid"): ts for ts in (project.get("defs") or {}).get("tilesets") or []}
-    rooms = [_room(level, project, opts, tile, kinds, cell, tileset_defs, warn) for level in levels]
+    entity_defs = _entity_defs(project)
+    rooms = [_room(level, project, opts, tile, kinds, cell, tileset_defs, entity_defs, warn)
+             for level in levels]
     ids = set()
     for room in rooms:
         if room["id"] in ids:
