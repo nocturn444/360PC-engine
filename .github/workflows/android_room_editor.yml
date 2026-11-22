@@ -2,7 +2,7 @@
 # publishes it as a downloadable artifact, so the owner can install it from his phone.
 #
 # Manual run: Actions tab > "Room editor APK" > Run workflow (pick the branch).
-# Pushes to main that change the app or its UI build it too. The APK is signed with the committed
+# Pull requests and pushes to main that change the app or its UI build it too. The APK is signed with the committed
 # android/room_editor/debug.keystore, so a new build installs over the old one and keeps its data.
 name: Room editor APK
 
@@ -10,6 +10,11 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
+    paths:
+      - "android/room_editor/**"
+      - "tools/room_editor_web/**"
+      - ".github/workflows/android_room_editor.yml"
+  pull_request:
     paths:
       - "android/room_editor/**"
       - "tools/room_editor_web/**"
