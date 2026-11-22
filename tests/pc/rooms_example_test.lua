@@ -78,6 +78,11 @@ check(B.enemy_stats(B.list[6], true).max_health > B.enemy_stats(B.list[1], true)
 for _, t in ipairs(data.templates()) do
   local rows = t.rows
   check(#rows == (t.h or 1) * data.cell_h and #rows[1] == (t.w or 1) * data.cell_w, t.id .. ": rows fit its cells")
+  -- a special room's bottom row is its border: no holes to fall through (a down door is opened
+  -- by the play state, not drawn in the rows)
+  if t.type ~= "normal" and t.type ~= "start" and t.type ~= "boss" then
+    check(not rows[#rows]:find(".", 1, true), t.id .. ": the bottom border has no holes")
+  end
 end
 
 -- 2b. The new special types: four one-door templates each, and their spawn rules in the run
