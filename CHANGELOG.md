@@ -9,6 +9,9 @@ All notable changes to 360PC-Engine. The format follows
 ## [Unreleased]
 
 ### Added
+- `android/room_editor`: a native Android shell for the room editor web UI, with local project
+  files, Storage Access Framework import/export/share and GitHub pull request upload through a
+  JavaScript bridge ([README](android/room_editor/README.md)).
 - `engine.init` / `engine.run`: optional `autopause = { state, controller, focus }` pushes a
   pause state when the gamepad in use is disconnected or the window loses the focus, with the new
   `controllerlost(joystick)` and `controllerback(joystick)` hooks; a state can opt out with
