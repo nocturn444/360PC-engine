@@ -26,6 +26,12 @@ All notable changes to 360PC-Engine. The format follows
 - `tools/level_editor`: a Props tool with `--props <catalog>`: pick a type by category, place,
   move, resize within its limits, edit its fields and delete it, drawing its editor colour and
   glyph. Without the catalog the editor leaves a room's props untouched.
+- `examples/rooms`: vines (`rooms_vines.lua`). A `vine` prop is grabbed with up or down, climbed
+  at its `speed` pixels / s with gravity cancelled, and swung on with left / right (a damped
+  pendulum limited to a maximum angle) when its `swing` field is on; jump releases with the
+  pendulum's tangential speed plus the normal jump, and down at the bottom end releases too. The
+  tall room has one. The new `up` action is `Up` / `W`, d-pad up and the left stick up. No change
+  to `engine/modules/softbody` was needed: it uses its `gravity` field, `move_to` and `impulse`.
 - `engine.init` / `engine.run`: optional `autopause = { state, controller, focus }` pushes a
   pause state when the gamepad in use is disconnected or the window loses the focus, with the new
   `controllerlost(joystick)` and `controllerback(joystick)` hooks; a state can opt out with

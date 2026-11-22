@@ -140,6 +140,7 @@ function M.templates()
       "####################",
     } },
     { id = "tall", weight = 2, h = 2, rows = TALL, enemies = { { tx = 10, ty = 23 } },
+      props = { { type = "vine", tx = 10, ty = 2, h = 10 } },
       exits = lr({ "left", 0 }, { "left", 1 }, { "right", 0 }, { "right", 1 }) },
     { id = "hub", w = 2, h = 2, rows = HUB, enemies = { { tx = 8, ty = 23 }, { tx = 32, ty = 23 }, { tx = 13, ty = 11 } },
       exits = lr({ "left", 0 }, { "left", 1 }, { "right", 0 }, { "right", 1 }) },

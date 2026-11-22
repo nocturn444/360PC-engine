@@ -21,6 +21,7 @@ local stats_mod = require("rooms_stats")
 local content = require("rooms_content")
 local pickups = require("rooms_pickups")
 local attack_configs = require("rooms_attacks")
+local vines = require("rooms_vines")
 local machines = require("rooms_machines")
 local looks = require("rooms_look")
 local wallet = require("engine.modules.wallet")
@@ -192,7 +193,7 @@ local function break_prop(self, prop)
   local ctx = drop_ctx(self, "obstacle")
   local virus = content.drop(self.pools.virus, stream, ctx, prop.fields.virus_chance)
   if virus then
-    spawn_pickup(self, pickups.virus(prop.x + prop.w / 2, prop.y + prop.h / 2, prop.fields.virus))
+    spawn_pickup(self, pickups.virus(prop.x + prop.w / 2, prop.y + prop.h / 2, virus.amount or prop.fields.virus))
   end
   return true
 end
@@ -344,6 +345,7 @@ function play.load_room(self, x, y)
     if entry then self.treasure = { x = 9.5 * TS - 4, y = 8 * TS, entry = entry } end
   end
   self.stairs = nil
+  self.vines = vines.build(self, template, TS)
   if x then
     self.slime:move_to(x, y)
     self.camera:setBounds(self.nav:bounds())
@@ -529,6 +531,7 @@ function play:update(dt)
     return
   end
   control(self, dt)
+  vines.update(self, dt, engine.controls, JUMP * self.stats:get("jump"))
   self.slime:step(dt, self.grid)
   slide_off_edges(self)
   hurt_by_spikes(self)
@@ -735,6 +738,7 @@ function play:draw(alpha)
   end
   g.setColor(0.95, 0.75, 0.20, 1)
   for i = 1, #self.locked do local l = self.locked[i]; g.rectangle("fill", l.x, l.y, l.w, l.h) end
+  vines.draw(self, g)
   if self.machine then machines.draw(self.machine, g, false) end
   if self.item then g.rectangle("fill", self.item.x, self.item.y, 8, 8) end
   local tr = self.treasure
