@@ -674,7 +674,9 @@ skipped. The mouse only takes the focus when it moves, so it does not fight the 
 `border`, and colours `{ r, g, b, a }`: `text`, `text_dim`, `text_focus`, `text_disabled`, `panel`,
 `panel_border`, `widget`, `widget_focus`, `focus` (the outline of the focused widget), `accent`,
 `track`, `select`, `dim`. Change it in place for the whole game, or give a screen
-`theme = { focus = { 1, 0, 0, 1 }, font = my_font }`.
+`theme = { focus = { 1, 0, 0, 1 }, font = my_font }`. The font can be a LÖVE font or an
+`engine.text.font(scale)` (below), which draws the text with rectangles and needs no TTF on the
+console: `theme = { font = engine.text.font(1) }`.
 
 A pause menu, as a transparent state over the game:
 
@@ -773,8 +775,8 @@ rectangle (this allocates nothing), or returns an array of `{ x, y, w, h, kind }
 `engine/debug.lua` does not require the combat module; the source only reads the world it is
 given.
 
-On the console text needs `default_font` in `game.lua`; the menus then work with the
-controller alone (d-pad or stick, A, B).
+On the console text needs `default_font` in `game.lua`, or a screen font from `engine.text.font`
+(below); the menus then work with the controller alone (d-pad or stick, A, B).
 
 ## engine.text
 
@@ -790,6 +792,13 @@ engine.text.draw("PAUSED", 100, 80, 2)        -- scale 2: each font pixel 2 x 2
 engine.text.lines({ "A", "B" }, 4, 4)         -- line_height (6) apart
 local w, h = engine.text.width("PAUSED", 2), engine.text.height(2)
 ```
+
+**As a font.** `engine.text.font(scale)` returns a Font-like object (one per scale, cached) with
+`getWidth(s)`, `getHeight()` (the line height), `getWrap(s, limit)` (word wrap: the widest line and
+its lines) and `printf(s, x, y, limit, align)` (the wrapped lines, aligned left, center or right).
+Give it to `engine.ui` as `theme = { font = engine.text.font(1) }` and the menus draw with the
+built-in font, with no `default_font` needed on the console. `getWrap` allocates because it runs
+on layout; `printf` keeps the wrapped lines per string and limit, so drawing allocates nothing.
 
 ## engine.tune
 
@@ -942,4 +951,5 @@ end
   and `tools/package.py` converts each one for the console, where asking for `x.ogg` loads the
   `x.wav` next to it and music streams in chunks (`audio` in [GAME_CONFIG.md](GAME_CONFIG.md)).
   Pitch goes up to 16.
-- No built-in font: set `default_font` in `game.lua` ([GAME_CONFIG.md](GAME_CONFIG.md)).
+- No built-in font: set `default_font` in `game.lua` ([GAME_CONFIG.md](GAME_CONFIG.md)), or draw
+  with `engine.text` / `engine.text.font` (above).

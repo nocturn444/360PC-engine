@@ -108,7 +108,8 @@ The rooms are in `rooms_data.lua` as rows of strings, the shape LDtk levels read
 `engine.level` also give. Run it on PC from the repository root: `love examples/rooms`.
 
 The HUD is provisional: HP, virus, shield/luck, floor/biome and the last mutation are text drawn
-with `engine.text`, so it works on the console without a TTF.
+with `engine.text`, so it works on the console without a TTF; the pause menu uses
+`engine.text.font(1)` as its theme font for the same reason.
 
 What to look at on the console: the fade hides the room change (no frame of the old or new
 room in the wrong place), the camera never shows outside the room, the extra limbs stay inside

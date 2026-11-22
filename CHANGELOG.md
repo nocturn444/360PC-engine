@@ -106,6 +106,13 @@ All notable changes to 360PC-Engine. The format follows
   safe mode is now the default (also for `deploy.py`); `--fast` keeps one connection.
   `tools/deploy_android.py` warns when the build it installs is older than the branch's last commit.
 
+### Fixed
+- `engine.ui` draws its text with the theme's font: a new `engine.text.font(scale)` adapter
+  measures, wraps and draws with the built-in rectangles, so menus show text on the console
+  without `default_font`; `examples/rooms` uses it for its pause menu.
+- `examples/rooms`: the "controller disconnected" message has a fixed width, so an auto-pause
+  no longer stretches the pause menu and its buttons off the screen.
+
 ## [0.1.0] - not tagged yet
 
 The first version of the base, objectives 1 to 19 of [docs/ROADMAP.md](docs/ROADMAP.md).
