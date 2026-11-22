@@ -57,6 +57,11 @@ All notable changes to 360PC-Engine. The format follows
   `engine.level`. It covers collision, doors and their abilities, the item, entities with
   fields, rooms (add, copy, delete, order, type, tags, weight, size), live checks, undo, and a
   play test with a platformer body. `level_editor.bat` opens it on Windows.
+- Phone room editor: `tools/room_editor_web` UI (library with rooms grouped by biome and type,
+  filters and lazy thumbnails; touch editor with painting, doors, item, entities, props from
+  the catalog, select/move/resize, undo, prev/next within the filter and variants; sync with
+  export, share, import, GitHub open/upload as a pull request; settings) and the Android app
+  `android/room_editor` that shows it full screen, built by `.github/workflows/android_room_editor.yml`.
 - `tools/room_editor_web`: the data layer of a touch-friendly web room editor, in plain
   JavaScript with no dependencies or build step. `SaveFmt` reads and writes the level file
   byte-identically to `engine/save.lua`, and `RoomModel` edits rooms, collision, doors, the

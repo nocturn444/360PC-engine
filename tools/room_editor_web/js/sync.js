@@ -87,7 +87,7 @@
   var state = { root: null, scroll: null, status: "", error: "", result: null };
 
   function section(title) {
-    var card = App.el("div.card");
+    var card = App.el("div.section");
     card.appendChild(App.el("h2", { text: title }));
     return card;
   }

@@ -29,9 +29,32 @@ Tests:
 
 ```sh
 node tests/tools/room_editor_web_test.js
+node tests/tools/room_editor_web_editor_test.js
+node tests/tools/room_editor_web_sync_test.js
 node tests/tools/room_editor_web_smoke.js   # needs Playwright; skipped without it
+node tests/tools/room_editor_web_flow.js    # touch click-through at phone size, needs Playwright
 ```
 
 The tests cover the LDtk fixture round trip, the writer against `engine/save.lua` with LuaJIT,
 a level made in JavaScript read by `engine.level` and `tools/level_editor/model.lua`, the
 editing operations, props, undo, checks, filters, grouping and import conflicts.
+
+## Using it
+
+- **Library:** tap the project name to switch or create projects. Chips filter by biome and
+  type, the search box by id, biome, type or tag. Rooms are grouped biome, then type; tap a
+  header to fold it. Tap a room to edit it; hold it (or tap ...) for variant, rename, biome,
+  type, move and delete. The + button makes a room in the current biome and type.
+- **Editor:** one finger uses the tool, two fingers pan and zoom, a double two-finger tap fits
+  the room. Painting shows the tile under your thumb magnified above it. The arrows at the top
+  go to the previous/next room of the library filter; Variant duplicates the room and opens the
+  copy. Tap the room id for its settings (id, biome, type, weight, tags, size) and checks.
+  Tools: Solid, Way (one-way), Erase (Free/Rect/Fill mode), Door (tap a border tile; a new door
+  opens its tile), Item, Ent (entity, pick the name on the button above), Prop (pick a type from
+  the palette), Sel (select, drag to move, corner handle to resize a prop, Edit for its fields).
+- **Sync:** export or share the file, import or merge one, and with the Android app open files
+  from the repository and upload changed projects as a pull request (never to `main`).
+- **Settings:** GitHub token (stored only in the app), folders, biome/type/entity lists, grid,
+  left-handed layout.
+
+Everything saves by itself about a second after each change.
