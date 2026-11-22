@@ -99,13 +99,20 @@ and after `5 + 2.5 * capacity` seconds without a hit it refills. The HUD shows `
 | Attack | X, J | X |
 | Switch attack (melee, ranged, explosive) | C, K, Tab | Y |
 | Interact (machine) | E, F | B |
-| Quit | Escape | Hold Back 3 s |
+| Pause (Resume, Restart run, Quit game) | Escape, P | Start |
+| Quit | -- | Hold Back 3 s (console) |
+
+`rooms_pause.lua` is a transparent state over the play state: while it is open the play state does
+not update. Restart run and Quit game ask first (No is focused). If the controller in use is
+disconnected (or the PC window loses the focus), `engine.autopause` opens it with a message;
+reconnecting the controller updates the message, and A resumes.
 
 The rooms are in `rooms_data.lua` as rows of strings, the shape LDtk levels read by
 `engine.level` also give. Run it on PC from the repository root: `love examples/rooms`.
 
 The HUD is provisional: HP, virus, shield/luck, floor/biome and the last mutation are text drawn
-with `engine.text`, so it works on the console without a TTF.
+with `engine.text`, so it works on the console without a TTF; the pause menu uses
+`engine.text.font(1)` as its theme font for the same reason.
 
 What to look at on the console: the fade hides the room change (no frame of the old or new
 room in the wrong place), the camera never shows outside the room, the extra limbs stay inside

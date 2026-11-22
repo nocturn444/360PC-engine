@@ -24,12 +24,13 @@ engine.run({
       attack = { keys = { "x", "j" }, buttons = { "x" } },
       switch = { keys = { "c", "k", "tab" }, buttons = { "y" } },
       interact = { keys = { "e", "f" }, buttons = { "b" } },
-      quit = { keys = { "escape" } },         -- on the console, hold Back for 3 s
+      pause = { keys = { "escape", "p" }, buttons = { "start" } },  -- on the console, hold Back 3 s to quit
     },
     axes = {
       move_x = { negative = "left", positive = "right", stick = "leftx" },
     },
   },
-  states = { play = require("rooms_play") },
+  states = { play = require("rooms_play"), pause = require("rooms_pause") },
   start = "play",
+  autopause = { state = "pause" },
 })
