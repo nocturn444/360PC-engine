@@ -16,6 +16,10 @@ All notable changes to 360PC-Engine. The format follows
   state by placement, allocation-free overlap and tile flag queries. Rooms list them in an
   optional `props` field that `engine/level.lua` checks. `tools/props_catalog.lua` writes the
   types' catalog for level editors (`--check` for tests). Schema: `docs/PROPS.md`.
+- `examples/rooms`: the new prop types are wired in: solid and one-way props on the room grid,
+  breakable crate props with persistent broken state and virus drops, spikes that cost hearts and
+  knock the slime back, statues that fire their attack on the enemy team, and wide platforms the
+  slime slides off. `rooms_obstacles.lua` is gone.
 - `engine.init` / `engine.run`: optional `autopause = { state, controller, focus }` pushes a
   pause state when the gamepad in use is disconnected or the window loses the focus, with the new
   `controllerlost(joystick)` and `controllerback(joystick)` hooks; a state can opt out with

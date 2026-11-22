@@ -54,8 +54,9 @@ and after `5 + 2.5 * capacity` seconds without a hit it refills. The HUD shows `
 - Virus is the run's currency. It comes from broken crates, a chance when a room is cleared, and
   (as a hook) future machines; it is spent at machines that accept money. The start room has a
   small virus pickup.
-- Breakable crates are non-solid props: attack them in front or fall on them. A broken crate stays
-  broken while the room exists and can drop virus.
+- Breakable crates are props (`rooms_props.lua`, `engine.modules.props`): attack them in front or
+  fall on them. A broken crate stays broken while the room exists and can drop virus (its own rng
+  stream). The crate's type and fields (`health`, `virus_chance`, `virus`) are in that file.
 - The shop template has a test healer (`rooms_machines.lua`): `accepts_money = true`, 5 virus,
   one use, fills the health. Each machine has its own state. Interact with it when close.
 - Pools, drops and pickups are described in [docs/ECONOMY.md](docs/ECONOMY.md) and
@@ -85,6 +86,12 @@ and after `5 + 2.5 * capacity` seconds without a hit it refills. The HUD shows `
 - An enemy that falls out of the room through a door moves to the room on the other side and
   turns up there the next time it is loaded, keeping its health. Past an edge with no door, or an
   exit that leads nowhere, it dies. Neither counts as a kill or drops anything.
+- Props (`rooms_props.lua`, `engine.modules.props`): the hall has spikes, a statue and a wide
+  platform; some crates sit around the templates. Props with `solid` or `one_way` collision are
+  stamped on the room grid, so the slime, enemies and attacks collide with them. Spikes cost a
+  heart and knock the slime away; a statue fires its attack on the enemy team every interval. The
+  slime drapes over the edge of a hangable platform (`=`, the `platform` prop), but slides off the
+  edges of a wide platform, which is not hangable.
 - The slime's attacks (`rooms_attacks.lua`, example `combat.attacks` configs): a melee arc in
   front of it, a ranged shot, and a bomb thrown low that bounces, blows on touching an enemy
   or after its fuse, and pushes everything in its radius away. One mode at a time, switched
@@ -119,6 +126,7 @@ room in the wrong place), the camera never shows outside the room, the extra lim
 the pixel grid, and the frame stays at 30 FPS in the two-by-two room with its three enemies.
 
 Tests: `luajit -joff tests/pc/rooms_example_test.lua`,
+`luajit -joff tests/pc/rooms_props_test.lua`,
 `luajit -joff tests/pc/rooms_stats_test.lua`,
 `luajit -joff tests/pc/rooms_content_test.lua`,
 `luajit -joff tests/pc/rooms_economy_test.lua`,
