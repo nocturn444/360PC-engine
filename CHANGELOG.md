@@ -9,6 +9,13 @@ All notable changes to 360PC-Engine. The format follows
 ## [Unreleased]
 
 ### Added
+- `engine/modules/props`: modular room props. A registry of prop types (category, size and
+  resize limits, `solid` / `one_way` collision, free flags, ordered per-instance fields with
+  defaults and limits, editor label / glyph / colour, `init` / `update` / `hit` / `draw` hooks)
+  and the live props of a room: collision stamped on an overlay of the room grid, persistent
+  state by placement, allocation-free overlap and tile flag queries. Rooms list them in an
+  optional `props` field that `engine/level.lua` checks. `tools/props_catalog.lua` writes the
+  types' catalog for level editors (`--check` for tests). Schema: `docs/PROPS.md`.
 - `engine.init` / `engine.run`: optional `autopause = { state, controller, focus }` pushes a
   pause state when the gamepad in use is disconnected or the window loses the focus, with the new
   `controllerlost(joystick)` and `controllerback(joystick)` hooks; a state can opt out with

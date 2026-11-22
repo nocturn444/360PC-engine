@@ -51,6 +51,17 @@ local function check_room(room, n, lvl)
       return where .. "layer " .. i .. " is broken"
     end
   end
+  if room.props ~= nil then
+    if type(room.props) ~= "table" then return where .. "props is a list" end
+    for i = 1, #room.props do
+      local p = room.props[i]
+      if type(p) ~= "table" or type(p.type) ~= "string" or not whole(p.tx, 1) or not whole(p.ty, 1)
+        or (p.w ~= nil and not whole(p.w, 1)) or (p.h ~= nil and not whole(p.h, 1))
+        or (p.fields ~= nil and type(p.fields) ~= "table") then
+        return where .. "prop " .. i .. " is broken (type, tx, ty, w, h, fields)"
+      end
+    end
+  end
   room.grid = setmetatable({ width = tw, height = th, tile_size = lvl.tile_size, cells = room.collision }, Grid)
   return nil
 end
@@ -63,7 +74,9 @@ end
 -- A room has: id, w, h (map cells), type, weight, tags, fields (the level's other custom
 -- fields), exits { side, offset, requires, tx, ty }, item { tx, ty } or nil, entities
 -- { name, iid, x, y, w, h, tx, ty, fields }, layers { name, tileset, tiles } from the bottom
--- one up, tiles_w, tiles_h, collision (the flat array, 0 / 1 solid / 2 one-way) and grid.
+-- one up, tiles_w, tiles_h, collision (the flat array, 0 / 1 solid / 2 one-way), grid and,
+-- when the room has any, props { type, tx, ty, w, h, fields } (docs/PROPS.md; the shape is
+-- checked here, the types by engine.modules.props).
 function M.from_text(text)
   local ok, data = Save.parse(text)
   if not ok then return nil, "level: " .. tostring(data) end
