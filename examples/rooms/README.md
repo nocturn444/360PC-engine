@@ -82,6 +82,9 @@ and after `5 + 2.5 * capacity` seconds without a hit it refills. The HUD shows `
   back, and it blinks while it cannot be hurt. At 0 HP it goes back to the start room, healed. A
   room remembers its enemies: the dead stay dead and a hurt enemy keeps its health when the slime
   comes back. The state lasts for the floor.
+- An enemy that falls out of the room through a door moves to the room on the other side and
+  turns up there the next time it is loaded, keeping its health. Past an edge with no door, or an
+  exit that leads nowhere, it dies. Neither counts as a kill or drops anything.
 - The slime's attacks (`rooms_attacks.lua`, example `combat.attacks` configs): a melee arc in
   front of it, a ranged shot, and a bomb thrown low that bounces, blows on touching an enemy
   or after its fuse, and pushes everything in its radius away. One mode at a time, switched

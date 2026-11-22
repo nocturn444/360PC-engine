@@ -99,6 +99,11 @@ All notable changes to 360PC-Engine. The format follows
   safe mode is now the default (also for `deploy.py`); `--fast` keeps one connection.
   `tools/deploy_android.py` warns when the build it installs is older than the branch's last commit.
 
+### Fixed
+- `examples/rooms`: an enemy that falls through a pit now moves to the room below, keeping its
+  health, instead of vanishing and respawning at its spawn spot. Past an edge with no door it
+  dies, without counting as a kill or dropping anything.
+
 ## [0.1.0] - not tagged yet
 
 The first version of the base, objectives 1 to 19 of [docs/ROADMAP.md](docs/ROADMAP.md).
