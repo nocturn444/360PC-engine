@@ -553,4 +553,21 @@ eq(M.toText(propsLevel), withLamp, "redo adds it back");
     "checkRoomFull reports a duplicate id");
 })();
 
+// --- props catalog ------------------------------------------------------------------------
+
+(function () {
+  var Catalog = require("../../tools/room_editor_web/js/catalog.js");
+  var fs = require("fs");
+  var text = fs.readFileSync(require("path").join(__dirname, "../../tools/room_editor_web/default_catalog.lvl"), "utf8");
+  var r = Catalog.parse(text);
+  check(!r.error, "the default catalog parses: " + r.error);
+  check(r.catalog.types.length > 0 && r.catalog.byId.crate !== undefined, "catalog types by id");
+  var vine = r.catalog.byId.vine;
+  eq(Catalog.clampSize(r.catalog, "vine", 5, 100).w, vine.w, "clamp keeps a non-resizable axis");
+  eq(Catalog.clampSize(r.catalog, "vine", 1, 100).h, vine.max.h, "clamp respects max");
+  eq(Catalog.size(r.catalog, { type: "vine", tx: 1, ty: 1 }).h, vine.h, "a placement without h uses the default");
+  var bad = Catalog.parse('{["format"]="360pc-props-catalog",["types"]={{["id"]="x",["w"]=0,["h"]=1,},},["version"]=1,}');
+  check(/type x: w and h/.test(bad.error || ""), "a bad catalog names the type and field");
+})();
+
 console.log("OK: " + checks + " checks");
