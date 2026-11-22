@@ -66,6 +66,9 @@ All notable changes to 360PC-Engine. The format follows
   boss can go far from the start (`boss_distance`). A run of floors grows from floor to floor
   (rooms, special rooms, templates by floor). `examples/rooms` is now a ten-floor run with
   stairs after each boss.
+- `procgen.roomtypes`: `chance` and `count` functions receive the game's `run` table (so a
+  chance can depend on what happened earlier in the run), `replaces` turns another type off on
+  a floor, and `max` caps a type's count; `procgen.floors` passes the run through.
 - `run_pc.bat`: double-click to update the repository and open a game on the PC with LOVE.
 - `engine/modules/wallet`: a small bag of named integer currencies for a run (`virus` in the
   example), with add/can/spend, no negative amounts, and plain-data state for a run save.
@@ -80,8 +83,24 @@ All notable changes to 360PC-Engine. The format follows
   action, one use per machine).
 - `examples/rooms`: cosmetic mutations (colours, eyes, shape, limbs) and optional physical rest
   shapes; `softbody` gains `Body:set_rest_shape` for mutations that change the body and hitbox.
+- `examples/rooms`: casino machines in `rooms_casino.lua`: a single-use genetic lottery that can
+  give or take a mutation (gain chance from luck) and a slot machine that spends virus for a
+  weighted prize, each keeping its own persistent state.
 - `examples/rooms/docs/`: `STATS.md`, `CONTENT.md`, `ECONOMY.md` and `COSMETICS.md` (the prototype's
   systems; the numbers in them are examples pending the owner's design decisions).
+- `examples/rooms`: `rooms_spawn.lua`, the spawn rules of the new special rooms (casino, super
+  treasure, pact, trap, obstacle) as data and pure functions, plus the per-floor run state
+  (casino, trap, obstacle, treasure skipped) they read. Not wired into the map yet.
+- `examples/rooms`: bonus keys (`bonus_key`, a pale cyan `KEY+` pickup) for optional locks, a
+  separate `bonus_keys` content pool with a `0.05` mob roll scaled by luck, and the `bonus_key`
+  currency in the run wallet; its first use is the super treasure room.
+- `examples/rooms`: `rooms_minimap.lua` draws the run's minimap from `nav:minimap()`, with a
+  white outline around the current room and data-driven pixel icons for the special room types.
+- `examples/rooms`: `rooms_pacts.lua`, the pact room's mutualist larvae (one heart slot for one
+  mutation), and `stats:add_permanent` for the permanent health cost, saved with the run.
+- `examples/rooms/rooms_shop.lua`: shop stock drawn once per room from the content pools with a
+  virus price, buying that spends and marks an offer sold and takes it from its pool, the
+  treasure / super treasure pedestal positions, and an optional offer draw.
 
 ### Changed
 - `engine.pixel` uses `"direct"` mode by default on PC too, so PC shows what the console shows.

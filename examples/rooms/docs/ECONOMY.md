@@ -26,8 +26,8 @@ do nothing. Amounts are whole numbers >= 0, gold-style.
 ## Pickups
 
 `rooms_pickups.lua` is data-only: `M.heart(x, y, amount)`, `M.virus(x, y, amount)`,
-`M.overlaps(pickup, cx, cy)`, `M.color` and `M.label`. The room draws them as small squares and
-collects them on touch.
+`M.bonus_key(x, y, amount)`, `M.overlaps(pickup, cx, cy)`, `M.color` and `M.label`. The room
+draws them as small squares and collects them on touch.
 
 - A heart heals its amount, capped at the current maximum health. At full health it becomes one
   virus instead of being wasted.
@@ -35,6 +35,23 @@ collects them on touch.
 
 Each room keeps its pickups in its persistent state, so drops left behind survive a re-entry. The
 start room has one heart and one virus pickup for testing.
+
+## Bonus keys
+
+A bonus key (`bonus_key`) opens optional things. Its first use is the super treasure room. It is
+not the per-floor `key` ability that opens locked doors: both are separate, so a run can have its
+mandatory key and still need a bonus key.
+
+`rooms_pickups.lua` has `M.bonus_key(x, y, amount)` (pale cyan, label `"KEY+"`), and
+`rooms_consumables.lua` defines the drop entry. `rooms_content.lua` puts it in its own
+`bonus_keys` pool (`content.new_pools().bonus_keys`), apart from hearts and virus, and
+`content.chances.mob_bonus_key = 0.05` is the roll for a mob (before luck, applied by the
+existing `content.drop`). The integration can draw it with
+`content.draw_bonus_key(pools, rng, ctx)` or
+`content.drop(pools.bonus_keys, rng, ctx, content.chances.mob_bonus_key)`.
+
+The run wallet holds the keys as the `"bonus_key"` currency: declare it with
+`wallet.new({ virus = 0, bonus_key = 0 })` and spend one when the optional thing opens.
 
 ## Obstacles
 
