@@ -95,7 +95,9 @@ All notable changes to 360PC-Engine. The format follows
   systems; the numbers in them are examples pending the owner's design decisions).
 - `examples/rooms`: `rooms_spawn.lua`, the spawn rules of the new special rooms (casino, super
   treasure, pact, trap, obstacle) as data and pure functions, plus the per-floor run state
-  (casino, trap, obstacle, treasure skipped) they read. Not wired into the map yet.
+  (casino, trap, obstacle, treasure skipped) they read. The run now defines those types from
+  these rules and passes the state to `procgen.floors`; each has four one-door templates, trap
+  rooms seal like a miniboss, and the minimap draws the new types through `rooms_minimap`.
 - `examples/rooms`: bonus keys (`bonus_key`, a pale cyan `KEY+` pickup) for optional locks, a
   separate `bonus_keys` content pool with a `0.05` mob roll scaled by luck, and the `bonus_key`
   currency in the run wallet; its first use is the super treasure room.
