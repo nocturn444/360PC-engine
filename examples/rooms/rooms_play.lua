@@ -345,8 +345,13 @@ function play:enter()
   play.load_room(self, x, y)
 end
 
+-- A new run from the first floor, as enter() starts one (the pause menu's Restart run).
+function play.restart(self)
+  play.enter(self)
+end
+
 function play:input(input)
-  if input:pressed("quit") then love.event.quit() end
+  if input:pressed("pause") then engine.states:push("pause") end
 end
 
 local function control(self, dt)

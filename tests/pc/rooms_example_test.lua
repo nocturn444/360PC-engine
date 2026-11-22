@@ -18,7 +18,7 @@ end
 -- 1. Files and config
 for _, name in ipairs({ "game.lua", "conf.lua", "main.lua", "rooms_play.lua", "rooms_data.lua", "rooms_biomes.lua",
   "rooms_stats.lua", "rooms_content.lua", "rooms_mutations.lua", "rooms_consumables.lua", "rooms_look.lua",
-  "rooms_pickups.lua", "rooms_obstacles.lua", "rooms_machines.lua", "README.md" }) do
+  "rooms_pickups.lua", "rooms_obstacles.lua", "rooms_machines.lua", "rooms_pause.lua", "README.md" }) do
   check(read("examples/rooms/" .. name), "examples/rooms/" .. name .. " exists")
 end
 local Config = dofile("runtime/lua/config.lua")
@@ -503,10 +503,80 @@ if pit_room then
   end
 end
 
+-- the pause menu: Escape pauses (the play state stops updating) and Resume pops it
+local pause = require("rooms_pause")
+check(engine.states:get("pause") == pause, "the pause state is registered")
+if play.fade:busy() then frames(30) end
+local updates = 0
+local real_update = play.update
+play.update = function(self, dt) updates = updates + 1; return real_update(self, dt) end
+F.keys.escape = true; love.update(1 / 60); F.keys.escape = nil
+check(engine.states:top() == pause, "Escape pushes the pause state")
+frames(10)
+check(updates == 0, "the play state does not update while paused")
+F.keys["return"] = true; love.update(1 / 60); F.keys["return"] = nil
+check(engine.states:top() == play, "Resume pops the pause state")
+local before = updates
+frames(2)
+check(updates > before, "the play state updates again")
+play.update = real_update
+
+-- losing the pad in use auto-pauses with reason "controller"
+local pad = F.add_pad()
+love.joystickadded(pad)
+love.gamepadpressed(pad, "a")
+check(engine.controls.joystick == pad, "the pad is the one in use")
+for i = #F.pads, 1, -1 do if F.pads[i] == pad then table.remove(F.pads, i) end end
+love.joystickremoved(pad)
+check(engine.states:top() == pause and pause.reason == "controller", "losing the pad in use auto-pauses")
+local page = pause:page()
+check(page and page.root.w <= 320 and page.root.h <= 180,
+  "the controller message wraps: the pause menu fits the screen")
+local inside = true
+for _, w in ipairs(page.widgets) do
+  if w.x < 0 or w.y < 0 or w.x + w.w > 320 or w.y + w.h > 180 then inside = false end
+end
+check(inside and #page.widgets >= 3, "its buttons stay inside the 320 x 180 screen")
+F.reset_calls(); pause:draw(0)
+check(#F.find("printf") == 0 and #F.find("setFont") == 0,
+  "the menu draws its text with engine.text rectangles, not love.graphics")
+F.keys["return"] = true; love.update(1 / 60); F.keys["return"] = nil
+check(engine.states:top() == play, "Resume after the controller was lost")
+
+-- Restart run: a confirmation, then Yes starts the run again at floor 1
+-- (floors are entered in order, so start a fresh run and walk to floor 3)
+play.restart(play)
+play.new_floor(play, 2)
+play.new_floor(play, 3)
+play:load_room(play.nav:enter(play.map.start))
+check(play.floor == 3, "a floor to leave behind")
+F.keys.p = true; love.update(1 / 60); F.keys.p = nil
+check(engine.states:top() == pause, "P pauses too")
+F.keys.down = true; love.update(1 / 60); F.keys.down = nil
+F.keys["return"] = true; love.update(1 / 60); F.keys["return"] = nil
+check(play.floor == 3 and engine.states:top() == pause, "Restart run asks first")
+F.keys.left = true; love.update(1 / 60); F.keys.left = nil
+F.keys["return"] = true; love.update(1 / 60); F.keys["return"] = nil
+check(engine.states:top() == play and play.floor == 1, "Yes restarts the run at floor 1")
+
+-- reopening starts on Resume, not on the last button used; Quit game confirms (No focused),
+-- then quits. tap() releases the key for a frame so the next press is a new one.
+local function tap(key) F.keys[key] = true; love.update(1 / 60); F.keys[key] = nil; love.update(1 / 60) end
+tap("escape")
+check(engine.states:top() == pause, "Escape pauses again")
+tap("return")
+check(engine.states:top() == play, "the menu reopens with Resume focused")
+tap("escape"); tap("down"); tap("down"); tap("return")
+check(not F.quit and engine.states:top() == pause, "Quit game asks first")
+tap("return")
+check(not F.quit and engine.states:top() == pause, "No (focused by default) goes back to the menu")
+tap("return")
+check(engine.states:top() == play, "and the menu is back on Resume")
+tap("escape"); tap("down"); tap("down"); tap("return"); tap("left"); tap("return")
+check(F.quit == true, "Yes on Quit game leaves the game")
+
 -- the room is drawn
 F.reset_calls(); love.draw()
 check(#F.find("rectangle") >= 5 and play.pixels.count > 150, "the room, the slime and the minimap are drawn")
-F.keys.escape = true; love.update(1 / 60)
-check(F.quit == true, "quit leaves the game")
 
 print(string.format("OK: %d checks; the rooms example boots and walks its map", checks))

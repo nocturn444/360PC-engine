@@ -90,6 +90,23 @@ function engine.init(config)
   return engine
 end
 
+-- Pushes the configured pause state (config.autopause.state) when the game loses the controller
+-- or the focus it is playing with. The pause state gets (previous, reason, ...) in its enter;
+-- a state that must not be paused (a menu, a cutscene) sets `autopause = false`. Returns true
+-- when it pushed. See docs/ENGINE.md.
+function engine.autopause(reason, ...)
+  local cfg = engine.config and engine.config.autopause
+  local states = engine.states
+  if not (cfg and cfg.state and states) then return false end
+  local top = states:top()
+  if not top then return false end
+  local pause = type(cfg.state) == "table" and cfg.state or states:get(cfg.state)
+  if not pause or top == pause or top.autopause == false then return false end
+  states:push(pause, reason, ...)
+  if reason == "controller" then states:emit("controllerlost", ...) end
+  return true
+end
+
 -- One frame of logic: reads the input, then runs the fixed steps the frame time asks for.
 function engine.update(frame_dt)
   local time, states, controls = engine.time, engine.states, engine.controls
@@ -131,12 +148,24 @@ function engine.run(config)
     if engine.screen then engine.screen:resize(w, h) end
     engine.states:emit("resize", w, h)
   end)
-  for _, name in ipairs({ "joystickadded", "joystickremoved" }) do
-    chain(name, function(joystick)
-      if engine.controls then engine.controls:refreshJoysticks() end
-      engine.states:emit(name, joystick)
-    end)
-  end
+  chain("joystickadded", function(joystick)
+    if engine.controls then engine.controls:refreshJoysticks() end
+    engine.states:emit("joystickadded", joystick)
+    engine.states:emit("controllerback", joystick)
+  end)
+  chain("joystickremoved", function(joystick)
+    local controls = engine.controls
+    local used = controls and controls.joystick   -- before refresh, which clears a pad that left
+    if controls then controls:refreshJoysticks() end
+    engine.states:emit("joystickremoved", joystick)
+    local cfg = engine.config and engine.config.autopause
+    if controls and cfg and cfg.state and cfg.controller ~= false then
+      if (used ~= nil and used == joystick)
+        or (#controls.joysticks == 0 and controls.device == "gamepad") then
+        engine.autopause("controller", joystick)
+      end
+    end
+  end)
   for _, name in ipairs({ "keypressed", "mousepressed", "gamepadpressed", "gamepadaxis" }) do
     chain(name, function(a, b, c, d)
       local controls = engine.controls
@@ -149,9 +178,17 @@ function engine.run(config)
       engine.states:emit(name, a, b, c, d)
     end)
   end
-  for _, name in ipairs({ "keyreleased", "mousereleased", "gamepadreleased", "textinput", "focus", "quit" }) do
+  for _, name in ipairs({ "keyreleased", "mousereleased", "gamepadreleased", "textinput", "quit" }) do
     chain(name, function(...) return engine.states:emit(name, ...) end)
   end
+  chain("focus", function(focused)
+    local result = engine.states:emit("focus", focused)
+    local cfg = engine.config and engine.config.autopause
+    if focused == false and cfg and cfg.state and cfg.focus ~= false then
+      engine.autopause("focus")
+    end
+    return result
+  end)
   return engine
 end
 

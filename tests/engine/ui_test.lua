@@ -224,6 +224,17 @@ T.check(screen.dirty, "a new text asks for a new layout")
 screen:draw()
 T.check(label.h == 8 and not screen.dirty, "done on the next draw")
 
+-- an engine.text font: measured by its adapter, drawn with rectangles, no love.graphics.printf
+local tfont = require("engine.text").font(1)
+local tl = ui.label({ text = "ONE TWO THREE", width = 30, align = "center" })
+screen = ui.screen({ root = ui.vstack({ tl, ui.button({ label = "OK" }), background = true }),
+  width = 320, height = 180, theme = { font = tfont } })
+T.check(tl.h == 12, "the adapter wraps the label in two lines of 6: " .. tl.h)
+F.reset_calls(); screen:draw()
+T.check(#F.find("printf") == 0 and #F.find("setFont") == 0,
+  "an engine.text font draws without love.graphics.printf or setFont")
+T.check(#F.find("rectangle") > 0, "the labels are drawn with rectangles")
+
 ---------------------------------------------------------------------------
 -- Pick 1 of 3
 ---------------------------------------------------------------------------
