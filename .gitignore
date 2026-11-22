@@ -24,3 +24,8 @@ __pycache__/
 # Local deploy settings (console IP, FTP login): tools/deploy.example.ini
 deploy.local.ini
 .ci-cache/
+
+# Android room editor build output
+android/room_editor/.gradle/
+android/room_editor/app/build/
+android/room_editor/local.properties

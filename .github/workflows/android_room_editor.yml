@@ -1,0 +1,51 @@
+# Builds the phone room editor (android/room_editor, UI from tools/room_editor_web) as an APK and
+# publishes it as a downloadable artifact, so the owner can install it from his phone.
+#
+# Manual run: Actions tab > "Room editor APK" > Run workflow (pick the branch).
+# Pushes to main that change the app or its UI build it too. The APK is signed with the committed
+# android/room_editor/debug.keystore, so a new build installs over the old one and keeps its data.
+name: Room editor APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "android/room_editor/**"
+      - "tools/room_editor_web/**"
+      - ".github/workflows/android_room_editor.yml"
+
+concurrency:
+  group: room-editor-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.10.2"
+
+      # The runner image ships the Android SDK ($ANDROID_HOME).
+      - name: Build the APK
+        run: gradle -p android/room_editor --no-daemon assembleRelease
+
+      - name: Upload the APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: room-editor-apk
+          path: android/room_editor/app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+          retention-days: 30
