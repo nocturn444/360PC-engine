@@ -27,7 +27,7 @@ code templates alike:
 ```lua
 props = {
   { type = "vine", tx = 4, ty = 2, h = 6 },
-  { type = "spikes", tx = 8, ty = 11, w = 3, fields = { send_back = true } },
+  { type = "spikes", tx = 8, ty = 11, w = 3, fields = { damage = 2 } },
   { type = "statue", tx = 18, ty = 9, fields = { direction = "left", interval = 1.5 } },
 }
 ```
