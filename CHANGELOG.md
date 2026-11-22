@@ -9,6 +9,11 @@ All notable changes to 360PC-Engine. The format follows
 ## [Unreleased]
 
 ### Added
+- `engine.init` / `engine.run`: optional `autopause = { state, controller, focus }` pushes a
+  pause state when the gamepad in use is disconnected or the window loses the focus, with the new
+  `controllerlost(joystick)` and `controllerback(joystick)` hooks; a state can opt out with
+  `autopause = false`. `examples/rooms` has a pause menu (Resume, Restart run, Quit game) that
+  pauses its audio and shows when the controller is disconnected or back.
 - `.github/workflows/opencode.yml`: run opencode from `/opencode` comments or a manual run,
   owner only, always on a branch with a pull request ([docs/OPENCODE_CI.md](docs/OPENCODE_CI.md)).
 - `engine.pixelgrid`: shapes rasterized each frame into a small colour grid and drawn as
@@ -103,6 +108,8 @@ All notable changes to 360PC-Engine. The format follows
   treasure / super treasure pedestal positions, and an optional offer draw.
 
 ### Changed
+- `examples/rooms`: Escape (and P / Start) now pauses with the new menu instead of quitting on
+  PC; on the console, holding Back still quits.
 - `engine.pixel` uses `"direct"` mode by default on PC too, so PC shows what the console shows.
   `"canvas"` is still available on PC when asked for.
 - `procgen` maps generated from a seed are different now because `branching` defaults to 0.5;

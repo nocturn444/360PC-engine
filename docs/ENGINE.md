@@ -47,12 +47,13 @@ together, under load: [examples/perf_platformer](../examples/perf_platformer/REA
 |---|---|
 | `engine.run(config)` | Sets `love.load`, `love.update`, `love.draw`, `love.resize` and the input callbacks. Callbacks the game already defined still run, first. `love.run` is not touched (the console ignores it). |
 | `engine.init(config)`, `engine.update(dt)`, `engine.draw()` | The same three steps, to call from the game's own callbacks instead of `run`. |
+| `engine.autopause(reason, ...)` | Pushes the configured pause state unless it is already on top or the top state has `autopause = false`; returns true when it pushed. See the auto-pause options below. |
 | `engine.time`, `engine.states`, `engine.controls`, `engine.screen` | The Timestep, the state Machine, the Input (if `config.input`) and the Pixel (if `config.pixel`), once `love.load` ran. |
 | `engine.state`, `.timestep`, `.input`, `.camera`, `.pixel`, `.layers`, `.entity`, `.modifiers`, `.rng`, `.save`, `.level`, `.ui`, `.text`, `.anim`, `.debug`, `.tune` | The modules. `engine.anim` loads anim8 on first use; `engine.debug` and `engine.tune` are loaded on first use too. |
 
 Config: `rate` (Hz, 60), `max_steps` (5), `max_frame` (0.25 s), `input`, `pixel`, `states`
 (`name = table`), `load` (`function(engine)`, runs in `love.load` before the first state is
-entered: create images here), `start` (first state).
+entered: create images here), `start` (first state), and the optional `autopause` (see below).
 
 A frame: `controls:poll()`; then, for each fixed step the frame time asks for, `controls:step()`,
 the top state's `input(controls)` and `update(dt)`; then `screen:start()`, the states'
@@ -60,6 +61,27 @@ the top state's `input(controls)` and `update(dt)`; then `screen:start()`, the s
 events (`keypressed`, `gamepadpressed`, `resize`, `quit`...) reach the top state as hooks of the
 same name. The target is 30 FPS on PC and console alike: at the default 60 Hz logic rate a frame runs two
 steps.
+
+**Auto-pause.** The optional `autopause` table asks the engine to push a pause state when the game
+loses its input device:
+
+```lua
+autopause = {
+  state = "pause",          -- a state name or table; required to enable it
+  controller = true,        -- the gamepad in use was disconnected (default true)
+  focus = true,             -- the window lost the focus, PC (default true)
+}
+```
+
+When the pad last used (`engine.controls.joystick`) is removed, or no gamepad is left while the
+input's device is the gamepad, the engine calls `engine.autopause("controller", joystick)`. On
+`focus(false)` it calls `engine.autopause("focus")` when `focus` is on. It pushes `state` with
+`enter(previous, reason, joystick)` unless the pause state is already on top or the top state has
+`autopause = false` (a menu or a cutscene can opt out). After pushing for a controller, the top
+state also gets `controllerlost(joystick)`; a gamepad that comes back gives it
+`controllerback(joystick)`, so the pause screen can update its message. The engine never resumes
+by itself: the pause state does that when the player asks. `engine.autopause(reason, ...)` is also
+callable from the game and returns true when it pushed.
 
 ## engine.timestep
 
