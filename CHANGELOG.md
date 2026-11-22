@@ -54,6 +54,11 @@ All notable changes to 360PC-Engine. The format follows
   `engine.level`. It covers collision, doors and their abilities, the item, entities with
   fields, rooms (add, copy, delete, order, type, tags, weight, size), live checks, undo, and a
   play test with a platformer body. `level_editor.bat` opens it on Windows.
+- `tools/room_editor_web`: the data layer of a touch-friendly web room editor, in plain
+  JavaScript with no dependencies or build step. `SaveFmt` reads and writes the level file
+  byte-identically to `engine/save.lua`, and `RoomModel` edits rooms, collision, doors, the
+  item, entities, props (not entities) and biomes, with undo/redo, checks, filters, grouping
+  and importing rooms from another file. The UI comes in part 2.
 - `procgen.biomes`: the run's path through biomes of 1 to 3 floors, fixed (first, last, a
   floor) or variable (by weight, unlocked, or depending on the run), read by `procgen.floors`
   (templates, room types, room count, difficulty); `items` entries can be limited to biomes;
