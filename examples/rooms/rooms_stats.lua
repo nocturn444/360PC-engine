@@ -18,6 +18,7 @@ M.defs = {
 local SHIELD_MOD = "__rooms_stats_shield"
 local SHIELD_RECHARGE = 5      -- seconds without a hit, plus 2.5 per point of shield capacity
 local SHIELD_PER_POINT = 2.5
+local PERMANENT_PREFIX = "__rooms_stats_permanent:"
 
 local Stats = {}
 Stats.__index = Stats
@@ -54,6 +55,7 @@ function M.new(mutation_defs)
     reg = reg,
     defs = defs,
     _stacks = {},
+    _permanent = {},
     shield_current = 0,
     shield_timer = 0,
     shield_max = M.defs.shield.base,
@@ -89,6 +91,25 @@ function Stats:acquire(id)
   local changed = self.mods:add(id, 1)
   if not changed then return false end
   self._stacks[id] = self.mods:stacks(id)
+  return true
+end
+
+-- A permanent stat change, for things a pact or a choice takes away for the run. `source`
+-- identifies it: applying the same source and stat again does nothing. It is serialized with the
+-- run, unlike a timed modifier.
+function Stats:add_permanent(name, delta, source)
+  if not M.defs[name] then error("rooms_stats: unknown stat " .. tostring(name), 2) end
+  if type(delta) ~= "number" then
+    error("rooms_stats: the delta of " .. tostring(name) .. " must be a number", 2)
+  end
+  if source == nil then error("rooms_stats: a permanent change needs a source", 2) end
+  local key = tostring(source)
+  local id = PERMANENT_PREFIX .. name .. ":" .. key
+  if not self.reg.defs[id] then
+    self.reg:define({ id = id, stats = { { name, "add", delta } }, tags = { "permanent" } })
+  end
+  if not self.mods:add(id) then return false end
+  self._permanent[#self._permanent + 1] = { name = name, delta = delta, source = key, id = id }
   return true
 end
 
@@ -166,9 +187,14 @@ end
 function Stats:serialize()
   local mutations = {}
   for id, n in pairs(self._stacks) do mutations[id] = n end
+  local permanent = {}
+  for i, p in ipairs(self._permanent) do
+    permanent[i] = { name = p.name, delta = p.delta, source = p.source }
+  end
   return {
     mutations = mutations,
     shield = { current = self.shield_current, timer = self.shield_timer },
+    permanent = permanent,
   }
 end
 
@@ -176,6 +202,8 @@ function Stats:set_state(state)
   state = state or {}
   for id in pairs(self._stacks) do self.mods:remove(id) end
   self._stacks = {}
+  for _, p in ipairs(self._permanent) do self.mods:remove(p.id) end
+  self._permanent = {}
   local mutations = state.mutations or {}
   local ids = {}
   for id in pairs(mutations) do ids[#ids + 1] = id end
@@ -193,6 +221,9 @@ function Stats:set_state(state)
       self.mods:add(id, n)
       self._stacks[id] = self.mods:stacks(id)
     end
+  end
+  for _, p in ipairs(state.permanent or {}) do
+    if M.defs[p.name] then self:add_permanent(p.name, p.delta, p.source) end
   end
   local shield = state.shield or {}
   local max = self.mods:get("shield")

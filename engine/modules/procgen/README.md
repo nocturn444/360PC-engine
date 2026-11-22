@@ -134,15 +134,22 @@ local map = plan:generate(n, run.streams:get("floor" .. n))   -- floor n; map.fl
 
 | Field | Meaning |
 |---|---|
-| `count` | Rooms per floor: a number (1), `{ min, max }` (a draw), or `function(floor, total, rng)`. |
-| `chance` | 0..1, or `function(floor, total)`: whether a floor gets the type at all. |
+| `count` | Rooms per floor: a number (1), `{ min, max }` (a draw), or `function(floor, total, rng, run)`. |
+| `chance` | 0..1, or `function(floor, total, run)`: whether a floor gets the type at all. |
+| `max` | A whole number >= 0: the most rooms of this type on a floor (applied after `count`). |
+| `replaces` | A type name: on a floor where this type has a room, the replaced type gets none. A replacer may be defined before its target, but the target must be defined by the time `specials` runs; two types may not replace each other. |
 | `min_floor`, `max_floor` | The floors it appears on. A negative `max_floor` counts from the end: -1 is the last floor, -2 the one before it. |
 | `distance` | `"any"`, `"far"` (behind the deepest open exits) or `"near"` (close to the start). |
 | `min_depth` | The fewest doors between the start and the room. |
 
-Anything else in `def` belongs to the game, such as prices or minimap colours. `types:specials(floor, total, rng)`
-returns the generator's `specials` list. The order of the definitions is part of a generated
-map.
+Anything else in `def` belongs to the game, such as prices or minimap colours. `types:specials(floor, total, rng, run)`
+returns the generator's `specials` list. The optional last argument `run` is the game's own
+table (its counters for the run): `chance` and `count` functions receive it, so a chance can
+depend on what happened earlier in the run, and calls without it work as before. The order of
+the definitions is part of a generated map. Types with `replaces` are evaluated first, then the
+rest (each group in definition order), which is also the rng draw order; the output list stays in
+definition order. Replacements are applied once, directly to the target type (there is no
+separate chain rule).
 
 `roomtypes.defaults()` is a starting set:
 
@@ -186,7 +193,9 @@ map.
 
 `plan:options(n, rng)` gives the generate options. `plan:generate(n, rng)` gives the map, with
 `map.floor`, `map.floors` and `map.progress` (0 on the first floor, 1 on the last) for the
-game's difficulty. `plan:generator(n, rng)` does the same spread over frames.
+game's difficulty. Both take the floor's `biome` and then the game's `run` table when given
+(`plan:generate(n, rng, biome, run)`); the run goes to the room types' `chance` and `count`
+functions. `plan:generator(n, rng)` does the same spread over frames.
 
 Use one stream per floor (`"floor1"`, `"floor2"`...), so a floor depends only on the seed and its
 number. `seeds.hash({ plan = plan, floor = n }, seed)` hashes one floor for the seed tools.
