@@ -16,7 +16,8 @@ end
 
 local wallet = require("engine.modules.wallet")
 local pickups = require("rooms_pickups")
-local obstacles = require("rooms_obstacles")
+local props = require("engine.modules.props")
+local prop_types = require("rooms_props").types
 local machines = require("rooms_machines")
 
 -- Pickups: constructors, defaults and the small AABB
@@ -34,26 +35,26 @@ local hc, vc = pickups.color(h), pickups.color(v)
 check(hc ~= vc and hc[1] > hc[2] and vc[2] > vc[1], "colours: heart red, virus green")
 check(pickups.label(h) == "HEART" and pickups.label(v) == "VIRUS", "labels")
 
--- Obstacles: definitions, hit, broken, and the persistent state
-local def = obstacles.defs.crate
-check(def and def.w == 12 and def.h == 12 and def.health == 1 and def.virus.chance == 0.35,
-  "the crate definition")
-refuses(function() obstacles.new("rock", 0, 0) end, "an unknown kind", "unknown kind")
+-- Crates: the prop type and its fields, a hit, the broken state and persistence
+local def = prop_types:get("crate")
+check(def and def.collision == "solid" and def.size.w == 1 and def.size.h == 1
+  and def.field_by_key.health.default == 1 and def.field_by_key.virus_chance.default == 0.35
+  and def.field_by_key.virus.default == 1, "the crate definition")
 local state = {}
-local crate = obstacles.new("crate", 10, 10, state)
-check(crate.x == 10 and crate.w == 12 and state.health == 1 and not obstacles.is_broken(crate),
+local set = props.set(prop_types, { { type = "crate", tx = 1, ty = 1 } }, { state = state })
+local crate = set:at(1)
+check(crate.x == 0 and crate.y == 0 and crate.w == 16 and crate.state.health == 1 and not crate.removed,
   "a fresh crate")
-check(obstacles.overlaps(crate, 11, 11, 2, 2) and not obstacles.overlaps(crate, 30, 30, 2, 2),
-  "the overlap helper")
-check(not obstacles.hit(crate, 0) and not obstacles.is_broken(crate), "a zero hit does not break it")
-check(obstacles.hit(crate, 1) and obstacles.is_broken(crate), "a hit breaks it")
-check(state.broken == true and state.health == 0, "the room's state remembers it")
-check(obstacles.hit(crate, 5) and obstacles.is_broken(crate), "hitting a broken crate keeps it broken")
-check(not obstacles.overlaps(crate, 11, 11, 2, 2), "a broken crate does not overlap")
-local again = obstacles.new("crate", 10, 10, state)
-check(obstacles.is_broken(again), "the room rebuilds it broken")
-check(obstacles.new("crate", 0, 0).state ~= obstacles.new("crate", 0, 0).state,
-  "each obstacle gets its own state")
+check(set:first(1, 1, 2, 2, "breakable") == crate and set:first(40, 40, 2, 2, "breakable") == nil,
+  "the overlap query")
+check(not set:hit(crate, 0) and not crate.removed, "a zero hit does not break it")
+check(set:hit(crate, 1) and crate.removed, "a hit breaks it")
+check(state[1].removed == true and state[1].health == 0, "the room's state remembers it")
+check(not set:hit(crate, 5) and crate.removed, "hitting a broken crate changes nothing")
+local again = props.set(prop_types, { { type = "crate", tx = 1, ty = 1 } }, { state = state })
+check(again:at(1).removed, "the room rebuilds it broken")
+local other = props.set(prop_types, { { type = "crate", tx = 1, ty = 1 } })
+check(other:at(1).state ~= crate.state, "each crate gets its own state")
 
 -- Machines: accepts money, price, uses, per-machine state and the reasons
 local heal_def = machines.defs.healer

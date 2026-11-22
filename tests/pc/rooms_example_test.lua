@@ -18,7 +18,7 @@ end
 -- 1. Files and config
 for _, name in ipairs({ "game.lua", "conf.lua", "main.lua", "rooms_play.lua", "rooms_data.lua", "rooms_biomes.lua",
   "rooms_stats.lua", "rooms_content.lua", "rooms_mutations.lua", "rooms_consumables.lua", "rooms_look.lua",
-  "rooms_pickups.lua", "rooms_obstacles.lua", "rooms_machines.lua", "rooms_pause.lua", "README.md" }) do
+  "rooms_pickups.lua", "rooms_props.lua", "rooms_machines.lua", "rooms_pause.lua", "README.md" }) do
   check(read("examples/rooms/" .. name), "examples/rooms/" .. name .. " exists")
 end
 local Config = dofile("runtime/lua/config.lua")
@@ -356,29 +356,41 @@ frames(2)
 check(play.wallet:get("virus") == wallet1 + 2, "the virus pickup adds two")
 check(not pickup_of("virus"), "the virus pickup is gone")
 
--- an obstacle: a breakable crate drops virus and stays broken
+-- a breakable crate prop drops virus and stays broken
 local crate_room
 for n = 1, 10 do
   if n > 1 then play.new_floor(play, n); nav = play.nav end
   for i, r in ipairs(play.map.rooms) do
-    if r.template.obstacles and r.template.obstacles[1] then crate_room = i; break end
+    for _, t in ipairs(r.template.props or {}) do
+      if t.type == "crate" then crate_room = i; break end
+    end
+    if crate_room then break end
   end
   if crate_room then break end
 end
-check(crate_room, "a floor has a room with an obstacle")
+check(crate_room, "a floor has a room with a crate")
 play:load_room(nav:enter(crate_room))
-crate = play.obstacles[1]
-crate.def.virus.chance = 1
+local crate
+for i = 1, play.props:count() do
+  local p = play.props:at(i)
+  if p.flags.breakable then crate = p; break end
+end
+check(crate, "the crate is a breakable prop")
+crate.fields.virus_chance, crate.fields.virus = 1, 1
 play.slime.facing = 1
 play.slime:move_to(crate.x - 12, crate.y + 6); play.slime:set_velocity(0, 0)
 F.keys.x = true; frames(2); F.keys.x = nil; frames(2)
-check(require("rooms_obstacles").is_broken(crate), "the attack breaks the crate")
+check(crate.removed, "the attack breaks the crate")
 local dropped = pickup_of("virus")
 if dropped then play.slime:move_to(dropped.x, dropped.y); play.slime:set_velocity(0, 0); frames(2) end
 check(not dropped or play.wallet:get("virus") > wallet1 + 2, "the crate drops virus")
-crate.def.virus.chance = 0.35
 play:load_room(nav:enter(crate_room))
-check(require("rooms_obstacles").is_broken(play.obstacles[1]), "the broken crate stays broken")
+local rebuilt
+for i = 1, play.props:count() do
+  local p = play.props:at(i)
+  if p.index == crate.index then rebuilt = p; break end
+end
+check(rebuilt and rebuilt.removed, "the broken crate stays broken")
 
 -- a machine with accepts_money: the healer spends virus and heals once
 local shop = find("shop")

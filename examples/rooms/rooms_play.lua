@@ -20,11 +20,14 @@ local biomes = require("rooms_biomes")
 local stats_mod = require("rooms_stats")
 local content = require("rooms_content")
 local pickups = require("rooms_pickups")
-local obstacles = require("rooms_obstacles")
+local attack_configs = require("rooms_attacks")
+local vines = require("rooms_vines")
 local machines = require("rooms_machines")
 local looks = require("rooms_look")
 local wallet = require("engine.modules.wallet")
 local combat = require("engine.modules.combat")
+local props = require("engine.modules.props")
+local prop_types = require("rooms_props").types
 
 local W, H = 320, 180
 local TS, CW, CH = data.tile_size, data.cell_w, data.cell_h
@@ -33,6 +36,17 @@ local SIZE = 40
 local ENEMY_H = 10                            -- the enemy box height (rooms_enemies.lua)
 local SEED = 1
 local FLOORS = 10
+
+-- How a prop edge without the hangable flag pushes the slime off: px/s outward when its centre
+-- is past the edge and a point rests on top (a point this close to the top counts).
+local EDGE_SLIDE = { speed = 70, top = 2 }
+-- A statue fires the slime's attacks on the enemy team, with its own fixed damage.
+local STATUE_STATS = combat.stats.new({ max_health = 1, attack_damage = 1, invuln_time = 0 })
+local TURRET_ATTACKS = {}
+for i = 1, #attack_configs do
+  local c = attack_configs[i]
+  if c.name == "ranged" or c.name == "explosive" then TURRET_ATTACKS[c.name] = c end
+end
 
 -- The run: 10 floors from 6 rooms to 18, the special rooms of rooms_data.types(), a key per floor
 local plan = procgen.floors.new({ count = FLOORS, templates = data.templates(), types = data.types(),
@@ -144,16 +158,44 @@ local function mob_killed(self, agent)
   if virus then spawn_pickup(self, pickups.virus(px, py, virus.amount or 1)) end
 end
 
--- A broken prop can drop virus; its own stream means it rolls once even if the room is reloaded.
-local function break_obstacle(self, obstacle, index)
-  if obstacles.is_broken(obstacle) then return end
-  if not obstacles.hit(obstacle, 1) then return end
-  local stream = self.streams:get("obstacle:" .. self.floor .. ":" .. self.nav.index .. ":" .. index)
-  local ctx = drop_ctx(self, "obstacle")
-  local virus = content.drop(self.pools.virus, stream, ctx, obstacle.def.virus.chance)
-  if virus then
-    spawn_pickup(self, pickups.virus(obstacle.x + obstacle.w / 2, obstacle.y + obstacle.h / 2, virus.amount or 1))
+local function prop_overlaps(prop, x, y, w, h)
+  return x < prop.x + prop.w and x + w > prop.x and y < prop.y + prop.h and y + h > prop.y
+end
+
+-- The props' draw lists, rebuilt when the room loads and when a breakable one goes: solid and
+-- one-way rectangles, and the spikes and statues that need their own shape.
+local function build_prop_draws(self)
+  local solid, one, spikes, statues = {}, {}, {}, {}
+  for i = 1, self.props:count() do
+    local p = self.props:at(i)
+    if not p.removed then
+      if p.flags.hazard then
+        spikes[#spikes + 1] = p
+      elseif p.flags.turret then
+        statues[#statues + 1] = p
+      elseif p.def.collision == "solid" then
+        solid[#solid + 1] = { p.x, p.y, p.w, p.h }
+      elseif p.def.collision == "one_way" then
+        one[#one + 1] = { p.x, p.y, p.w, p.h }
+      end
+    end
   end
+  self.prop_solid, self.prop_ones, self.spikes, self.statue_props = solid, one, spikes, statues
+end
+
+-- A breakable prop can drop virus; its own stream means it rolls once even if the room is
+-- reloaded (a removed prop is not hit again).
+local function break_prop(self, prop)
+  if prop.removed or not prop.flags.breakable then return false end
+  if not self.props:hit(prop, 1, self) then return false end
+  build_prop_draws(self)
+  local stream = self.streams:get("obstacle:" .. self.floor .. ":" .. self.nav.index .. ":" .. prop.index)
+  local ctx = drop_ctx(self, "obstacle")
+  local virus = content.drop(self.pools.virus, stream, ctx, prop.fields.virus_chance)
+  if virus then
+    spawn_pickup(self, pickups.virus(prop.x + prop.w / 2, prop.y + prop.h / 2, prop.fields.virus))
+  end
+  return true
 end
 
 -- The first time a room has no living enemies: a chance of virus, and the boss/miniboss reward.
@@ -191,16 +233,18 @@ function play.load_room(self, x, y)
   if not state.arrivals then state.arrivals = {} end
   self.room_state = state
   self.sealed = battle_sealed(self, index)
-  self.grid = platformer.grid.new(build_rows(self, index), { tile_size = TS })
-  -- solid tiles merged into horizontal runs once per room: a few rectangles a row to draw
+  local template = self.nav.room.template
+  local base_grid = platformer.grid.new(build_rows(self, index), { tile_size = TS })
+  -- solid and one-way room tiles merged into horizontal runs once per room: a few rectangles a
+  -- row to draw. Props are drawn apart from them, below.
   local runs, ones = {}, {}
-  for ty = 1, self.grid.height do
+  for ty = 1, base_grid.height do
     local tx = 1
-    while tx <= self.grid.width do
-      local kind = self.grid:kind(tx, ty)
+    while tx <= base_grid.width do
+      local kind = base_grid:kind(tx, ty)
       if kind then
         local stop = tx
-        while stop < self.grid.width and self.grid:kind(stop + 1, ty) == kind do stop = stop + 1 end
+        while stop < base_grid.width and base_grid:kind(stop + 1, ty) == kind do stop = stop + 1 end
         local list = kind == "solid" and runs or ones
         list[#list + 1] = { (tx - 1) * TS, (ty - 1) * TS, (stop - tx + 1) * TS }
         tx = stop + 1
@@ -210,15 +254,11 @@ function play.load_room(self, x, y)
     end
   end
   self.runs, self.ones = runs, ones
-  local template = self.nav.room.template
-  -- breakable props, one persistent state each
-  state.obstacles = state.obstacles or {}
-  self.obstacles = {}
-  for i, t in ipairs(template.obstacles or {}) do
-    local saved = state.obstacles[i]
-    if not saved then saved = {}; state.obstacles[i] = saved end
-    self.obstacles[i] = obstacles.new(t.kind or "crate", (t.tx - 1) * TS + 2, (t.ty - 1) * TS + 4, saved)
-  end
+  -- the room's props, with one persistent state each, stamped on the collision grid
+  state.props = state.props or {}
+  self.props = props.set(prop_types, template.props, { tile_size = TS, state = state.props })
+  self.grid = self.props:grid(base_grid)
+  build_prop_draws(self)
   -- pickups: the template's first time, then whatever the run dropped and left here
   state.pickups = state.pickups or {}
   if not state.pickups_loaded then
@@ -262,6 +302,19 @@ function play.load_room(self, x, y)
     slime_source = self.stats:combat_source(), slime_mods = self.stats.mods,
     on_slime_death = function() self.dead = true end,
     on_killed = function(agent) mob_killed(self, agent) end })
+  -- statues: a fighter on the enemy team with the attack its fields pick, no hurtbox (so they
+  -- cannot be damaged), and their own timer in the prop state
+  local turrets = {}
+  for i = 1, #self.statue_props do
+    local p = self.statue_props[i]
+    local body = { x = p.x, y = p.y, w = p.w, h = p.h,
+      facing = p.fields.direction == "left" and -1 or 1 }
+    local fighter = self.fight.fight:fighter({ body = body, team = "enemy", params = STATUE_STATS })
+    local attack = self.fight.arsenal:equip(fighter, TURRET_ATTACKS[p.fields.attack])
+    if p.state.timer == nil then p.state.timer = p.fields.delay end
+    turrets[#turrets + 1] = { prop = p, fighter = fighter, attack = attack }
+  end
+  self.statues = turrets
   -- what the room remembers: the dead stay dead and a hurt enemy keeps its health
   for i = 1, #spots do
     local saved = state.enemies[i]
@@ -292,6 +345,7 @@ function play.load_room(self, x, y)
     if entry then self.treasure = { x = 9.5 * TS - 4, y = 8 * TS, entry = entry } end
   end
   self.stairs = nil
+  self.vines = vines.build(self, template, TS)
   if x then
     self.slime:move_to(x, y)
     self.camera:setBounds(self.nav:bounds())
@@ -401,6 +455,70 @@ local function enemies_leaving(self)
   end
 end
 
+-- Pushes the slime off the edge of a one-way or solid prop that is not hangable when its centre
+-- is past that edge and a point still rests on top, so it slides off and falls.
+local function slide_off_edges(self)
+  local slime = self.slime
+  local x, y, n = slime.x, slime.y, slime.n
+  local cx = slime:center()
+  for i = 1, self.props:count() do
+    local p = self.props:at(i)
+    if not p.removed and p.def.collision and not p.flags.hangable then
+      local left, right, top = p.x, p.x + p.w, p.y
+      if cx < left or cx > right then
+        local resting = false
+        for k = 1, n do
+          local px, py = x[k], y[k]
+          if py >= top - EDGE_SLIDE.top and py <= top + EDGE_SLIDE.top
+            and px >= left and px <= right then
+            resting = true
+            break
+          end
+        end
+        if resting then
+          slime:set_velocity(cx < left and -EDGE_SLIDE.speed or EDGE_SLIDE.speed, nil)
+        end
+      end
+    end
+  end
+end
+
+-- Touching a hazard prop costs its damage through the slime's normal damage path (so it gets
+-- i-frames) and knocks it away from the prop.
+local function hurt_by_spikes(self)
+  local player = self.fight.player
+  if player.dead or player.invuln > 0 then return end
+  local x0, y0, x1, y1 = self.slime:bounds()
+  for i = 1, #self.spikes do
+    local p = self.spikes[i]
+    if not p.removed and x0 < p.x + p.w and x1 > p.x and y0 < p.y + p.h and y1 > p.y then
+      local cx = self.slime:center()
+      local dir = cx < p.x + p.w / 2 and -1 or 1
+      self.fight.fight:strike(nil, player, { damage = p.fields.damage, knockback = 160,
+        kx = dir, ky = -0.5 })
+      return
+    end
+  end
+end
+
+-- The statues: every interval seconds (after delay) they fire their attack on the enemy team.
+-- Their timers are numbers in the prop state, so this allocates nothing.
+function play.update_props(self, dt)
+  local statues = self.statues
+  for i = 1, #statues do
+    local s = statues[i]
+    local p = s.prop
+    if not p.removed then
+      local timer = p.state.timer - dt
+      if timer <= 0 then
+        s.attack:trigger()
+        timer = timer + p.fields.interval
+      end
+      p.state.timer = timer
+    end
+  end
+end
+
 function play:update(dt)
   self.fade:update(dt)
   if self.fade:busy() then return end            -- the room is frozen while the screen fades
@@ -413,7 +531,11 @@ function play:update(dt)
     return
   end
   control(self, dt)
+  vines.update(self, dt, engine.controls, JUMP * self.stats:get("jump"))
   self.slime:step(dt, self.grid)
+  slide_off_edges(self)
+  hurt_by_spikes(self)
+  play.update_props(self, dt)
   self.fight:step(dt)
   enemies_leaving(self)
   self.stats:update(dt)
@@ -466,20 +588,20 @@ function play:update(dt)
   local input = engine.controls
   if input:pressed("attack") then
     local bx = self.facing > 0 and cx + 4 or cx - 24
-    for i = 1, #self.obstacles do
-      local o = self.obstacles[i]
-      if not obstacles.is_broken(o) and obstacles.overlaps(o, bx, cy - 10, 20, 20) then
-        break_obstacle(self, o, i)
+    for i = 1, self.props:count() do
+      local p = self.props:at(i)
+      if p.flags.breakable and not p.removed and prop_overlaps(p, bx, cy - 10, 20, 20) then
+        break_prop(self, p)
       end
     end
   end
   local _, vy = self.slime:velocity()
   if vy > 120 then
     local x0, y0, x1, y1 = self.slime:bounds()
-    for i = 1, #self.obstacles do
-      local o = self.obstacles[i]
-      if not obstacles.is_broken(o) and obstacles.overlaps(o, x0, y1 - 2, x1 - x0, 6) then
-        break_obstacle(self, o, i)
+    for i = 1, self.props:count() do
+      local p = self.props:at(i)
+      if p.flags.breakable and not p.removed and prop_overlaps(p, x0, y1 - 2, x1 - x0, 6) then
+        break_prop(self, p)
       end
     end
   end
@@ -587,9 +709,36 @@ function play:draw(alpha)
   for i = 1, #self.runs do local r = self.runs[i]; g.rectangle("fill", r[1], r[2], r[3], TS) end
   g.setColor(colors.ledge[1], colors.ledge[2], colors.ledge[3], 1)
   for i = 1, #self.ones do local r = self.ones[i]; g.rectangle("fill", r[1], r[2], r[3], 3) end
+  -- prop collision, drawn like the room's own walls and ledges
+  g.setColor(colors.wall[1], colors.wall[2], colors.wall[3], 1)
+  for i = 1, #self.prop_solid do local r = self.prop_solid[i]; g.rectangle("fill", r[1], r[2], r[3], r[4]) end
+  g.setColor(colors.ledge[1], colors.ledge[2], colors.ledge[3], 1)
+  for i = 1, #self.prop_ones do local r = self.prop_ones[i]; g.rectangle("fill", r[1], r[2], r[3], 3) end
+  -- spikes: a row of small teeth along the bottom of the prop
+  for i = 1, #self.spikes do
+    local p = self.spikes[i]
+    local c = p.def.editor.color
+    g.setColor(c[1], c[2], c[3], 1)
+    g.rectangle("fill", p.x, p.y + p.h - 2, p.w, 2)
+    local j = 1
+    while j + 1 < p.w do
+      g.rectangle("fill", p.x + j, p.y + p.h - 6, 2, 4)
+      j = j + 4
+    end
+  end
+  -- statues: a grey block with a darker eye on the side it faces
+  for i = 1, #self.statue_props do
+    local p = self.statue_props[i]
+    local c = p.def.editor.color
+    g.setColor(c[1], c[2], c[3], 1)
+    g.rectangle("fill", p.x, p.y, p.w, p.h)
+    g.setColor(0.20, 0.22, 0.26, 1)
+    local right = p.fields.direction ~= "left"
+    g.rectangle("fill", right and p.x + p.w - 6 or p.x + 2, p.y + 4, 4, 4)
+  end
   g.setColor(0.95, 0.75, 0.20, 1)
   for i = 1, #self.locked do local l = self.locked[i]; g.rectangle("fill", l.x, l.y, l.w, l.h) end
-  for i = 1, #self.obstacles do obstacles.draw(self.obstacles[i], g) end
+  vines.draw(self, g)
   if self.machine then machines.draw(self.machine, g, false) end
   if self.item then g.rectangle("fill", self.item.x, self.item.y, 8, 8) end
   local tr = self.treasure

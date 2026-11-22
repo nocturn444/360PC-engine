@@ -908,6 +908,9 @@ Optional, loaded by the game that wants them; nothing above requires one.
 - `engine/modules/wallet`: named integer currencies for a run, with add/can/spend (never
   negative) and plain-data state for a run save. Reference:
   [engine/modules/wallet/README.md](../engine/modules/wallet/README.md).
+- `engine/modules/props`: modular room props (platforms, vines, crates, hazards, turrets) as a
+  registry of types plus the live props of a room, stamped onto its collision grid. Reference:
+  [engine/modules/props/README.md](../engine/modules/props/README.md), schema in [PROPS.md](PROPS.md).
 - `engine/modules/softbody`: a soft body (points on a ring, springs and pressure) that falls,
   rolls and squashes against a tile grid, with an outline ready for `engine.pixelgrid` and a
   `set_rest_shape` setter for bodies whose rest shape changes. It needs no other module.

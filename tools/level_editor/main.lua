@@ -11,6 +11,7 @@ if love.filesystem and love.filesystem.getSource then
 end
 local M = require("model")
 local engine_level = require("engine.level")
+local Save = require("engine.save")
 
 local floor, max, min, abs = math.floor, math.max, math.min, math.abs
 local g = love.graphics
@@ -27,6 +28,7 @@ local E = {
   history = M.history(200),
   entity_names = { "Spawn", "Enemy", "Pickup", "Trigger" },
   entity_name = "Enemy",
+  catalog = nil, catalog_by_id = nil, prop_categories = nil, prop_category_order = nil, prop_type = nil,
 }
 
 E.TOOLS = {
@@ -37,6 +39,7 @@ E.TOOLS = {
   { id = "item", key = "5", label = "Item" },
   { id = "entity", key = "6", label = "Entity" },
   { id = "select", key = "7", label = "Select" },
+  { id = "props", key = "8", label = "Props" },
 }
 local TILE_VALUE = { solid = M.SOLID, one_way = M.ONE_WAY, erase = M.EMPTY }
 local LEFT_W, RIGHT_W, TOP_H, BOTTOM_H = 210, 250, 34, 26
@@ -145,6 +148,33 @@ function E.recheck()
   E.problems = ok and problems or { { "", tostring(problems) } }
 end
 
+-- The props catalog tools/props_catalog.lua writes (docs/PROPS.md). Without it the editor
+-- keeps a room's props as they are and has no Props tool.
+function E.load_catalog(path)
+  E.catalog, E.catalog_by_id, E.prop_categories, E.prop_category_order, E.prop_type = nil, nil, nil, nil, nil
+  if not path then return end
+  local text = read_file(path)
+  if not text then E.say("props catalog not found: " .. path, true); return end
+  local ok, data = Save.parse(text)
+  if not ok or type(data) ~= "table" or data.format ~= "360pc-props-catalog" then
+    E.say(path .. " is not a props catalog (tools/props_catalog.lua)", true); return
+  end
+  if data.version ~= 1 then E.say(path .. ": catalog version " .. tostring(data.version) .. ", this editor reads version 1", true); return end
+  if type(data.types) ~= "table" then E.say(path .. ": the catalog has no types", true); return end
+  local by_id, categories, order = {}, {}, {}
+  for _, entry in ipairs(data.types) do
+    if type(entry) == "table" and type(entry.id) == "string" then
+      by_id[entry.id] = entry
+      local category = entry.category or "prop"
+      if not categories[category] then categories[category] = {}; order[#order + 1] = category end
+      categories[category][#categories[category] + 1] = entry
+      if not E.prop_type then E.prop_type = entry.id end
+    end
+  end
+  E.catalog, E.catalog_by_id, E.prop_categories, E.prop_category_order = data, by_id, categories, order
+  E.say("props catalog: " .. #data.types .. " types from " .. path)
+end
+
 function E.open(path, opts)
   opts = opts or {}
   E.path = path
@@ -175,6 +205,7 @@ function E.open(path, opts)
   end
   E.room_i, E.dirty, E.selected = 1, false, nil
   E.history = M.history(200)
+  E.load_catalog(opts.props)
   E.load_images()
   E.show_room(1)
 end
@@ -267,6 +298,10 @@ function E.set_tool(id)
   E.selected = nil
   if id == "entity" then E.say("Entity: click to place a " .. E.entity_name .. "; N picks another name") end
   if id == "exit" then E.say("Door: click a border tile; Shift on a corner makes it up/down; right click removes") end
+  if id == "props" then
+    if E.catalog then E.say("Props: pick a type, click to place, drag to move; [ and ] resize; right click removes")
+    else E.say("Props need a catalog: run with --props <props_catalog.lvl>", true) end
+  end
 end
 
 -- a press in the room view
@@ -286,6 +321,36 @@ function E.press(sx, sy, button)
     return
   end
   if not M.inside(room, tx, ty) then return end
+  if E.tool == "props" then
+    if not (E.catalog and E.prop_type) then E.say("Props need a catalog: run with --props <props_catalog.lvl>", true); return end
+    local hit = M.prop_at(room, tx, ty)
+    if button == 2 then
+      if hit then
+        E.begin_change()
+        M.remove_prop(room, hit)
+        if E.selected and E.selected.ref == hit then E.selected = nil end
+        E.changed()
+      end
+      return
+    end
+    E.begin_change()
+    if hit then
+      E.selected = { kind = "prop", ref = hit }
+      E.drag = { kind = "move_prop", ref = hit }
+      E.changed()
+    else
+      local p = M.add_prop(room, E.prop_type, tx, ty, E.catalog_by_id[E.prop_type])
+      if p then
+        E.selected = { kind = "prop", ref = p }
+        E.changed()
+      else
+        E.history:undo_step(E.data, E.room_i)
+        E.history.redo = {}
+        E.say("could not add the prop", true)
+      end
+    end
+    return
+  end
   if E.tool == "exit" then
     if button == 2 then
       if M.exit_at(room, tx, ty) then E.begin_change(); M.toggle_exit(E.data, room, tx, ty); E.changed() end
@@ -330,6 +395,8 @@ function E.press(sx, sy, button)
       E.selected = { kind = "exit", ref = (M.exit_at(room, tx, ty)) }
     elseif room.item and room.item.tx == tx and room.item.ty == ty then
       E.selected = { kind = "item", ref = room.item }
+    elseif M.prop_at(room, tx, ty) then
+      E.selected = { kind = "prop", ref = (M.prop_at(room, tx, ty)) }
     else
       E.selected = nil
     end
@@ -357,6 +424,8 @@ function E.move(sx, sy)
     d.x2, d.y2 = tx, ty
   elseif d.kind == "move" then
     M.move_entity(E.data, room, d.ref, tx, ty)
+  elseif d.kind == "move_prop" then
+    M.move_prop(room, d.ref, tx, ty)
   elseif d.kind == "pan" then
     E.ox, E.oy = E.ox + sx - d.sx, E.oy + sy - d.sy
     d.sx, d.sy = sx, sy
@@ -438,12 +507,89 @@ function E.room_action(what)
   end
 end
 
+-- The value a prop field shows: its own value, or the catalog default.
+function E.prop_field_value(prop, spec)
+  local v = prop.fields and prop.fields[spec.key]
+  if v == nil then v = spec.default end
+  return v
+end
+
+-- One +/- step of a field: a number by 1, a bool toggled, an enum cycled.
+function E.adjust_prop_field(prop, entry, spec, dir)
+  local current = E.prop_field_value(prop, spec)
+  local value
+  if spec.type == "bool" then
+    value = not current
+  elseif spec.type == "enum" then
+    local options = spec.options or {}
+    local index
+    for i, option in ipairs(options) do if option == current then index = i; break end end
+    index = index or 1
+    value = options[(index - 1 + dir) % #options + 1]
+  elseif spec.type == "number" or spec.type == "integer" then
+    value = current + dir
+    if spec.type == "integer" then value = floor(value + 0.5) end
+    if spec.min then value = max(spec.min, value) end
+    if spec.max then value = min(spec.max, value) end
+  else
+    E.say("edit a string field with Enter", true)
+    return
+  end
+  if value == current then return end
+  E.begin_change()
+  local ok, why = M.set_prop_field(prop, entry, spec.key, value)
+  if not ok then
+    E.history:undo_step(E.data, E.room_i)
+    E.history.redo = {}
+    E.say(why, true)
+  else
+    E.changed()
+  end
+end
+
+-- Resizes the selected prop along its resizable axes: [ smaller, ] bigger; Shift picks the
+-- other axis when it can resize both ways.
+function E.resize_selected_prop(dir, other)
+  local s = E.selected
+  if not s or s.kind ~= "prop" then E.say("select a prop first", true); return end
+  local entry = E.catalog_by_id and E.catalog_by_id[s.ref.type]
+  if not entry then return end
+  local res = entry.resizable
+  if res ~= "x" and res ~= "y" and res ~= "xy" then E.say("this prop type has a fixed size", true); return end
+  local vertical
+  if res == "y" then vertical = true elseif res == "x" then vertical = false else vertical = other end
+  local w, h = s.ref.w or 1, s.ref.h or 1
+  if vertical then h = h + dir else w = w + dir end
+  E.begin_change()
+  if M.resize_prop(E.room(), s.ref, entry, w, h) then
+    E.changed()
+  else
+    E.history:undo_step(E.data, E.room_i)
+    E.history.redo = {}
+  end
+end
+
 function E.edit_selected()
   local s = E.selected
   if not s then return end
   if s.kind == "exit" then
     E.ask("Abilities this door requires (comma separated, empty for none)", table.concat(s.ref.requires or {}, ", "),
       function(t) E.begin_change(); M.set_requires(s.ref, t); E.changed() end)
+  elseif s.kind == "prop" then
+    local entry = E.catalog_by_id and E.catalog_by_id[s.ref.type]
+    if not entry then E.say("edit prop fields with --props <catalog>", true); return end
+    E.ask("Prop fields (key=value, ...)", M.fields_text(s.ref.fields), function(t)
+      local f, why = M.parse_fields(t)
+      if not f then E.say(why, true); return end
+      for key in pairs(f) do
+        local spec
+        for _, field in ipairs(entry and entry.fields or {}) do if field.key == key then spec = field; break end end
+        if not spec then E.say("the type has no field " .. tostring(key), true); return end
+      end
+      E.begin_change()
+      for key, value in pairs(f) do M.set_prop_field(s.ref, entry, key, value) end
+      E.changed()
+    end)
   else
     E.ask((s.kind == "entity" and s.ref.name or "Item") .. " fields (key=value, ...)", M.fields_text(s.ref.fields),
       function(t)
@@ -563,6 +709,20 @@ function E.draw_room()
   color(COLORS.cell)                    -- map cell borders
   for cx = 1, room.w - 1 do local x = cx * E.data.cell.w * ts; g.line(x, 0, x, room.tiles_h * ts) end
   for cy = 1, room.h - 1 do local y = cy * E.data.cell.h * ts; g.line(0, y, room.tiles_w * ts, y) end
+  for _, p in ipairs(room.props or {}) do
+    local entry = E.catalog_by_id and E.catalog_by_id[p.type]
+    local w, h = p.w or 1, p.h or 1
+    local c = (entry and entry.color) or { 0.65, 0.65, 0.72 }
+    local sel = E.selected and E.selected.ref == p
+    g.setColor(c[1], c[2], c[3], sel and 0.85 or 0.55)
+    g.rectangle("fill", (p.tx - 1) * ts, (p.ty - 1) * ts, w * ts, h * ts)
+    color(sel and COLORS.accent or COLORS.text, 0.85)
+    g.rectangle("line", (p.tx - 1) * ts + 0.5, (p.ty - 1) * ts + 0.5, w * ts - 1, h * ts - 1)
+    if entry and entry.glyph and entry.glyph ~= "" then
+      color(COLORS.bg, 0.9)
+      g.print(entry.glyph, (p.tx - 1) * ts + 2, (p.ty - 1) * ts + 1)
+    end
+  end
   for _, e in ipairs(room.exits) do
     local sel = E.selected and E.selected.ref == e
     color(sel and COLORS.accent or COLORS.exit)
@@ -669,6 +829,28 @@ function E.draw_right()
   color(COLORS.panel)
   g.rectangle("fill", x, 0, RIGHT_W, h)
   local y = TOP_H + 4
+  if E.tool == "props" then
+    if not E.catalog then
+      color(COLORS.bad); g.print("PROPS need --props <catalog>", x + 10, y); y = y + 22
+    else
+      color(COLORS.dim); g.print("PROP TYPES (click to pick)", x + 10, y); y = y + 18
+      for _, category in ipairs(E.prop_category_order or {}) do
+        color(COLORS.dim); g.print(category, x + 12, y); y = y + 15
+        for _, entry in ipairs(E.prop_categories[category]) do
+          if y > h - BOTTOM_H - 150 then break end
+          local label = entry.label or entry.id
+          button(x + 16, y - 2, RIGHT_W - 36, 17, label, E.prop_type == entry.id)
+          hot("prop" .. entry.id, x + 16, y - 2, RIGHT_W - 36, 17, function()
+            E.prop_type = entry.id
+            E.say("prop type: " .. label)
+          end)
+          y = y + 19
+        end
+        if y > h - BOTTOM_H - 150 then break end
+      end
+      y = y + 4
+    end
+  end
   local s = E.selected
   color(COLORS.dim); g.print("SELECTED  (Enter edits)", x + 10, y); y = y + 18
   color(COLORS.text)
@@ -678,6 +860,31 @@ function E.draw_right()
     g.print("door " .. s.ref.side .. " #" .. s.ref.offset .. " at " .. s.ref.tx .. "," .. s.ref.ty, x + 10, y); y = y + 18
     g.printf("requires: " .. (#(s.ref.requires or {}) > 0 and table.concat(s.ref.requires, ", ") or "nothing"), x + 10, y, RIGHT_W - 20)
     y = y + 34
+  elseif s.kind == "prop" then
+    local entry = E.catalog_by_id and E.catalog_by_id[s.ref.type]
+    local label = entry and entry.label or s.ref.type
+    g.print(label .. " at " .. s.ref.tx .. "," .. s.ref.ty .. "  " .. (s.ref.w or 1) .. "x" .. (s.ref.h or 1), x + 10, y)
+    y = y + 18
+    for _, spec in ipairs(entry and entry.fields or {}) do
+      if y > h - BOTTOM_H - 90 then break end
+      local value = E.prop_field_value(s.ref, spec)
+      color(COLORS.dim); g.print(spec.key, x + 10, y)
+      color(COLORS.text); g.print(tostring(value), x + 110, y)
+      if spec.type ~= "string" then
+        button(x + RIGHT_W - 58, y - 2, 20, 17, "-")
+        hot("pf" .. spec.key .. "-", x + RIGHT_W - 58, y - 2, 20, 17,
+          function() E.adjust_prop_field(s.ref, entry, spec, -1) end)
+        button(x + RIGHT_W - 34, y - 2, 20, 17, "+")
+        hot("pf" .. spec.key .. "+", x + RIGHT_W - 34, y - 2, 20, 17,
+          function() E.adjust_prop_field(s.ref, entry, spec, 1) end)
+      end
+      y = y + 20
+    end
+    if entry and (entry.resizable == "x" or entry.resizable == "y" or entry.resizable == "xy") then
+      color(COLORS.dim); g.print("[ / ] resize" .. (entry.resizable == "xy" and " (Shift: other axis)" or ""), x + 10, y)
+      y = y + 16
+    end
+    y = y + 4
   else
     local name = s.kind == "entity" and s.ref.name or "item"
     g.print(name .. " at " .. s.ref.tx .. "," .. s.ref.ty, x + 10, y); y = y + 18
@@ -767,6 +974,7 @@ local function parse_args(args)
       local cw, ch = tostring(args[i + 1]):match("^(%d+)x(%d+)$")
       opts.cell_w, opts.cell_h = tonumber(cw), tonumber(ch); i = i + 1
     elseif a == "--tile" then opts.tile_size = tonumber(args[i + 1]); i = i + 1
+    elseif a == "--props" then opts.props = args[i + 1]; i = i + 1
     elseif not a:match("^%-") and not path then path = a end
     i = i + 1
   end
@@ -885,6 +1093,7 @@ function love.keypressed(key)
   if tool then E.set_tool(tool); return end
   if key == "pageup" then E.show_room(E.room_i - 1)
   elseif key == "pagedown" or key == "tab" then E.show_room(E.room_i % #E.data.rooms + 1)
+  elseif key == "[" or key == "]" then E.resize_selected_prop(key == "]" and 1 or -1, shift())
   elseif key == "f" then E.flood_at_mouse()
   elseif key == "p" then E.start_play()
   elseif key == "l" then E.show_layers = not E.show_layers
@@ -899,6 +1108,7 @@ function love.keypressed(key)
       local room = E.room()
       if s.kind == "entity" then M.remove_entity(room, s.ref)
       elseif s.kind == "item" then room.item = nil
+      elseif s.kind == "prop" then M.remove_prop(room, s.ref)
       else
         for i, e in ipairs(room.exits) do if e == s.ref then table.remove(room.exits, i) break end end
       end

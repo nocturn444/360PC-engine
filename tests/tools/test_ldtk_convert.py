@@ -128,6 +128,56 @@ class LdtkConvertTest(unittest.TestCase):
         big = rooms["Boss"]["entities"][0]                                     # pivot at the bottom centre
         self.assertEqual((big["x"], big["y"], big["w"], big["h"]), (152, 144, 32, 32))
 
+    def test_props(self):
+        # the definition's tags, in any case, send its entities to the room's props list
+        for definition in self.project["defs"]["entities"]:
+            if definition["identifier"] == "Enemy":
+                definition["tags"] = ["Prop"]
+        rooms = {r["id"]: r for r in self.convert(self.project)["rooms"]}
+        self.assertEqual(rooms["Start"]["entities"], [])
+        self.assertEqual(rooms["Start"]["props"], [{
+            "type": "enemy", "tx": 6, "ty": 5, "w": 1, "h": 1,
+            "fields": {"hp": 3, "patrol": [{"cx": 3, "cy": 4}, {"cx": 7, "cy": 4}], "note": None},
+        }])
+        self.assertEqual(rooms["Boss"]["props"], [{
+            "type": "enemy", "tx": 10, "ty": 10, "w": 2, "h": 2, "fields": {"hp": 40},
+        }])
+        self.assertNotIn("props", rooms["Hall"])                  # omit the list when a room has none
+
+    def test_prop_box_rounds_up(self):
+        for definition in self.project["defs"]["entities"]:
+            if definition["identifier"] == "Enemy":
+                definition["tags"] = ["prop"]
+        enemy = copy.deepcopy(self.layer("Start", "Entities")["entityInstances"][2])
+        enemy["px"], enemy["__pivot"] = [33, 17], [0, 0]
+        enemy["width"], enemy["height"], enemy["iid"] = 20, 15, "prop-hall"
+        self.layer("Hall", "Entities")["entityInstances"].append(enemy)
+        self.layer("Hall", "Entities")["__pxTotalOffsetX"] = 1
+        hall = {r["id"]: r for r in self.convert(self.project)["rooms"]}["Hall"]
+        self.assertEqual(hall["props"], [{"type": "enemy", "tx": 3, "ty": 2, "w": 2, "h": 1,
+                                          "fields": {"hp": 3,
+                                                     "patrol": [{"cx": 3, "cy": 4}, {"cx": 7, "cy": 4}],
+                                                     "note": None}}])
+        self.assertEqual(len(hall["exits"]), 3)
+
+    def test_prop_by_def_uid(self):
+        for definition in self.project["defs"]["entities"]:
+            if definition["identifier"] == "Enemy":
+                definition["tags"] = ["prop"]
+        enemy = self.layer("Start", "Entities")["entityInstances"][2]
+        enemy["__identifier"], enemy["defUid"] = "Mystery", 22
+        start = {r["id"]: r for r in self.convert(self.project)["rooms"]}["Start"]
+        self.assertEqual(start["props"][0]["type"], "mystery")
+
+    def test_prop_outside_the_level(self):
+        for definition in self.project["defs"]["entities"]:
+            if definition["identifier"] == "Enemy":
+                definition["tags"] = ["prop"]
+        self.layer("Start", "Entities")["entityInstances"][2]["px"] = [-16, 80]
+        message = self.fails("outside the level")
+        self.assertIn("level Start", message)
+        self.assertIn("prop Enemy", message)
+
     def test_layers(self):
         rooms = {r["id"]: r for r in self.convert()["rooms"]}
         layers = rooms["Start"]["layers"]

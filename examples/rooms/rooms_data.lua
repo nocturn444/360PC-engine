@@ -7,8 +7,9 @@
 -- shut until the player has its ability.
 --
 -- enemies: the tiles enemies stand on at first (the tile above the floor), read by the play state.
--- obstacles: breakable props ({ tx, ty, kind = "crate" }); pickups: static hearts/virus
--- ({ tx, ty, kind, amount }); machine: a machine instance ({ tx, ty, kind = "healer" }).
+-- props: the props of the room (engine.modules.props, types in rooms_props.lua):
+-- ({ type = "crate", tx, ty }, ...); pickups: static hearts/virus ({ tx, ty, kind, amount });
+-- machine: a machine instance ({ tx, ty, kind = "healer" }).
 --
 -- Levels made in LDtk (engine.level) give templates of the same shape; these stay in code so the
 -- example needs no level file.
@@ -108,7 +109,8 @@ function M.templates()
       "####################",
     } },
     { id = "hall", weight = 3, exits = lr({ "left" }, { "right" }), enemies = { { tx = 7, ty = 11 }, { tx = 15, ty = 11 } },
-      obstacles = { { tx = 5, ty = 11, kind = "crate" } }, rows = {
+      props = { { type = "crate", tx = 5, ty = 11 }, { type = "spikes", tx = 9, ty = 11, w = 2 },
+        { type = "statue", tx = 12, ty = 10 }, { type = "wide_platform", tx = 13, ty = 6 } }, rows = {
       "####################",
       "#..................#",
       "#..................#",
@@ -123,7 +125,7 @@ function M.templates()
       "####################",
     } },
     { id = "steps", weight = 2, exits = lr({ "left" }, { "right" }), enemies = { { tx = 16, ty = 11 } },
-      obstacles = { { tx = 4, ty = 11, kind = "crate" } }, rows = {
+      props = { { type = "crate", tx = 4, ty = 11 } }, rows = {
       "####################",
       "#..................#",
       "#..................#",
@@ -138,6 +140,7 @@ function M.templates()
       "####################",
     } },
     { id = "tall", weight = 2, h = 2, rows = TALL, enemies = { { tx = 10, ty = 23 } },
+      props = { { type = "vine", tx = 10, ty = 2, h = 10 } },
       exits = lr({ "left", 0 }, { "left", 1 }, { "right", 0 }, { "right", 1 }) },
     { id = "hub", w = 2, h = 2, rows = HUB, enemies = { { tx = 8, ty = 23 }, { tx = 32, ty = 23 }, { tx = 13, ty = 11 } },
       exits = lr({ "left", 0 }, { "left", 1 }, { "right", 0 }, { "right", 1 }) },

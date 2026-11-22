@@ -9,6 +9,29 @@ All notable changes to 360PC-Engine. The format follows
 ## [Unreleased]
 
 ### Added
+- `engine/modules/props`: modular room props. A registry of prop types (category, size and
+  resize limits, `solid` / `one_way` collision, free flags, ordered per-instance fields with
+  defaults and limits, editor label / glyph / colour, `init` / `update` / `hit` / `draw` hooks)
+  and the live props of a room: collision stamped on an overlay of the room grid, persistent
+  state by placement, allocation-free overlap and tile flag queries. Rooms list them in an
+  optional `props` field that `engine/level.lua` checks. `tools/props_catalog.lua` writes the
+  types' catalog for level editors (`--check` for tests). Schema: `docs/PROPS.md`.
+- `examples/rooms`: the new prop types are wired in: solid and one-way props on the room grid,
+  breakable crate props with persistent broken state and virus drops, spikes that cost hearts and
+  knock the slime back, statues that fire their attack on the enemy team, and wide platforms the
+  slime slides off. `rooms_obstacles.lua` is gone.
+- `tools/ldtk_convert.py`: LDtk entities whose definition has the `prop` tag are written to the
+  room's `props` list instead of `entities` (type, top left tile, size in tiles, fields), with
+  the same deterministic output; the room's `props` key is left out when it has no props.
+- `tools/level_editor`: a Props tool with `--props <catalog>`: pick a type by category, place,
+  move, resize within its limits, edit its fields and delete it, drawing its editor colour and
+  glyph. Without the catalog the editor leaves a room's props untouched.
+- `examples/rooms`: vines (`rooms_vines.lua`). A `vine` prop is grabbed with up or down, climbed
+  at its `speed` pixels / s with gravity cancelled, and swung on with left / right (a damped
+  pendulum limited to a maximum angle) when its `swing` field is on; jump releases with the
+  pendulum's tangential speed plus the normal jump, and down at the bottom end releases too. The
+  tall room has one. The new `up` action is `Up` / `W`, d-pad up and the left stick up. No change
+  to `engine/modules/softbody` was needed: it uses its `gravity` field, `move_to` and `impulse`.
 - `engine.init` / `engine.run`: optional `autopause = { state, controller, focus }` pushes a
   pause state when the gamepad in use is disconnected or the window loses the focus, with the new
   `controllerlost(joystick)` and `controllerback(joystick)` hooks; a state can opt out with
