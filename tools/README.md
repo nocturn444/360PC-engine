@@ -41,9 +41,10 @@ Build, packaging and validation tools. The whole path from a new game to the con
   `deploy_android.py` warns when the build it installs is older than the branch's last commit.
   `python tools/install_ftp.py dist/<identity> --host <console IP>`.
 - `level_editor/`: an interactive level editor made with LÖVE. It edits a level file's rooms
-  (collision, doors, the item, entities, room fields and size), checks them and play-tests a
-  room. `love tools/level_editor levels/world.lvl`, or `level_editor.bat` on Windows
-  ([../docs/LEVEL_EDITOR.md](../docs/LEVEL_EDITOR.md)).
+  (collision, doors, the item, entities, props, room fields and size), checks them and
+  play-tests a room. Props need the catalog `tools/props_catalog.lua` writes:
+  `love tools/level_editor levels/world.lvl --props <props_catalog.lvl>`, or
+  `level_editor.bat` on Windows ([../docs/LEVEL_EDITOR.md](../docs/LEVEL_EDITOR.md)).
 - `ldtk_convert.py`: converts an LDtk project (`.ldtk`, with its `.ldtkl` files when levels are
   saved separately) into the level file `engine/level.lua` reads: rooms with collisions, exits,
   items, entities and tile layers, as sorted data in the text format of `engine/save.lua`.

@@ -105,6 +105,60 @@ local d = M.duplicate_room(data, data.rooms[2])
 check(d.id == "Hall_2" and data.rooms[3] == d and d.entities[1].iid ~= data.rooms[2].entities[1].iid, "duplicate")
 check(M.move_room(data, d, -2) and data.rooms[1] == d and not M.move_room(data, d, -1), "move in the list")
 
+-- props: a small catalog and the model's operations (docs/PROPS.md)
+local catalog = { format = "360pc-props-catalog", version = 1, types = {
+  { id = "vine", label = "Vine", glyph = "|", color = { 0.3, 0.7, 0.3 }, category = "climb",
+    w = 1, h = 4, resizable = "y", min = { w = 1, h = 1 }, max = { w = 1, h = 4 },
+    flags = { "climbable" }, fields = {}, placement = "prop" },
+  { id = "spikes", label = "Spikes", glyph = "^", color = { 0.9, 0.3, 0.3 }, category = "hazard",
+    w = 3, h = 1, resizable = "x", min = { w = 1, h = 1 }, max = { w = 6, h = 1 },
+    flags = {}, placement = "prop", fields = {
+      { key = "damage", type = "integer", default = 1, min = 1, max = 5 },
+      { key = "armed", type = "bool", default = true },
+      { key = "mode", type = "enum", default = "floor", options = { "floor", "ceiling" } },
+    } },
+} }
+local function entry(id) for _, e in ipairs(catalog.types) do if e.id == id then return e end end end
+local pr = M.add_room(data, "Props", 1, 1)
+local vine = assert(M.add_prop(pr, "vine", 2, 1, entry("vine")))
+check(vine.tx == 2 and vine.ty == 1 and vine.w == 1 and vine.h == 4, "a prop takes its type's default size")
+check(M.prop_at(pr, 2, 3) == vine and M.prop_at(pr, 5, 3) == nil, "prop_at covers its box")
+check(M.move_prop(pr, vine, 100, 100) and vine.tx == 10 and vine.ty == 3, "move keeps the prop inside the room")
+check(M.move_prop(pr, vine, 2, 1) and vine.tx == 2 and vine.ty == 1, "move")
+check(M.resize_prop(pr, vine, entry("vine"), 1, 1) and vine.h == 1
+  and M.resize_prop(pr, vine, entry("vine"), 1, 99) and vine.h == 4, "resize along y up to max")
+check(M.resize_prop(pr, vine, entry("vine"), 1, 0) and vine.h == 1, "resize down to min")
+check(not M.resize_prop(pr, vine, entry("vine"), 4, 1) and vine.w == 1, "a type resizable only along y keeps its width")
+local spikes = assert(M.add_prop(pr, "spikes", 2, 5, entry("spikes")))
+check(spikes.w == 3 and spikes.h == 1, "spikes: 3x1")
+check(M.resize_prop(pr, spikes, entry("spikes"), 99, 1) and spikes.w == 6, "resize along x up to max")
+check(not M.resize_prop(pr, spikes, entry("spikes"), 6, 4) and spikes.h == 1, "and not along y")
+check(M.resize_prop(pr, spikes, entry("spikes"), 0, 1) and spikes.w == 1, "and down to min")
+check(M.set_prop_field(spikes, entry("spikes"), "damage", 3) and spikes.fields.damage == 3, "a field value")
+check(M.set_prop_field(spikes, entry("spikes"), "damage", 1) and spikes.fields == nil, "a value equal to the default is removed")
+check(not M.set_prop_field(spikes, entry("spikes"), "damage", 9), "a value over max is refused")
+check(not M.set_prop_field(spikes, entry("spikes"), "damage", 1.5), "an integer field refuses a fraction")
+check(M.set_prop_field(spikes, entry("spikes"), "armed", false) and spikes.fields.armed == false, "a bool")
+check(M.set_prop_field(spikes, entry("spikes"), "armed", true) and spikes.fields == nil, "a bool back to its default")
+check(M.set_prop_field(spikes, entry("spikes"), "mode", "ceiling") and spikes.fields.mode == "ceiling", "an enum")
+check(not M.set_prop_field(spikes, entry("spikes"), "mode", "wall"), "an enum refuses an unknown option")
+check(not M.set_prop_field(spikes, entry("spikes"), "nope", 1), "an unknown field is refused")
+check(M.remove_prop(pr, spikes) and M.prop_at(pr, 2, 5) == nil and #pr.props == 1, "remove_prop")
+local prop_copy = M.duplicate_room(data, pr)
+check(prop_copy.props and #prop_copy.props == 1 and prop_copy.props[1] ~= pr.props[1]
+  and prop_copy.props[1].type == "vine", "duplicate_room copies the props")
+prop_copy.props[1].tx = 9
+check(pr.props[1].tx == 2, "a duplicated room has its own props")
+local props_back = assert(M.from_text(M.to_text(data)))
+local props_room = M.find_room(props_back, "Props")
+check(props_room and props_room.props and props_room.props[1].type == "vine", "props survive a save and open")
+local rr = M.add_room(data, "PropResize", 2, 2)
+local wide = assert(M.add_prop(rr, "spikes", 18, 3, entry("spikes")))
+local stay = assert(M.add_prop(rr, "spikes", 2, 2, entry("spikes")))
+check(M.resize_room(data, rr, 1, 1), "resize a room with props")
+check(#rr.props == 1 and rr.props[1] == stay and not M.prop_at(rr, wide.tx, wide.ty),
+  "props that no longer fit are dropped")
+
 -- the LDtk fixture, converted, opens and saves back the same
 local py = io.popen("python3 tools/ldtk_convert.py tests/fixtures/ldtk/world.ldtk -o /dev/stdout -q 2>/dev/null")
 local converted = py and py:read("*a") or ""

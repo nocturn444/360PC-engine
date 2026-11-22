@@ -26,6 +26,7 @@ without procedural levels uses the rooms directly.
 | IntGrid layer | `Collision` | The collision tiles. Its grid size is the level file's `tile_size`. Value identifiers: `solid` (also `wall`, `walls`, `ground`, `block`) and `one_way` (also `oneway`, `one-way`, `platform`, `one_way_platform`), in any case. Values without an identifier: 1 is solid, 2 is one-way. Any other value is exported as empty, with a warning (use them for auto-layer rules). |
 | Entity | `Exit` | A door of the room, on a border of the level. Fields, both optional: `side` (String or Enum: `left`, `right`, `up`, `down`; also `top`, `bottom`) and `requires` (Array\<String\>: the ability tags needed to use it). Without `side`, the side is the border the entity touches; an exit in a corner needs the field. Other fields are kept under `fields`. |
 | Entity | `Item` | The place of the room's ability item (at most one). |
+| Entity | tag `prop` | Goes to the room's `props` list ([PROPS.md](PROPS.md)) instead of `entities`: `type` (the identifier in lower case), `tx`, `ty` (the top left tile of its box), `w`, `h` (box size in tiles, rounded up, at least 1) and `fields`. The definition's `tags` in `defs.entities` are matched in any case, by `defUid` or identifier. A box outside the level is an error. |
 | Entity | anything else | Exported in the room's `entities` list with its fields: enemies, spawn points, triggers. |
 | Tiles and AutoLayer layers | any | Drawn. An IntGrid layer with auto-layer rules (the collision layer included) is drawn too. |
 | Level field | `type` | String or Enum, written in lower case: `start`, `boss`, or any type of the game's. Default `normal`. |
@@ -98,6 +99,7 @@ A room:
 | `type`, `weight`, `tags`, `fields` | The level's custom fields (above). |
 | `exits` | `{ side, offset, requires, tx, ty, fields }`, sorted by side (left, right, up, down) then offset. `tx`, `ty`: the tile at the centre of the entity, from 1. |
 | `item` | `{ tx, ty, fields }`, or nil. |
+| `props` | `{ type, tx, ty, w, h, fields }`: the placements of the room's props ([PROPS.md](PROPS.md)); left out when there are none. |
 | `entities` | `{ name, iid, x, y, w, h, tx, ty, fields }`: `x`, `y` is the top left corner in room pixels (the pivot is already applied), `tx`, `ty` the tile at its centre, `iid` the LDtk instance id (what an EntityRef field points at). |
 | `layers` | `{ name, tileset, tiles }` from the bottom one up. `tiles` is a flat array, five numbers a tile: x, y in room pixels, x, y in the tileset image, flip bits (1 horizontal, 2 vertical). |
 | `collision` | The flat array of the collision layer, row by row: 0 empty, 1 solid, 2 one-way. |
