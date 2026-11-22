@@ -476,4 +476,81 @@ eq(M.toText(propsLevel), propsText, "undo removes an added prop");
 propsHistory.redoStep(propsLevel, 0);
 eq(M.toText(propsLevel), withLamp, "redo adds it back");
 
+// --- copy-on-write history: many rooms, many steps ---------------------------------------
+
+(function () {
+  var level = M.newLevel({ tileSize: 16, cellW: 20, cellH: 12 });
+  for (var i = 0; i < 300; i++) M.addRoom(level, "R" + i, 1, 1);
+  var h = M.history(250);
+  var states = [M.toText(level)];
+  var originals = level.rooms.slice();
+  for (var s = 0; s < 200; s++) {
+    var index = (s * 7) % 300;
+    h.push(level, index);
+    M.set(level.rooms[index], 2 + (s % 15), 2 + (s % 9), s % 2 ? M.SOLID : M.ONE_WAY);
+    if (s % 50 === 25) { h.push(level); M.moveRoom(level, level.rooms[3], 1); }
+    states.push(M.toText(level));
+  }
+  check(h.undo[10].rooms[5] === h.undo[150].rooms[5] || h.undo[10].rooms.indexOf(originals[5]) >= 0,
+    "history: steps share room objects instead of copying them");
+  var ok = true;
+  // undo everything, step by step (each paint step and each move step is one entry)
+  while (h.undo.length > 0) h.undoStep(level);
+  ok = M.toText(level) === states[0];
+  check(ok, "history: undoing every step gives the first state back");
+  for (var r = 0; r < 300; r++) {
+    if (level.rooms[r] !== originals[r]) { ok = false; break; }
+  }
+  check(ok, "history: rooms keep their identity across undo");
+  while (h.redo.length > 0) h.redoStep(level);
+  eq(M.toText(level), states[states.length - 1], "history: redoing every step gives the last state");
+})();
+
+(function () {
+  var level = M.newLevel({ tileSize: 16, cellW: 10, cellH: 6 });
+  var room = M.addRoom(level, "A", 1, 1);
+  var h = M.history();
+  h.push(level, 0);
+  M.set(room, 2, 2, M.SOLID);
+  var one = M.toText(level);
+  h.push(level, 0);
+  M.set(room, 3, 2, M.SOLID);
+  h.undoStep(level);
+  eq(M.toText(level), one, "history: one undo after two edits of the same room");
+  h.push(level);
+  M.removeRoom(level, room);
+  h.undoStep(level);
+  eq(M.toText(level), one, "history: an undone delete brings the room back as it was");
+})();
+
+// --- resize drops props that no longer fit, cheap per-room checks ----------------------
+
+(function () {
+  var level = M.newLevel({ tileSize: 16, cellW: 10, cellH: 6 });
+  var room = M.addRoom(level, "A", 2, 1);
+  M.addProp(room, { type: "crate", tx: 2, ty: 2, w: 2, h: 1 });
+  M.addProp(room, { type: "vine", tx: 9, ty: 2, w: 1, h: 3 });
+  M.addProp(room, { type: "slab", tx: 15, ty: 3, w: 2, h: 1 });
+  M.resizeRoom(level, room, 1, 1);
+  eq(room.props.length, 2, "resize keeps props that still fit");
+  eq(room.props[1].type, "vine", "a prop on the last column still fits");
+  var level2 = M.newLevel({ tileSize: 16, cellW: 10, cellH: 6 });
+  var room2 = M.addRoom(level2, "B", 2, 1);
+  M.addProp(room2, { type: "slab", tx: 15, ty: 3, w: 2, h: 1 });
+  M.resizeRoom(level2, room2, 1, 1);
+  check(!Object.prototype.hasOwnProperty.call(room2, "props"),
+    "resize removes an empty props list");
+
+  var checks1 = M.checkRoomFull(level2, room2);
+  check(checks1.some(function (p) { return /no doors/.test(p.message); }),
+    "checkRoomFull reports a room without doors");
+  room2.collision.pop();
+  check(M.checkRoomFull(level2, room2).some(function (p) { return /collision array/.test(p.message); }),
+    "checkRoomFull runs the engine.level room validation");
+  var dup = M.addRoom(level2, "C", 1, 1);
+  dup.id = "B";
+  check(M.checkRoomFull(level2, dup).some(function (p) { return /duplicate id/.test(p.message); }),
+    "checkRoomFull reports a duplicate id");
+})();
+
 console.log("OK: " + checks + " checks");

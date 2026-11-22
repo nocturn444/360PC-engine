@@ -67,6 +67,36 @@ function deepEqual(a, b) {
   return true;
 }
 
+// The check_room checks of engine/level.lua for one room: an error text or null.
+function validateRoom(data, tilesets, room) {
+  var where = "room " + room.id + ": ";
+  if (!isWhole(room.w, 1) || !isWhole(room.h, 1)) {
+    return where + "bad size in map cells";
+  }
+  var tw = room.w * data.cell.w;
+  var th = room.h * data.cell.h;
+  if (room.tiles_w !== tw || room.tiles_h !== th) {
+    return where + "bad size in tiles";
+  }
+  if (!Array.isArray(room.collision) || room.collision.length !== tw * th) {
+    return where + "the collision array does not have " + (tw * th) + " values";
+  }
+  var required = ["exits", "entities", "layers", "tags", "fields"];
+  for (var n = 0; n < required.length; n++) {
+    if (!isTable(room[required[n]])) return where + required[n] + " is missing";
+  }
+  var layers = list(room.layers);
+  for (var l = 0; l < layers.length; l++) {
+    var layer = layers[l];
+    var tiles = list(layer && layer.tiles);
+    if (!isTable(layer) || !isTable(layer.tiles) || tiles.length % 5 !== 0 ||
+      !isTable(tilesets[layer.tileset - 1])) {
+      return where + "layer " + (l + 1) + " is broken";
+    }
+  }
+  return null;
+}
+
 function validateLevel(data) {
   if (!isTable(data) || data.format !== FORMAT) {
     return "not a level file (convert the LDtk project with tools/ldtk_convert.py)";
@@ -96,31 +126,8 @@ function validateLevel(data) {
     }
     if (seen.has(room.id)) return "two rooms have the id " + room.id;
     seen.add(room.id);
-    var where = "room " + room.id + ": ";
-    if (!isWhole(room.w, 1) || !isWhole(room.h, 1)) {
-      return where + "bad size in map cells";
-    }
-    var tw = room.w * data.cell.w;
-    var th = room.h * data.cell.h;
-    if (room.tiles_w !== tw || room.tiles_h !== th) {
-      return where + "bad size in tiles";
-    }
-    if (!Array.isArray(room.collision) || room.collision.length !== tw * th) {
-      return where + "the collision array does not have " + (tw * th) + " values";
-    }
-    var required = ["exits", "entities", "layers", "tags", "fields"];
-    for (var n = 0; n < required.length; n++) {
-      if (!isTable(room[required[n]])) return where + required[n] + " is missing";
-    }
-    var layers = list(room.layers);
-    for (var l = 0; l < layers.length; l++) {
-      var layer = layers[l];
-      var tiles = list(layer && layer.tiles);
-      if (!isTable(layer) || !isTable(layer.tiles) || tiles.length % 5 !== 0 ||
-        !isTable(tilesets[layer.tileset - 1])) {
-        return where + "layer " + (l + 1) + " is broken";
-      }
-    }
+    var err = validateRoom(data, tilesets, room);
+    if (err) return err;
   }
   return null;
 }
@@ -314,6 +321,16 @@ RoomModel.resizeRoom = function (level, room, w, h) {
   RoomModel.sortExits(room);
 
   if (room.item && (room.item.tx > tw || room.item.ty > th)) delete room.item;
+
+  if (room.props) {
+    var fit = [];
+    for (var q = 0; q < list(room.props).length; q++) {
+      var prop = room.props[q];
+      if (prop.tx + prop.w - 1 <= tw && prop.ty + prop.h - 1 <= th) fit.push(prop);
+    }
+    if (fit.length > 0) room.props = fit;
+    else delete room.props;
+  }
 
   var ts = level.tile_size;
   var ents = [];
@@ -700,6 +717,28 @@ RoomModel.checkRoom = function (level, room) {
   return out;
 };
 
+// The checks of one room plus engine/level.lua's validation of that room, without writing
+// the whole level: cheap enough to run after every edit. check(level) is the full check.
+RoomModel.checkRoomFull = function (level, room) {
+  var out = [];
+  var problems = RoomModel.checkRoom(level, room);
+  for (var p = 0; p < problems.length; p++) {
+    var problem = { roomId: room.id, message: problems[p].message };
+    if (problems[p].tx !== undefined) problem.tx = problems[p].tx;
+    if (problems[p].ty !== undefined) problem.ty = problems[p].ty;
+    out.push(problem);
+  }
+  for (var i = 0; i < level.rooms.length; i++) {
+    if (level.rooms[i] !== room && level.rooms[i].id === room.id) {
+      out.push({ roomId: room.id, message: "duplicate id " + room.id });
+      break;
+    }
+  }
+  var err = validateRoom(level, list(emptyToArray(level.tilesets)), room);
+  if (err) out.push({ roomId: room.id, message: err });
+  return out;
+};
+
 RoomModel.check = function (level) {
   var out = [];
   var start = false;
@@ -726,42 +765,66 @@ RoomModel.check = function (level) {
 };
 
 // ---------------------------------------------------------------------------
-// Undo: snapshots of the whole level (rooms are small)
+// Undo. A step keeps a shallow copy of the room list (cheap: the room objects are shared)
+// and, when the step edits one room, a deep copy of that room only. Undo puts the list back
+// and restores that room's contents in place, so a room object keeps its identity and the
+// lists kept by older steps stay valid. Call push(level, roomIndex) before changing that
+// room in place, or push(level) before an operation on the list (add, delete, move, import).
 // ---------------------------------------------------------------------------
+
+function restoreInPlace(target, saved) {
+  var k;
+  for (k in target) {
+    if (Object.prototype.hasOwnProperty.call(target, k)) delete target[k];
+  }
+  for (k in saved) {
+    if (Object.prototype.hasOwnProperty.call(saved, k)) target[k] = saved[k];
+  }
+}
+
+function snapshot(level, roomIndex) {
+  var room = (roomIndex !== undefined && roomIndex !== null) ? level.rooms[roomIndex] : null;
+  var saved = null;
+  if (room) {
+    saved = copy(room);
+    delete saved.grid;
+  }
+  return {
+    rooms: level.rooms.slice(), room: room || null, saved: saved,
+    tilesets: copy(level.tilesets), at: roomIndex === undefined || roomIndex === null ? 0 : roomIndex
+  };
+}
+
+function apply(level, step) {
+  level.rooms = step.rooms;
+  level.tilesets = step.tilesets;
+  if (step.room) restoreInPlace(step.room, step.saved);
+}
 
 RoomModel.history = function (limit) {
   return {
     undo: [], redo: [], limit: limit || MAX_HISTORY,
     push: function (level, roomIndex) {
-      this.undo.push({
-        rooms: copy(level.rooms), tilesets: copy(level.tilesets),
-        at: roomIndex === undefined ? 0 : roomIndex
-      });
+      this.undo.push(snapshot(level, roomIndex));
       if (this.undo.length > this.limit) this.undo.shift();
       this.redo = [];
     },
-    undoStep: function (level, roomIndex) {
+    undoStep: function (level) {
       if (this.undo.length === 0) return null;
-      var snap = this.undo.pop();
-      this.redo.push({
-        rooms: copy(level.rooms), tilesets: copy(level.tilesets),
-        at: roomIndex === undefined ? 0 : roomIndex
-      });
-      level.rooms = snap.rooms;
-      level.tilesets = snap.tilesets;
-      return snap.at === undefined ? 0 : snap.at;
+      var step = this.undo.pop();
+      this.redo.push(snapshot(level, step.room ? level.rooms.indexOf(step.room) : null));
+      if (step.room) this.redo[this.redo.length - 1].at = step.at;
+      apply(level, step);
+      return step.at;
     },
-    redoStep: function (level, roomIndex) {
+    redoStep: function (level) {
       if (this.redo.length === 0) return null;
-      var snap = this.redo.pop();
-      this.undo.push({
-        rooms: copy(level.rooms), tilesets: copy(level.tilesets),
-        at: roomIndex === undefined ? 0 : roomIndex
-      });
+      var step = this.redo.pop();
+      this.undo.push(snapshot(level, step.room ? level.rooms.indexOf(step.room) : null));
+      if (step.room) this.undo[this.undo.length - 1].at = step.at;
       if (this.undo.length > this.limit) this.undo.shift();
-      level.rooms = snap.rooms;
-      level.tilesets = snap.tilesets;
-      return snap.at === undefined ? 0 : snap.at;
+      apply(level, step);
+      return step.at;
     }
   };
 };
