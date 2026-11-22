@@ -193,7 +193,7 @@ local function break_prop(self, prop)
   local ctx = drop_ctx(self, "obstacle")
   local virus = content.drop(self.pools.virus, stream, ctx, prop.fields.virus_chance)
   if virus then
-    spawn_pickup(self, pickups.virus(prop.x + prop.w / 2, prop.y + prop.h / 2, virus.amount or prop.fields.virus))
+    spawn_pickup(self, pickups.virus(prop.x + prop.w / 2, prop.y + prop.h / 2, prop.fields.virus))
   end
   return true
 end
