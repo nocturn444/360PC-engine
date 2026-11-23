@@ -17,6 +17,12 @@ All notable changes to 360PC-Engine. The format follows
   deep jungle (3-4), grotto (5), fungal cave (6-7), catacombs (8), labs (9), catastrophe (10),
   with their own names and colours (enemy numbers are still placeholders).
 
+### Fixed
+- `examples/rooms`: a mutation's `limb_color` no longer repaints every limb. Each fragment with
+  an RGB `limb_color` gets its own palette slot (6, 7, ...) used only by its own limbs, so the
+  limbs of mutations taken later (carapace, legs) keep the default limb colour instead of the
+  spring heel's light blue, which made its antennas look like they multiplied on each floor.
+
 - `engine/modules/props`: modular room props. A registry of prop types (category, size and
   resize limits, `solid` / `one_way` collision, free flags, ordered per-instance fields with
   defaults and limits, editor label / glyph / colour, `init` / `update` / `hit` / `draw` hooks)

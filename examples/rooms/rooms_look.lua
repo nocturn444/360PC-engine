@@ -28,6 +28,7 @@ function M.new()
     eye_count = 2,
     shape = { sx = 1, sy = 1 },
     limbs = {},
+    limb_colors = {},   -- the mutations' own limb colours: palette indices 6, 7, ...
     physical = nil,
   }
 end
@@ -35,6 +36,18 @@ end
 -- Copies a colour into the look; keeps no reference to the fragment.
 local function set_color(dst, src)
   dst[1], dst[2], dst[3] = src[1], src[2], src[3]
+end
+
+-- The palette index of a mutation's own limb colour: an equal colour already in the look reuses
+-- its slot (a stacked or repeated mutation), a new one is appended after the five base entries.
+local function limb_slot(look, c)
+  local list = look.limb_colors
+  for i = 1, #list do
+    local e = list[i]
+    if e[1] == c[1] and e[2] == c[2] and e[3] == c[3] then return 5 + i end
+  end
+  list[#list + 1] = { c[1], c[2], c[3] }
+  return 5 + #list
 end
 
 -- M.apply(look, fragment): applies one mutation's look fragment in place and returns the look.
@@ -47,13 +60,16 @@ function M.apply(look, fragment)
   if fragment.outline_color then set_color(look.outline, fragment.outline_color) end
   if fragment.eye_color then set_color(look.eye, fragment.eye_color) end
   if fragment.pupil_color then set_color(look.pupil, fragment.pupil_color) end
+  -- A limb_color as an index sets the default limb index. As { r, g, b } it belongs to this
+  -- fragment only: it gets its own palette slot (6, 7, ...) and only this fragment's limbs use it,
+  -- so a later mutation's limbs are never painted in an earlier one's colour.
+  local own_color
   if fragment.limb_color then
     local c = fragment.limb_color
     if type(c) == "number" then
       look.limb = c
     else
-      look.limb = 5
-      set_color(look.limb_color, c)
+      own_color = limb_slot(look, c)
     end
   end
   if fragment.eye_count then look.eye_count = fragment.eye_count end
@@ -69,9 +85,11 @@ function M.apply(look, fragment)
     for _ = 1, stacks do
       for i = 1, #f.limbs do
         local l = f.limbs[i]
+        local color = l.color
+        if own_color and (color == nil or color == 5) then color = own_color end
         look.limbs[#look.limbs + 1] = {
           anchor = l.anchor, side = l.side, length = l.length,
-          width = l.width, color = l.color, kind = l.kind,
+          width = l.width, color = color, kind = l.kind,
         }
       end
     end
@@ -102,8 +120,9 @@ end
 -- M.physical(look): the rest shape the body should be given (or nil).
 function M.physical(look) return look.physical end
 
--- M.palette(look, px): writes the look's colours into px.palette entries 1..5. The entries must
--- already exist (the draw path makes no tables).
+-- M.palette(look, px): writes the look's colours into px.palette entries 1..5 (which must exist)
+-- and the mutations' limb colours into 6, 7, ... A missing entry 6+ is created here, so call it
+-- when the look changes (on acquisition), not per frame.
 function M.palette(look, px)
   local p = px.palette
   local e
@@ -112,6 +131,13 @@ function M.palette(look, px)
   e = p[3]; if e then e[1], e[2], e[3] = look.eye[1], look.eye[2], look.eye[3] end
   e = p[4]; if e then e[1], e[2], e[3] = look.pupil[1], look.pupil[2], look.pupil[3] end
   e = p[5]; if e then e[1], e[2], e[3] = look.limb_color[1], look.limb_color[2], look.limb_color[3] end
+  local extra = look.limb_colors
+  for i = 1, #(extra or {}) do
+    local c = extra[i]
+    e = p[5 + i]
+    if not e then e = {}; p[5 + i] = e end
+    e[1], e[2], e[3] = c[1], c[2], c[3]
+  end
   return px
 end
 
