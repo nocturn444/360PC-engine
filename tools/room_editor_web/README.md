@@ -14,6 +14,7 @@ Files:
 - `js/catalog.js` (`Catalog`): the props catalog (docs/PROPS.md); `default_catalog.lvl` is the
   built-in copy of `examples/rooms/props_catalog.lvl`.
 - `js/render.js` (`Render`): draws a room (editor and cached thumbnails).
+- `js/icons.js` (`Icons`): small inline SVG icons for buttons.
 - `js/library.js`, `js/editor.js`, `js/sync.js`, `js/settings.js`: the four screens.
 
 The data layer:

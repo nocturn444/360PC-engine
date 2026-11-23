@@ -3,7 +3,7 @@
 "use strict";
 
 (function () {
-  var root, listEl, chipsBiome, chipsType, search, titleEl;
+  var root, listEl, chipsBiome, chipsType, search, titleEl, titleName, titleCount;
   var collapsed = {};
   var observer = null;
 
@@ -17,9 +17,11 @@
       App.biomes().map(function (b) { return { label: b, value: b }; }),
       [{ label: "(no biome)", value: "" }]);
     biomes.forEach(function (b) {
-      chipsBiome.appendChild(App.el("button.chip" + (f.biome === b.value ? ".active" : ""), {
+      var chip = App.el("button.chip" + (f.biome === b.value ? ".active" : ""), {
         text: b.label, onclick: function () { f.biome = b.value; render(); }
-      }));
+      });
+      if (b.value !== null) chip.insertBefore(dot(b.value), chip.firstChild);
+      chipsBiome.appendChild(chip);
     });
     var types = [{ label: "All types", value: null }].concat(
       App.types().map(function (t) { return { label: t, value: t }; }));
@@ -30,25 +32,32 @@
     });
   }
 
+  function dot(biome) {
+    return App.el("span.dot", { style: "background:" + App.biomeColor(biome) });
+  }
+
   function drawThumb(card) {
     var room = card._room;
     var holder = card.querySelector(".thumb");
     holder.textContent = "";
-    holder.appendChild(Render.thumbnail(room, App.state.catalog, 96, 64, App.version(room)));
+    holder.appendChild(Render.thumbnail(room, App.state.catalog, 200, 112, App.version(room)));
   }
 
   function card(room) {
     var checks = RoomModel.checkRoomFull(level(), room);
-    var c = App.el("div.card", {}, [
+    var meta = room.w + "\u00d7" + room.h + (room.tags && room.tags.length ? "  \u00b7  " + room.tags.join(", ") : "");
+    var c = App.el("div.card", { style: "--biome:" + App.biomeColor(RoomModel.getBiome(room)) }, [
       App.el("div.thumb"),
-      App.el("div.card-text", {}, [
-        App.el("div.card-id", { text: room.id }),
-        App.el("div.muted", { text: room.w + " x " + room.h + (room.tags && room.tags.length ? "  " + room.tags.join(", ") : "") })
+      App.el("div.card-foot", {}, [
+        App.el("div.card-text", {}, [
+          App.el("div.card-id", { text: room.id }),
+          App.el("div.card-meta", { text: meta })
+        ]),
+        App.el("button.icon.ghost.small", { icon: "more", "aria-label": "Room actions", onclick: function (e) {
+          e.stopPropagation(); actions(room);
+        } })
       ]),
-      checks.length ? App.el("span.warn", { text: String(checks.length), title: checks[0].message }) : null,
-      App.el("button.icon", { text: "⋯", "aria-label": "Room actions", onclick: function (e) {
-        e.stopPropagation(); actions(room);
-      } })
+      checks.length ? App.el("span.warn", { icon: "warn", text: String(checks.length), title: checks[0].message }) : null
     ]);
     c._room = room;
     var timer = null, long = false;
@@ -71,13 +80,17 @@
 
   function render() {
     if (!root || !level()) return;
-    titleEl.textContent = App.state.projectName + "  (" + level().rooms.length + ")";
+    titleName.textContent = App.state.projectName;
+    titleCount.textContent = level().rooms.length + (level().rooms.length === 1 ? " room" : " rooms");
     renderChips();
     if (observer) observer.disconnect();
     listEl.textContent = "";
     var rooms = App.filteredRooms();
     if (rooms.length === 0) {
-      listEl.appendChild(App.el("p.muted.pad", { text: "No rooms match. Tap + to make one." }));
+      listEl.appendChild(App.el("div.empty", {}, [
+        App.el("div.empty-title", { text: "No rooms here" }),
+        App.el("div.muted", { text: "Change the filters or tap + to make a room." })
+      ]));
       return;
     }
     // biome -> type -> rooms, in file order of first appearance
@@ -93,7 +106,7 @@
     });
     groups.forEach(function (g) {
       var bKey = "b:" + g.biome;
-      listEl.appendChild(header(g.biome || "(no biome)", g.count, bKey, "biome"));
+      listEl.appendChild(header(g.biome || "(no biome)", g.count, bKey, "biome", g.biome));
       if (collapsed[bKey]) return;
       g.types.forEach(function (t) {
         var tKey = bKey + "/" + t;
@@ -106,10 +119,15 @@
     });
   }
 
-  function header(text, count, key, kind) {
-    return App.el("button.group." + kind, { onclick: function () { collapsed[key] = !collapsed[key]; render(); } }, [
-      (collapsed[key] ? "▸ " : "▾ ") + text + "  ",
-      App.el("span.muted", { text: String(count) })
+  function header(text, count, key, kind, biome) {
+    var open = !collapsed[key];
+    return App.el("button.group." + kind + (open ? ".open" : ""), {
+      onclick: function () { collapsed[key] = !collapsed[key]; render(); }
+    }, [
+      kind === "biome" ? dot(biome) : null,
+      App.el("span.group-name", { text: text }),
+      App.el("span.count", { text: String(count) }),
+      Icons.make("chevron")
     ]);
   }
 
@@ -240,18 +258,22 @@
   App.registerScreen("library", {
     init: function (r) {
       root = r;
-      titleEl = App.el("button.grow.title", { onclick: projects });
+      titleName = App.el("span.title-main");
+      titleCount = App.el("span.title-sub");
+      titleEl = App.el("button.grow.title.project", { onclick: projects }, [
+        App.el("span.title-stack", {}, [titleName, titleCount]), Icons.make("chevron")]);
       search = App.el("input.search", { type: "search", placeholder: "Search id, biome, type, tag" });
       search.addEventListener("input", function () { App.state.filter.search = search.value; render(); });
       chipsBiome = App.el("div.chips");
       chipsType = App.el("div.chips");
       listEl = App.el("div.scroll.library-list");
-      root.appendChild(App.el("div.bar", {}, [titleEl, App.el("button.icon", { text: "☰", "aria-label": "Menu", onclick: menu })]));
-      root.appendChild(App.el("div.pad-x", {}, [search]));
+      root.appendChild(App.el("div.bar", {}, [App.el("span.logo"), titleEl,
+        App.el("button.icon.ghost", { icon: "menu", "aria-label": "Menu", onclick: menu })]));
+      root.appendChild(App.el("div.search-wrap", {}, [Icons.make("search"), search]));
       root.appendChild(chipsBiome);
       root.appendChild(chipsType);
       root.appendChild(listEl);
-      root.appendChild(App.el("button.fab", { text: "+", "aria-label": "New room", onclick: newRoom }));
+      root.appendChild(App.el("button.fab", { icon: "plus", "aria-label": "New room", onclick: newRoom }));
       if (typeof IntersectionObserver !== "undefined") {
         observer = new IntersectionObserver(function (entries) {
           entries.forEach(function (e) {

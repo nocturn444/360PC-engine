@@ -4,8 +4,8 @@
 
 var Render = (function () {
   var COLORS = {
-    bg: "#14161c", empty: "#1c1f27", solid: "#8a8f9c", oneWay: "#5fa8d3", other: "#b07ad6",
-    grid: "rgba(255,255,255,0.07)", door: "#f2c14e", doorLocked: "#e4572e", item: "#7bd389",
+    bg: "#10131b", empty: "#1a1e2b", solid: "#9aa2b8", oneWay: "#5fb4e6", other: "#b98aff",
+    grid: "rgba(255,255,255,0.06)", door: "#fae685", doorLocked: "#ff6b5b", item: "#7bd389",
     entity: "#ff7eb6", select: "#ffffff", unknown: "#777777"
   };
 

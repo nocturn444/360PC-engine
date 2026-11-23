@@ -277,6 +277,9 @@ check(v2.entities.length === 0 || v2.entities[0].iid !== data.rooms[1].entities[
   "the variant gets fresh entity iids");
 var v3 = M.duplicateRoom(data, data.rooms[1]);
 eq(v3.id, "Hall_v3", "the next free variant id");
+var v4 = M.duplicateRoom(data, v2);
+eq(v4.id, "Hall_v4", "a variant of a variant takes the next number instead of stacking suffixes");
+M.removeRoom(data, v4);
 check(M.moveRoom(data, v3, -2) && data.rooms[0] === v3, "move in the list");
 check(!M.moveRoom(data, v3, -1), "a move outside the list is refused");
 

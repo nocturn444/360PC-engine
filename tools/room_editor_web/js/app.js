@@ -185,13 +185,32 @@ var App = (function () {
     props = props || {};
     for (var k in props) {
       if (!Object.prototype.hasOwnProperty.call(props, k)) continue;
+      if (k === "icon") continue;
       if (k === "text") node.textContent = props[k];
       else if (k.indexOf("on") === 0) node.addEventListener(k.slice(2), props[k]);
       else if (k === "style") node.style.cssText = props[k];
       else node.setAttribute(k, props[k]);
     }
     (children || []).forEach(function (c) { if (c) node.appendChild(typeof c === "string" ? document.createTextNode(c) : c); });
+    if (props.icon && typeof Icons !== "undefined") {
+      node.insertBefore(Icons.make(props.icon), node.firstChild);
+      node.classList.add("has-ico");
+    }
     return node;
+  };
+
+  // A stable color per biome: the standard biomes have hand-picked ones, others get a hue
+  // from their name, and rooms with no biome are grey.
+  var BIOME_COLORS = {
+    forest: "#7ccf6a", deep_jungle: "#35b58a", grotto: "#6b9cf5", fungal_cave: "#c98bff",
+    catacombs: "#c9b48f", labs: "#55d6e0", catastrophe: "#ff7354"
+  };
+  A.biomeColor = function (b) {
+    if (!b) return "#7d8497";
+    if (BIOME_COLORS[b]) return BIOME_COLORS[b];
+    var h = 0;
+    for (var i = 0; i < b.length; i++) h = (h * 31 + b.charCodeAt(i)) % 360;
+    return "hsl(" + h + ", 65%, 65%)";
   };
 
   var toastTimer = null;
@@ -208,9 +227,9 @@ var App = (function () {
   A.openSheet = function (title, build) {
     var layer = document.getElementById("sheets");
     var backdrop = A.el("div.backdrop");
-    var sheet = A.el("div.sheet", {}, [A.el("div.sheet-head", {}, [
+    var sheet = A.el("div.sheet", {}, [A.el("div.grabber"), A.el("div.sheet-head", {}, [
       A.el("span.sheet-title", { text: title }),
-      A.el("button.icon", { text: "✕", "aria-label": "Close", onclick: function () { close(); } })
+      A.el("button.icon.ghost", { icon: "close", "aria-label": "Close", onclick: function () { close(); } })
     ])]);
     var body = A.el("div.sheet-body");
     sheet.appendChild(body);

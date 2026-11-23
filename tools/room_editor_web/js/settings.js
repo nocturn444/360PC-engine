@@ -32,7 +32,7 @@
 
   function iconButton(text, label, onclick, disabled) {
     var button = App.el("button.icon", {
-      text: text, "aria-label": label, onclick: onclick
+      icon: text, "aria-label": label, onclick: onclick
     });
     button.disabled = !!disabled;
     return button;
@@ -124,7 +124,7 @@
       });
       card.appendChild(App.el("div.list-row", {}, [
         input,
-        iconButton("\u2191", "Move up", function () {
+        iconButton("up", "Move up", function () {
           if (index === 0) return;
           var previous = values[index - 1];
           values[index - 1] = values[index];
@@ -132,7 +132,7 @@
           save();
           render();
         }, index === 0),
-        iconButton("\u2193", "Move down", function () {
+        iconButton("down", "Move down", function () {
           if (index === values.length - 1) return;
           var next = values[index + 1];
           values[index + 1] = values[index];
@@ -140,7 +140,7 @@
           save();
           render();
         }, index === values.length - 1),
-        iconButton("\u2715", "Remove", function () {
+        iconButton("close", "Remove", function () {
           values.splice(index, 1);
           save();
           render();
@@ -197,11 +197,11 @@
     init: function (root) {
       state.root = root;
       root.appendChild(App.el("div.bar", {}, [
-        App.el("button.icon", {
-          text: "\u2190", "aria-label": "Back",
+        App.el("button.icon.ghost", {
+          icon: "back", "aria-label": "Back",
           onclick: function () { App.show("library"); }
         }),
-        App.el("span.grow", { text: "Settings" })
+        App.el("span.grow.bar-title", { text: "Settings" })
       ]));
       state.scroll = App.el("div.scroll");
       root.appendChild(state.scroll);

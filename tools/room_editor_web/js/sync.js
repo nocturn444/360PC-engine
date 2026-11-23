@@ -500,11 +500,11 @@
     init: function (root) {
       state.root = root;
       root.appendChild(App.el("div.bar", {}, [
-        App.el("button.icon", {
-          text: "\u2190", "aria-label": "Back",
+        App.el("button.icon.ghost", {
+          icon: "back", "aria-label": "Back",
           onclick: function () { App.show("library"); }
         }),
-        App.el("span.grow", { text: "Sync" })
+        App.el("span.grow.bar-title", { text: "Sync" })
       ]));
       state.scroll = App.el("div.scroll");
       root.appendChild(state.scroll);

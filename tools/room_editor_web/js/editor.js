@@ -59,14 +59,15 @@ if (typeof module !== "undefined" && module.exports) {
   module.exports = EditorMath;
 } else (function () {
   var TOOLS = [
-    { id: "solid", label: "Solid" }, { id: "oneway", label: "Way" }, { id: "erase", label: "Erase" },
-    { id: "door", label: "Door" }, { id: "item", label: "Item" }, { id: "entity", label: "Ent" },
-    { id: "prop", label: "Prop" }, { id: "select", label: "Sel" }
+    { id: "solid", label: "Solid", icon: "solid" }, { id: "oneway", label: "Way", icon: "oneway" },
+    { id: "erase", label: "Erase", icon: "erase" }, { id: "door", label: "Door", icon: "door" },
+    { id: "item", label: "Item", icon: "item" }, { id: "entity", label: "Ent", icon: "entity" },
+    { id: "prop", label: "Prop", icon: "prop" }, { id: "select", label: "Sel", icon: "select" }
   ];
   var PAINT = { solid: RoomModel.SOLID, oneway: RoomModel.ONE_WAY, erase: RoomModel.EMPTY };
   var MODES = ["free", "rect", "fill"];
 
-  var root, canvas, ctx, idBtn, badge, toolBtns = {}, modeBtn, currentBtn, editBtn, delBtn;
+  var root, canvas, ctx, idBtn, badge, titleMain, titleSub, toolBtns = {}, modeBtn, currentBtn, editBtn, delBtn;
   var view = { scale: 16, ox: 0, oy: 0 };
   var tool = "solid", mode = "free", selection = null;
   var entityName = null, propType = null, recent = [];
@@ -597,7 +598,13 @@ if (typeof module !== "undefined" && module.exports) {
 
   function updateTitle() {
     var rm = room();
-    idBtn.firstChild.textContent = rm ? rm.id : "";
+    titleMain.textContent = rm ? rm.id : "";
+    titleSub.textContent = "";
+    if (rm) {
+      var b = RoomModel.getBiome(rm);
+      titleSub.appendChild(App.el("span.dot", { style: "background:" + App.biomeColor(b) }));
+      titleSub.appendChild(document.createTextNode((b || "no biome") + "  \u00b7  " + (rm.type || "normal")));
+    }
     updateBadge();
   }
 
@@ -644,13 +651,16 @@ if (typeof module !== "undefined" && module.exports) {
     init: function (r) {
       root = r;
       badge = App.el("span.badge", { hidden: "" });
-      idBtn = App.el("button.grow.title", { onclick: function () { roomSheet(); } }, [App.el("span", { text: "" }), badge]);
+      titleMain = App.el("span.title-main");
+      titleSub = App.el("span.title-sub");
+      idBtn = App.el("button.grow.title.room-title", { onclick: function () { roomSheet(); } },
+        [App.el("span.title-stack", {}, [titleMain, titleSub]), badge]);
       root.appendChild(App.el("div.bar", {}, [
-        App.el("button.icon", { text: "←", "aria-label": "Library", onclick: function () { App.show("library"); } }),
-        App.el("button.nav", { text: "◀", "aria-label": "Previous room", onclick: function () { step(-1); } }),
+        App.el("button.icon.ghost", { icon: "back", "aria-label": "Library", onclick: function () { App.show("library"); } }),
+        App.el("button.nav", { icon: "prev", "aria-label": "Previous room", onclick: function () { step(-1); } }),
         idBtn,
-        App.el("button.nav", { text: "▶", "aria-label": "Next room", onclick: function () { step(1); } }),
-        App.el("button", { text: "Variant", onclick: variant })
+        App.el("button.nav", { icon: "next", "aria-label": "Next room", onclick: function () { step(1); } }),
+        App.el("button.icon.ghost", { icon: "variant", "aria-label": "Duplicate as variant", onclick: variant })
       ]));
       var holder = App.el("div.canvas-holder");
       canvas = App.el("canvas.room");
@@ -663,21 +673,30 @@ if (typeof module !== "undefined" && module.exports) {
       canvas.addEventListener("pointercancel", onUp);
       canvas.addEventListener("wheel", onWheel, { passive: false });
 
-      modeBtn = App.el("button", { text: "Free", onclick: function () {
+      modeBtn = App.el("button.pill", { onclick: function () {
         mode = MODES[(MODES.indexOf(mode) + 1) % MODES.length];
-        modeBtn.textContent = mode.charAt(0).toUpperCase() + mode.slice(1);
+        showMode();
       } });
-      currentBtn = App.el("button.grow", { text: "", hidden: "", onclick: chooseCurrent });
-      editBtn = App.el("button", { text: "Edit", hidden: "", onclick: editSelection });
-      delBtn = App.el("button.danger", { text: "Del", hidden: "", onclick: deleteSelection });
+      function showMode() {
+        modeBtn.textContent = "";
+        modeBtn.appendChild(Icons.make(mode));
+        modeBtn.appendChild(document.createTextNode(mode.charAt(0).toUpperCase() + mode.slice(1)));
+      }
+      showMode();
+      currentBtn = App.el("button.grow.pill.current", { text: "", hidden: "", onclick: chooseCurrent });
+      editBtn = App.el("button.pill", { icon: "edit", text: "Edit", hidden: "", onclick: editSelection });
+      delBtn = App.el("button.pill.danger", { icon: "trash", text: "Del", hidden: "", onclick: deleteSelection });
       var row1 = App.el("div.bar.bottom.tools");
       TOOLS.forEach(function (t) {
-        toolBtns[t.id] = App.el("button.tool", { text: t.label, onclick: function () { setTool(t.id); } });
+        toolBtns[t.id] = App.el("button.tool", { onclick: function () { setTool(t.id); } },
+          [Icons.make(t.icon), App.el("span.tool-label", { text: t.label })]);
         row1.appendChild(toolBtns[t.id]);
       });
-      var row2 = App.el("div.bar.bottom", {}, [modeBtn, currentBtn, editBtn, delBtn, App.el("span.grow"),
-        App.el("button", { text: "Undo", onclick: function () { undoRedo(true); } }),
-        App.el("button", { text: "Redo", onclick: function () { undoRedo(false); } })]);
+      var row2 = App.el("div.bar.bottom.actions", {}, [modeBtn, currentBtn, editBtn, delBtn, App.el("span.grow"),
+        App.el("button.icon.ghost", { icon: "undo", "aria-label": "Undo", onclick: function () { undoRedo(true); } },
+          [App.el("span.sr-only", { text: "Undo" })]),
+        App.el("button.icon.ghost", { icon: "redo", "aria-label": "Redo", onclick: function () { undoRedo(false); } },
+          [App.el("span.sr-only", { text: "Redo" })])]);
       root.appendChild(row2);
       root.appendChild(row1);
       window.addEventListener("resize", function () { if (App.current === "editor") resize(); });

@@ -62,6 +62,9 @@ All notable changes to 360PC-Engine. The format follows
   the catalog, select/move/resize, undo, prev/next within the filter and variants; sync with
   export, share, import, GitHub open/upload as a pull request; settings) and the Android app
   `android/room_editor` that shows it full screen, built by `.github/workflows/android_room_editor.yml`.
+  Redesigned look: icons on every tool and action, biome colors on chips, groups and cards,
+  card grid with large thumbnails. A variant of a variant is named with the next number
+  (`Hall_v3`), not a stacked suffix (`Hall_v2_v2`).
 - `tools/room_editor_web`: the data layer of a touch-friendly web room editor, in plain
   JavaScript with no dependencies or build step. `SaveFmt` reads and writes the level file
   byte-identically to `engine/save.lua`, and `RoomModel` edits rooms, collision, doors, the

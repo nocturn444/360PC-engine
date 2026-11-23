@@ -220,7 +220,10 @@ RoomModel.freeId = function (level, base) {
   return base + "_" + n;
 };
 
+// Variants of "Hall" and of "Hall_v2" are both named "Hall_vN" with the next free N, so
+// duplicating a variant does not stack suffixes ("Hall_v2_v2").
 RoomModel.variantId = function (level, base) {
+  base = String(base).replace(/_v\d+$/, "") || String(base);
   var n = 2;
   while (RoomModel.findRoom(level, base + "_v" + n)) n++;
   return base + "_v" + n;
