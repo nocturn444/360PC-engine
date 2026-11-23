@@ -182,6 +182,9 @@ local function clear_room(self)
       if entry then acquire_mutation(self, entry) end
     end
     play.load_room(self)
+  elseif self.sealed then
+    -- any other sealed arena (a trap room): rebuild it so its doors open again
+    play.load_room(self)
   end
 end
 

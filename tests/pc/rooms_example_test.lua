@@ -528,6 +528,26 @@ if mb then
   check(not play.sealed and play.fight:alive() == 0, "and opens them when it is cleared")
 end
 
+-- a trap room seals its doors like a miniboss and opens them once its ambush is beaten
+local trap, trap_floor
+local saved_trap = play.spawn.trap
+for n = 1, 10 do
+  play.spawn.trap = 0.95
+  play.new_floor(play, n)
+  for i, r in ipairs(play.map.rooms) do if r.type == "trap" then trap, trap_floor = i, n; break end end
+  if trap then break end
+end
+play.spawn.trap = saved_trap
+check(trap ~= nil, "a trap room comes up with a high trap chance")
+if trap then
+  play:load_room(play.nav:enter(trap))
+  check(play.sealed and #play.fight.enemies > 0, "a trap room seals its doors (floor " .. trap_floor .. ")")
+  play.fight.player.invuln = 100
+  for _, e in ipairs(play.fight.enemies) do e.fighter.dead = true end
+  frames(2)
+  check(play.fight:alive() == 0 and not play.sealed, "and opens them when the ambush is beaten")
+end
+
 -- an enemy that falls out through a pit moves to the room below; past an edge with no door it dies
 local pit_room, pit_exit, pit_floor
 for n = 1, 10 do
