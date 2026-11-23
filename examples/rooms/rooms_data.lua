@@ -14,16 +14,34 @@
 -- Levels made in LDtk (engine.level) give templates of the same shape; these stay in code so the
 -- example needs no level file.
 local procgen = require("engine.modules.procgen")
+local rooms_spawn = require("rooms_spawn")
 local M = { cell_w = 20, cell_h = 12, tile_size = 16 }
 
--- Special rooms: a pedestal for the treasure, a counter for the shop, an arena for the miniboss
+-- Special rooms: a pedestal for the treasure, a counter for the shop, an arena for the miniboss.
+-- The wave 2 rooms are only layouts here: their contents come later. "obstacle" is a short
+-- platforming course whose goal is across from its door (the right variant mirrors the left).
 local SPECIAL_ROWS = {
   treasure = {
     "####################", "#..................#", "#..................#", "#..................#",
     "#..................#", "#..................#", "#..................#", "#..................#",
     "#..................#", "#........##........#", "#.......####.......#", "####################",
   },
+  super_treasure = {
+    "####################", "#..................#", "#..................#", "#..................#",
+    "#..................#", "#..................#", "#..................#", "#..................#",
+    "#..................#", "#..................#", "#...##...##...##...#", "####################",
+  },
   shop = {
+    "####################", "#..................#", "#..................#", "#..................#",
+    "#..................#", "#....==========....#", "#..................#", "#..................#",
+    "#..................#", "#..................#", "#..................#", "####################",
+  },
+  casino = {
+    "####################", "#..................#", "#..................#", "#..................#",
+    "#..................#", "#....==========....#", "#..................#", "#..................#",
+    "#..................#", "#..................#", "#..................#", "####################",
+  },
+  pact = {
     "####################", "#..................#", "#..................#", "#..................#",
     "#..................#", "#....==========....#", "#..................#", "#..................#",
     "#..................#", "#..................#", "#..................#", "####################",
@@ -33,8 +51,26 @@ local SPECIAL_ROWS = {
     "#..................#", "#..................#", "#..====......====..#", "#..................#",
     "#..................#", "#..................#", "#..................#", "####################",
   },
+  trap = {
+    "####################", "#..................#", "#..................#", "#..................#",
+    "#..................#", "#..................#", "#..====......====..#", "#..................#",
+    "#..................#", "#..................#", "#..................#", "####################",
+  },
+  obstacle = {
+    "####################", "#...............####", "#..................#", "#.............==...#",
+    "#..................#", "#..........==......#", "#..................#", "#......==..........#",
+    "#..................#", "#...###............#", "#..................#", "####################",
+  },
 }
-local SPECIAL_ENEMIES = { miniboss = { { tx = 10, ty = 11 }, { tx = 14, ty = 11 } } }
+local SPECIAL_ENEMIES = {
+  miniboss = { { tx = 10, ty = 11 }, { tx = 14, ty = 11 } },
+  trap = { { tx = 4, ty = 11 }, { tx = 8, ty = 11 }, { tx = 12, ty = 11 }, { tx = 16, ty = 11 } },
+}
+
+-- The right obstacle room is the left one mirrored: its door is on the right and its goal on
+-- the left, always across from the door.
+local OBSTACLE_RIGHT_ROWS = {}
+for i, row in ipairs(SPECIAL_ROWS.obstacle) do OBSTACLE_RIGHT_ROWS[i] = row:reverse() end
 
 local function lr(...)
   local out = {}
@@ -224,29 +260,37 @@ function M.templates()
       rows = VERTICAL_ROWS },
   }
   -- The special rooms (procgen.roomtypes): one cell, one door, so each is a dead end
+  local SPECIAL_KINDS = { "treasure", "shop", "miniboss", "super_treasure", "casino", "pact",
+    "trap", "obstacle" }
   local VERTICAL_ENEMIES = { { tx = 4, ty = 11 }, { tx = 16, ty = 11 } }
-  for _, kind in ipairs({ "treasure", "shop", "miniboss" }) do
+  for _, kind in ipairs(SPECIAL_KINDS) do
     for _, side in ipairs({ "left", "right" }) do
+      local rows = kind == "obstacle" and side == "right" and OBSTACLE_RIGHT_ROWS or SPECIAL_ROWS[kind]
       list[#list + 1] = { id = kind .. "_" .. side:sub(1, 1), type = kind, exits = lr({ side }),
-        enemies = SPECIAL_ENEMIES[kind], rows = SPECIAL_ROWS[kind],
+        enemies = SPECIAL_ENEMIES[kind], rows = rows,
         machine = kind == "shop" and { tx = 10, ty = 11, kind = "healer" } or nil }
     end
-    local enemies = kind == "miniboss" and VERTICAL_ENEMIES or nil
+    local enemies = kind == "miniboss" and VERTICAL_ENEMIES or SPECIAL_ENEMIES[kind]
+    local rows = VERTICAL_ROWS
     list[#list + 1] = { id = kind .. "_u", type = kind, exits = { { side = "up" } },
-      enemies = enemies, rows = VERTICAL_ROWS,
+      enemies = enemies, rows = rows,
       machine = kind == "shop" and { tx = 10, ty = 11, kind = "healer" } or nil }
     list[#list + 1] = { id = kind .. "_d", type = kind,
-      exits = { { side = "down", tx = 7, ty = 11 } }, enemies = enemies, rows = VERTICAL_ROWS,
+      exits = { { side = "down", tx = 7, ty = 11 } }, enemies = enemies, rows = rows,
       machine = kind == "shop" and { tx = 10, ty = 11, kind = "healer" } or nil }
   end
   return list
 end
 
 -- The special room types of a run: the base's Isaac-like set (a treasure room and a shop per
--- floor, a miniboss from floor 2 more likely the deeper the run goes). A new type is one more
--- define here and its templates above.
+-- floor, a miniboss from floor 2 more likely the deeper the run goes), plus the new types and
+-- their spawn rules from rooms_spawn.lua, in their definition order.
 function M.types()
-  return procgen.roomtypes.defaults()
+  local types = procgen.roomtypes.defaults()
+  for _, entry in ipairs(rooms_spawn.defs) do
+    types:define(entry.name, entry.def)
+  end
+  return types
 end
 
 return M

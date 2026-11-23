@@ -78,7 +78,88 @@ check(B.enemy_stats(B.list[6], true).max_health > B.enemy_stats(B.list[1], true)
 for _, t in ipairs(data.templates()) do
   local rows = t.rows
   check(#rows == (t.h or 1) * data.cell_h and #rows[1] == (t.w or 1) * data.cell_w, t.id .. ": rows fit its cells")
+  -- a special room's bottom row is its border: no holes to fall through (a down door is opened
+  -- by the play state, not drawn in the rows)
+  if t.type ~= "normal" and t.type ~= "start" and t.type ~= "boss" then
+    check(not rows[#rows]:find(".", 1, true), t.id .. ": the bottom border has no holes")
+  end
 end
+
+-- 2b. The new special types: four one-door templates each, and their spawn rules in the run
+local S = require("rooms_spawn")
+local by_id = {}
+for _, t in ipairs(data.templates()) do by_id[t.id] = t end
+for _, kind in ipairs({ "super_treasure", "casino", "pact", "trap", "obstacle" }) do
+  for _, suffix in ipairs({ "_l", "_r", "_u", "_d" }) do
+    local t = by_id[kind .. suffix]
+    check(t and t.type == kind, kind .. suffix .. ": a template of its type")
+    check(t and #t.exits == 1, kind .. suffix .. ": one exit, a dead end")
+    if kind == "trap" then
+      check(t and #(t.enemies or {}) == 4, kind .. suffix .. ": four enemies")
+    elseif kind == "obstacle" then
+      check(t and not t.enemies, kind .. suffix .. ": no enemies")
+    end
+  end
+end
+-- Forced spawn states: a casino almost always comes and never with a shop; a skipped treasure
+-- brings a super treasure instead of a treasure; traps stay at two at most; floor 1 has no casino.
+local SEEDS = 50
+local casino_state = S.new_state()
+casino_state.casino = 0.95
+local casino_seen, casino_with_shop = 0, false
+for seed = 1, SEEDS do
+  local streams = Rng.streams(seed)
+  for n = 1, 9 do
+    local m, why = plan:generate(n, streams:get("floor" .. n), nil, { spawn = casino_state, luck = 5 })
+    check(m, "casino: seed " .. seed .. " floor " .. n .. ": " .. tostring(why))
+    local has_casino, has_shop = false, false
+    for _, r in ipairs(m.rooms) do
+      if r.type == "casino" then has_casino = true end
+      if r.type == "shop" then has_shop = true end
+    end
+    if has_casino then casino_seen = casino_seen + 1 end
+    if has_casino and has_shop then casino_with_shop = true end
+  end
+end
+check(casino_seen > SEEDS * 9 / 2, "a 0.95 casino chance brings a casino to most floors (" .. casino_seen .. ")")
+check(not casino_with_shop, "a casino never shares a floor with a shop")
+local skip_state = S.new_state()
+skip_state.treasure_skipped = true
+local super_seen, super_with_treasure = 0, false
+for seed = 1, SEEDS do
+  local streams = Rng.streams(seed)
+  for n = 1, 9 do
+    local m, why = plan:generate(n, streams:get("floor" .. n), nil, { spawn = skip_state, luck = 5 })
+    check(m, "super treasure: seed " .. seed .. " floor " .. n .. ": " .. tostring(why))
+    local has_super, has_treasure = false, false
+    for _, r in ipairs(m.rooms) do
+      if r.type == "super_treasure" then has_super = true end
+      if r.type == "treasure" then has_treasure = true end
+    end
+    if has_super then super_seen = super_seen + 1 end
+    if has_super and has_treasure then super_with_treasure = true end
+  end
+end
+check(super_seen > 0, "a skipped treasure brings a super treasure sometimes (" .. super_seen .. ")")
+check(not super_with_treasure, "a super treasure never shares a floor with a treasure")
+local default_state = S.new_state()
+local floor1_casino, trap_max = false, 0
+for seed = 1, SEEDS do
+  local streams = Rng.streams(seed)
+  for n = 1, 9 do
+    local m, why = plan:generate(n, streams:get("floor" .. n), nil, { spawn = default_state, luck = 5 })
+    check(m, "default spawn: seed " .. seed .. " floor " .. n .. ": " .. tostring(why))
+    local traps = 0
+    for _, r in ipairs(m.rooms) do
+      if r.type == "trap" then traps = traps + 1 end
+      if n == 1 and r.type == "casino" then floor1_casino = true end
+    end
+    if traps > trap_max then trap_max = traps end
+    check(traps <= 2, "seed " .. seed .. " floor " .. n .. ": at most two traps (" .. traps .. ")")
+  end
+end
+check(not floor1_casino, "a new run's floor 1 has no casino")
+check(trap_max <= 2, "no floor has more than two traps (" .. trap_max .. ")")
 
 -- 3. On the console's boot, without a GPU
 local p = assert(io.popen("luajit -joff tests/pc/boot_pc.lua examples/rooms 2>&1"))
@@ -515,6 +596,28 @@ if pit_room then
   end
 end
 
+-- the spawn state updates from the floor that ends: a shop left unentered raises the casino
+-- chance, and damage resets the obstacle chance
+play.restart(play)
+play.spawn.casino = 0
+local skipped_shop = find("shop")
+check(skipped_shop, "a floor has a shop to leave unentered")
+play.new_floor(play, 2)
+check(math.abs(play.spawn.casino - 0.05) < 1e-9,
+  "a shop left unentered raises the casino chance (" .. play.spawn.casino .. ")")
+play.spawn.obstacle = 0.80
+play:load_room(play.nav:enter(play.map.start))
+frames(1)
+play.last_health = play.fight.player.health
+play.fight.player.health = play.last_health - 1
+love.update(1 / 60)
+check(play.floor_damaged, "losing health marks the floor damaged")
+play.new_floor(play, 3)
+check(math.abs(play.spawn.obstacle - 0.05) < 1e-9,
+  "damage resets the obstacle chance (" .. play.spawn.obstacle .. ")")
+check(play.floor_damaged == false, "the next floor starts undamaged")
+play:load_room(play.nav:enter(play.map.start))
+
 -- the pause menu: Escape pauses (the play state stops updating) and Resume pops it
 local pause = require("rooms_pause")
 check(engine.states:get("pause") == pause, "the pause state is registered")
@@ -587,8 +690,14 @@ check(engine.states:top() == play, "and the menu is back on Resume")
 tap("escape"); tap("down"); tap("down"); tap("return"); tap("left"); tap("return")
 check(F.quit == true, "Yes on Quit game leaves the game")
 
--- the room is drawn
+-- the room is drawn, the minimap through rooms_minimap
+local minimap_mod = require("rooms_minimap")
+local minimap_draw = minimap_mod.draw
+local minimap_calls = 0
+minimap_mod.draw = function(...) minimap_calls = minimap_calls + 1; return minimap_draw(...) end
 F.reset_calls(); love.draw()
+minimap_mod.draw = minimap_draw
+check(minimap_calls == 1, "the minimap is drawn through rooms_minimap")
 check(#F.find("rectangle") >= 5 and play.pixels.count > 150, "the room, the slime and the minimap are drawn")
 
 print(string.format("OK: %d checks; the rooms example boots and walks its map", checks))
