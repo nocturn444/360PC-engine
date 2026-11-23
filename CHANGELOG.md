@@ -9,6 +9,14 @@ All notable changes to 360PC-Engine. The format follows
 ## [Unreleased]
 
 ### Added
+- `examples/rooms`: the HUD shows the FPS and the build version (`rooms_version.lua` plus the
+  engine version) in the bottom left corner.
+
+### Changed
+- `examples/rooms`: the biomes are Blob's standard path, fixed on every run: forest (floors 1-2),
+  deep jungle (3-4), grotto (5), fungal cave (6-7), catacombs (8), labs (9), catastrophe (10),
+  with their own names and colours (enemy numbers are still placeholders).
+
 - `engine/modules/props`: modular room props. A registry of prop types (category, size and
   resize limits, `solid` / `one_way` collision, free flags, ordered per-instance fields with
   defaults and limits, editor label / glyph / colour, `init` / `update` / `hit` / `draw` hooks)

@@ -4,7 +4,7 @@
 --
 --   local content = require("rooms_content")
 --   local pools = content.new_pools()
---   local ctx = { source = "treasure", floor = 1, biome = "cellar",
+--   local ctx = { source = "treasure", floor = 1, biome = "forest",
 --     build = { tags = { jump = true }, stacks = {}, stats = {}, luck = 5 } }
 --   local entry = content.drop(pools.mutations, rng, ctx, content.chances.mob)
 --   if entry then content.take(pools.mutations, entry) end

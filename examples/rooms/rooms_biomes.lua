@@ -1,43 +1,46 @@
--- The biomes of a run (procgen.biomes): the cellar always opens the run and the core always
--- ends it; in between the caves, the garden and the forge come at random (the forge only from
--- floor 5), and the ruins only when the slime has fought its way there (12 kills or more).
--- Each biome lasts 1 to 3 floors and carries the game's own data:
+-- The biomes of a run (procgen.biomes), Blob's standard path, the same every run: floors 1-2
+-- forest, 3-4 deep jungle, 5 grotto, 6-7 fungal cave, 8 catacombs, 9 labs, 10 catastrophe.
+-- Each biome is fixed to its floor and carries the game's own data:
 --   difficulty  1..5: copied to map.difficulty; the enemies' health and bite grow with it
 --   mobs        the enemies of the biome: health, damage and colour (boss: the boss and minibosses)
 --   colors      walls and ledges
 --   music       the track engine.audio plays on its floors (audio:music(biome.music, { fade = 1 }))
 --   rooms_add   rooms more (or fewer) than the plan gives the floor
 -- Mutations of a biome are entries of rooms_mutations.lua with `biomes = { id }`.
+-- Only the names and colours are Blob's for now; the enemy numbers are the old placeholders.
 local procgen = require("engine.modules.procgen")
 
 local M = {}
 
 M.list = {
-  { id = "cellar", name = "CELLAR", fixed = "first", span = 2, difficulty = 1, music = "music/cellar",
-    mobs = { id = "cellar_mob", health = 2, damage = 1, color = { 0.85, 0.55, 0.25 } },
-    boss = { id = "cellar_boss", health = 6, damage = 2, color = { 0.85, 0.30, 0.55 } },
-    colors = { wall = { 0.20, 0.22, 0.30 }, ledge = { 0.45, 0.48, 0.58 } } },
-  { id = "caves", name = "CAVES", span = { 1, 3 }, weight = 3, difficulty = 2, music = "music/caves", rooms_add = 1,
-    mobs = { id = "caves_mob", health = 2, damage = 1, color = { 0.55, 0.70, 0.90 } },
-    boss = { id = "caves_boss", health = 7, damage = 2, color = { 0.35, 0.45, 0.95 } },
-    colors = { wall = { 0.16, 0.20, 0.26 }, ledge = { 0.40, 0.55, 0.65 } } },
-  { id = "garden", name = "GARDEN", span = 2, weight = 2, difficulty = 2, music = "music/garden",
-    mobs = { id = "garden_mob", health = 3, damage = 1, color = { 0.50, 0.80, 0.35 } },
-    boss = { id = "garden_boss", health = 8, damage = 2, color = { 0.30, 0.65, 0.25 } },
-    colors = { wall = { 0.16, 0.26, 0.18 }, ledge = { 0.45, 0.65, 0.40 } } },
-  { id = "forge", name = "FORGE", span = { 1, 2 }, weight = 2, min_floor = 5, difficulty = 3, music = "music/forge",
-    mobs = { id = "forge_mob", health = 3, damage = 2, color = { 0.95, 0.45, 0.20 } },
-    boss = { id = "forge_boss", health = 9, damage = 3, color = { 0.90, 0.25, 0.15 } },
-    colors = { wall = { 0.30, 0.18, 0.14 }, ledge = { 0.75, 0.45, 0.25 } } },
-  { id = "ruins", name = "RUINS", span = 1, weight = 4, difficulty = 3, music = "music/ruins",
-    when = function(run) return run and (run.kills or 0) >= 12 end,
-    mobs = { id = "ruins_mob", health = 3, damage = 1, color = { 0.80, 0.75, 0.55 } },
-    boss = { id = "ruins_boss", health = 9, damage = 2, color = { 0.70, 0.60, 0.30 } },
-    colors = { wall = { 0.28, 0.26, 0.22 }, ledge = { 0.62, 0.58, 0.45 } } },
-  { id = "core", name = "CORE", fixed = "last", span = 1, difficulty = 5, music = "music/core", rooms_add = -2,
-    mobs = { id = "core_mob", health = 4, damage = 2, color = { 0.85, 0.35, 0.85 } },
-    boss = { id = "core_boss", health = 14, damage = 3, color = { 1.00, 0.30, 0.60 } },
-    colors = { wall = { 0.22, 0.12, 0.26 }, ledge = { 0.60, 0.35, 0.70 } } },
+  { id = "forest", name = "FOREST", fixed = "first", span = 2, difficulty = 1, music = "music/forest",
+    mobs = { id = "forest_mob", health = 2, damage = 1, color = { 0.80, 0.62, 0.30 } },
+    boss = { id = "forest_boss", health = 6, damage = 2, color = { 0.65, 0.40, 0.20 } },
+    colors = { wall = { 0.14, 0.24, 0.14 }, ledge = { 0.50, 0.38, 0.22 } } },
+  { id = "deep_jungle", name = "DEEP JUNGLE", fixed = 3, span = 2, difficulty = 2, music = "music/deep_jungle", rooms_add = 1,
+    mobs = { id = "deep_jungle_mob", health = 2, damage = 1, color = { 0.95, 0.75, 0.20 } },
+    boss = { id = "deep_jungle_boss", health = 7, damage = 2, color = { 0.90, 0.35, 0.30 } },
+    colors = { wall = { 0.06, 0.18, 0.12 }, ledge = { 0.30, 0.62, 0.32 } } },
+  { id = "grotto", name = "GROTTO", fixed = 5, span = 1, difficulty = 2, music = "music/grotto",
+    mobs = { id = "grotto_mob", health = 3, damage = 1, color = { 0.55, 0.75, 0.90 } },
+    boss = { id = "grotto_boss", health = 8, damage = 2, color = { 0.35, 0.50, 0.95 } },
+    colors = { wall = { 0.16, 0.20, 0.26 }, ledge = { 0.42, 0.58, 0.68 } } },
+  { id = "fungal_cave", name = "FUNGAL CAVE", fixed = 6, span = 2, difficulty = 3, music = "music/fungal_cave",
+    mobs = { id = "fungal_cave_mob", health = 3, damage = 2, color = { 0.40, 0.95, 0.85 } },
+    boss = { id = "fungal_cave_boss", health = 9, damage = 3, color = { 0.95, 0.45, 0.80 } },
+    colors = { wall = { 0.20, 0.12, 0.26 }, ledge = { 0.70, 0.40, 0.80 } } },
+  { id = "catacombs", name = "CATACOMBS", fixed = 8, span = 1, difficulty = 3, music = "music/catacombs",
+    mobs = { id = "catacombs_mob", health = 3, damage = 1, color = { 0.88, 0.84, 0.70 } },
+    boss = { id = "catacombs_boss", health = 9, damage = 2, color = { 0.75, 0.70, 0.50 } },
+    colors = { wall = { 0.22, 0.20, 0.17 }, ledge = { 0.66, 0.62, 0.52 } } },
+  { id = "labs", name = "LABS", fixed = 9, span = 1, difficulty = 4, music = "music/labs",
+    mobs = { id = "labs_mob", health = 4, damage = 2, color = { 0.55, 0.95, 0.40 } },
+    boss = { id = "labs_boss", health = 12, damage = 3, color = { 0.30, 0.85, 0.95 } },
+    colors = { wall = { 0.18, 0.21, 0.25 }, ledge = { 0.72, 0.80, 0.86 } } },
+  { id = "catastrophe", name = "CATASTROPHE", fixed = "last", span = 1, difficulty = 5, music = "music/catastrophe", rooms_add = -2,
+    mobs = { id = "catastrophe_mob", health = 4, damage = 2, color = { 1.00, 0.55, 0.20 } },
+    boss = { id = "catastrophe_boss", health = 14, damage = 3, color = { 1.00, 0.25, 0.25 } },
+    colors = { wall = { 0.26, 0.08, 0.08 }, ledge = { 0.85, 0.35, 0.15 } } },
 }
 
 function M.new(floors) return procgen.biomes.new(M.list, { floors = floors or 10 }) end
