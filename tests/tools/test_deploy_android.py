@@ -165,3 +165,13 @@ class StaleBuildCase(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+    def test_test_build_branch_is_reset_not_pulled(self):
+        runner = FakeRunner(branch="main", runs=[{"databaseId": 12, "conclusion": "success"}],
+            artifacts=[artifact(12, branch="test-build")])
+        self.assertEqual(self.run_main("--branch", "test-build", "--no-upload", runner=runner), 0)
+        args = [c.argv for c in runner.calls]
+        self.assertIn(["git", "fetch", "origin", "test-build"], args)
+        self.assertIn(["git", "checkout", "-B", "test-build", "origin/test-build"], args)
+        self.assertFalse(any(a[:2] == ["git", "pull"] for a in args), "never pulls test-build")
+

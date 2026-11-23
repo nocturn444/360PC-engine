@@ -7,7 +7,8 @@
 The .xex is not built here: on a phone or tablet that cannot build it, this script
 
     1. updates the local branch with `git pull --ff-only` (a different --branch is fetched and
-       checked out first; --no-pull skips every git command);
+       checked out first; the fixed test-build branch is fetched and reset to origin instead,
+       because it is force-pushed; --no-pull skips every git command);
     2. finds the newest successful "Console build" run of the branch on GitHub and downloads its
        <identity>-console artifact with the GitHub CLI (`gh`);
     3. extracts it into dist/android/<identity> and uploads it with tools/install_ftp.py in safe
@@ -38,6 +39,9 @@ import deploy  # noqa: E402  (find_config, load_config, console_target, upload_c
 import package  # noqa: E402  (read_config: the game's identity)
 
 WORKFLOW = "Console build"
+# Fixed branch that always holds the latest console test build. It is reset or force-pushed
+# whenever a new test build is handed over, so it is synced with a reset, never a pull.
+TEST_BRANCH = "test-build"
 
 
 def _default_runner(argv, cwd=None, env=None):
@@ -77,6 +81,11 @@ def update_repo(runner, branch, pull, log):
     dirty = _git(runner, "status", "--porcelain", "--untracked-files=no")
     if dirty:
         raise deploy.DeployError("the repository has uncommitted changes; commit or stash them, or pass --no-pull")
+    if branch == TEST_BRANCH:
+        log("syncing %s with origin (it may have been force-pushed)" % branch)
+        _git(runner, "fetch", "origin", branch)
+        _git(runner, "checkout", "-B", branch, "origin/" + branch)
+        return
     if branch != current_branch(runner):
         log("checking out %s" % branch)
         _git(runner, "fetch", "origin", branch)
