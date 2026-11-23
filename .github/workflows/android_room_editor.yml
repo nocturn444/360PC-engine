@@ -54,3 +54,54 @@ jobs:
           path: android/room_editor/app/build/outputs/apk/release/*.apk
           if-no-files-found: error
           retention-days: 30
+
+  # Installs the APK on an Android emulator, opens it and keeps the log and a screenshot, so a
+  # crash on launch shows up here instead of on the owner's phone.
+  launch:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        api-level: [29, 34]
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: room-editor-apk
+          path: apk
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Open the app on an emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api-level }}
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          script: |
+            adb install -r apk/*.apk
+            adb logcat -c
+            adb shell am start -W -n dev.pc360.roomeditor/.MainActivity
+            sleep 20
+            adb logcat -d > logcat.txt || true
+            adb exec-out screencap -p > screen.png || true
+            grep -E "AndroidRuntime|FATAL|dev.pc360|chromium|Console" logcat.txt | tail -200 || true
+            adb shell pidof dev.pc360.roomeditor
+            ! grep -q "FATAL EXCEPTION" logcat.txt
+
+      - name: Keep the log and screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: room-editor-launch-api${{ matrix.api-level }}
+          path: |
+            logcat.txt
+            screen.png
+          if-no-files-found: ignore
+          retention-days: 14
