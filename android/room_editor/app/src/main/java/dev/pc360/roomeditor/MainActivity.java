@@ -37,7 +37,6 @@ public class MainActivity extends Activity {
         super.onCreate(savedInstanceState);
 
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-        applyImmersive();
 
         webView = new WebView(this);
         webView.setBackgroundColor(0xFF000000);
@@ -82,6 +81,9 @@ public class MainActivity extends Activity {
         webView.addJavascriptInterface(bridge, "Android");
 
         setContentView(webView);
+        // Must run after setContentView: before it the window has no DecorView and
+        // getInsetsController() throws a NullPointerException on Android 11+.
+        applyImmersive();
         webView.loadUrl(START_URL);
 
         if (Build.VERSION.SDK_INT >= 33) {
