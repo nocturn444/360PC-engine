@@ -14,7 +14,8 @@ A mutation's `look` fragment can set:
 
 | Field | Meaning |
 |---|---|
-| `body_color`, `outline_color`, `eye_color`, `pupil_color`, `limb_color` | RGB colours; the palette uses indices 1 body, 2 outline, 3 eye, 4 pupil, 5 limb |
+| `body_color`, `outline_color`, `eye_color`, `pupil_color` | RGB colours; the palette uses indices 1 body, 2 outline, 3 eye, 4 pupil, 5 default limb |
+| `limb_color` | RGB: this fragment's own limb colour, in its own palette slot (6, 7, ...), used only by this fragment's limbs whose `color` is 5 or unset; a number: the default limb palette index |
 | `eye_count` | how many eyes to draw |
 | `shape = { sx, sy }` | draw-only scale of the outline (stretchy, flat, tall); does not change the hitbox |
 | `limbs` | array of `{ anchor = 0..1, side = -1/1, length, width, color, kind }` |
@@ -41,7 +42,8 @@ changes the drawing and never the hitbox. The current examples are:
 In `rooms_play.lua`:
 
 1. `looks.palette(self.look, self.pixels)` copies the colours into the existing palette entries
-   when the look changes (not every frame). The palette has five entries.
+   when the look changes (not every frame). The palette has five base entries plus one per
+   mutation limb colour (created there, on acquisition).
 2. Each frame: `slime:outline(self.points, ...)`, `looks.shape(self.points, self.look)`,
    `px:polygon(points, 1)`, `px:outline(2)`, `looks.draw_limbs(px, self.look, points)`.
 3. Eyes use `look.eye_count` and the eye/pupil colours from the palette.
