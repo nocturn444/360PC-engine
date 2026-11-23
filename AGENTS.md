@@ -142,9 +142,9 @@ the console will generate different levels.
 - The owner's PC is currently unavailable, so **the console build runs on GitHub Actions**:
   `.github/workflows/console.yml` + `tools/ci/build_console.sh`
   ([docs/CLOUD_BUILD.md](docs/CLOUD_BUILD.md)). Manual run: Actions, "Console build", "Run
-  workflow", pick branch and game folder (default `examples/rooms`). Pushes to `main` build
-  `examples/rooms`. First run on a branch without cache takes about an hour (toolchain), later
-  runs a few minutes. The repo is private: runs cost Actions minutes, do not trigger them
+  workflow", pick branch and game folder (default `examples/rooms`). Pushes to `main` and
+  `test-build` build `examples/rooms`. First run on a branch without cache takes about an hour
+  (toolchain), later runs a few minutes. The repo is private: runs cost Actions minutes, do not trigger them
   needlessly.
 - The result is the artifact `<identity>-console` (zip of the game folder with
   `default.xex`). The owner downloads it on his phone, unzips it and uploads it with an FTP app
@@ -153,6 +153,17 @@ the console will generate different levels.
   uploads it. Aurora's FTP can mix consecutive transfers, so `tools/install_ftp.py` uses one
   connection per file and checks sizes by default (`--fast` for one connection). The cloud
   cannot reach the console's FTP.
+- **Fixed test branch `test-build`.** It always holds the latest version the owner should test
+  on the console, so his phone command never changes. Pushes to it run the console build. Every
+  thread that hands the owner a new test build must point `test-build` at that commit (for
+  example `git push --force origin <your-branch>:test-build`), wait for the "Console build" run
+  on `test-build` to go green, and tell him to run, from Termux:
+  `git fetch origin && git checkout -B test-build origin/test-build && python3 tools/deploy_android.py examples/rooms`.
+  Never commit work directly on `test-build`: it is overwritten. Since it is force-pushed,
+  `git pull` breaks on it; `deploy_android.py` resets it to `origin/test-build` instead. The
+  branch must keep the `console.yml` that lists `test-build` under `push` (on main since this
+  change), or pushes to it build nothing. Bump `examples/rooms/rooms_version.lua` per build. A push whose
+  changes are only Markdown or `docs/` starts no build: run the workflow by hand on `test-build`.
 - The console log is `default.log` in the game folder; ask the owner for it when debugging.
 - Local alternatives (when a PC is available): [BUILDING.md](BUILDING.md),
   [docs/DEPLOY.md](docs/DEPLOY.md) (`tools/deploy.py`), `deploy_console.bat`.
