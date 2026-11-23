@@ -19,7 +19,10 @@ The header of the script lists the packages it needs. `CI_CACHE` (default
 
 - **Manual run:** Actions tab, "Console build", "Run workflow": pick the branch, the game
   folder (default `examples/rooms`) and whether it is a release build.
-- **On push:** pushes to `main` build `examples/rooms`. Changes to Markdown and `docs/` alone do not start a build.
+- **On push:** pushes to `main` and to `test-build` build `examples/rooms`. `test-build` is the
+  fixed branch that always holds the latest console test build (see AGENTS.md, section 6); it is
+  force-pushed, so sync it with `git fetch origin && git checkout -B test-build origin/test-build`,
+  not `git pull`. Changes to Markdown and `docs/` alone do not start a build.
 
 The result is an artifact named `<identity>-console` on the run's page (kept 30 days): a zip
 of the folder that goes to `Hdd1:/Games/<identity>/` on the console, `default.xex` included.
@@ -42,7 +45,8 @@ install the artifact, safest first:
    it, and upload the folder with any FTP app to `Hdd1:/Games/<identity>/` (Aurora's FTP
    user and password, usually `xboxftp` / `xboxftp`).
 2. **Android/Termux, or a device that stays on at home** (Raspberry Pi, old laptop): run
-   `python3 tools/deploy_android.py <game> [--branch NAME]`. It pulls the branch, downloads the
+   `python3 tools/deploy_android.py <game> [--branch NAME]`. It pulls the branch (`test-build` is reset to
+   `origin/test-build` instead, since it is force-pushed), downloads the
    newest successful artifact of that branch with the GitHub CLI (`gh auth login`) and uploads
    it with `tools/install_ftp.py` in safe mode (one connection per file, size checked), using
    `deploy.local.ini`; only the changed files are uploaded. `--no-upload` downloads it only.
