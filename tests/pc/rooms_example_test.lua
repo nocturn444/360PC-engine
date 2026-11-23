@@ -51,30 +51,25 @@ for seed = 1, 20 do
   end
   check(sizes[10] > sizes[1] + 8, "seed " .. seed .. ": the last floor is much bigger (" .. table.concat(sizes, ",") .. ")")
 end
--- the biomes of 200 runs: the cellar first (2 floors), the core last, spans of 1 to 3 floors,
--- the forge never before floor 5, the ruins only after 12 kills; every floor generates
+-- the biomes of 200 runs: Blob's fixed path (forest 1-2, deep jungle 3-4, grotto 5,
+-- fungal cave 6-7, catacombs 8, labs 9, catastrophe 10) on every seed; every floor generates
 local B = require("rooms_biomes")
 local set = require("rooms_play").biomes
-local seen = {}
+local expected = { "forest", "forest", "deep_jungle", "deep_jungle", "grotto",
+  "fungal_cave", "fungal_cave", "catacombs", "labs", "catastrophe" }
 for seed = 1, 200 do
   local path, streams = set:path(), Rng.streams(seed)
   local kills = (seed % 2 == 0) and 20 or 0
   for n = 1, 10 do
     local b = path:enter(n, { kills = kills }, streams:get("biomes"))
-    seen[b.id] = true
-    if n <= 2 then check(b.id == "cellar", "seed " .. seed .. ": the run opens in the cellar") end
-    if n == 10 then check(b.id == "core", "seed " .. seed .. ": the run ends in the core") end
-    if b.id == "forge" then check(path.current.first >= 5, "the forge starts on floor 5 or later") end
-    if b.id == "ruins" then check(kills >= 12, "the ruins need 12 kills") end
-    check(path.current.last - path.current.first <= 2, "a biome lasts 1 to 3 floors")
+    check(b.id == expected[n], "seed " .. seed .. " floor " .. n .. ": " .. expected[n] .. " (got " .. b.id .. ")")
     if seed <= 20 then
       local m, why = plan:generate(n, streams:get("floor" .. n), b)
       check(m and m.biome == b.id and m.difficulty == b.difficulty, "seed " .. seed .. " floor " .. n .. " in " .. b.id .. ": " .. tostring(why))
     end
   end
 end
-for _, id in ipairs({ "cellar", "caves", "garden", "forge", "ruins", "core" }) do check(seen[id], "biome " .. id .. " comes up") end
-check(B.enemy_stats(B.list[6], true).max_health > B.enemy_stats(B.list[1], true).max_health, "the core's boss is stronger")
+check(B.enemy_stats(B.list[#B.list], true).max_health > B.enemy_stats(B.list[1], true).max_health, "the catastrophe's boss is stronger")
 for _, t in ipairs(data.templates()) do
   local rows = t.rows
   check(#rows == (t.h or 1) * data.cell_h and #rows[1] == (t.w or 1) * data.cell_w, t.id .. ": rows fit its cells")
@@ -344,7 +339,7 @@ check(play.fight.player.health == play.fight.player.stats:get("max_health"), "wi
 
 -- the floor is in its biome, the enemies are the biome's
 check(play.biome and play.map.biome == play.biome.id and play.music == play.biome.music, "the floor has its biome and music")
-check(play.floor > 2 or play.biome.id == "cellar", "floors 1 and 2 are in the cellar")
+check(play.floor > 2 or play.biome.id == "forest", "floors 1 and 2 are in the forest")
 -- the treasure room: one mutation on the pedestal, the slime's for the run
 local function find(kind)
   for i, r in ipairs(play.map.rooms) do if r.type == kind then return i end end
@@ -400,19 +395,19 @@ frames(40)
 check(play.floor == floor0 + 1 and play.nav.index == play.map.start, "down the stairs: floor " .. play.floor .. ", at its start")
 check(#play.map.rooms >= rooms0 and play.map.floor == play.floor, "the next floor is generated (" .. #play.map.rooms .. " rooms)")
 check(play.pools.mutations:taken_count(item.id) == 1, "the mutation stays for the run")
--- the biomes change along the run: by floor 10, the core
+-- the biomes change along the run: by floor 10, the catastrophe
 local ids = { play.biome.id }
 while play.floor < 10 do
   play.new_floor(play, play.floor + 1)
   ids[#ids + 1] = play.biome.id
 end
 play:load_room(play.nav:enter(play.map.start))
-check(play.biome.id == "core" and #play.map.rooms > 0, "the last floor is the core (" .. table.concat(ids, ",") .. ")")
+check(play.biome.id == "catastrophe" and #play.map.rooms > 0, "the last floor is the catastrophe (" .. table.concat(ids, ",") .. ")")
 play.new_floor(play, 1)
-check(play.biome.id == "cellar" and play.got == nil and play.stats:get("jump") == 1
+check(play.biome.id == "forest" and play.got == nil and play.stats:get("jump") == 1
   and play.stats:get("speed") == 1 and play.stats:get("shield") == 0
   and play.wallet:get("virus") == 0 and #play.mutations == 0
-  and play.pools.mutations:taken_count(item.id) == 0, "a new run: the cellar again, nothing taken")
+  and play.pools.mutations:taken_count(item.id) == 0, "a new run: the forest again, nothing taken")
 play:load_room(play.nav:enter(play.map.start))
 map, nav = play.map, play.nav
 

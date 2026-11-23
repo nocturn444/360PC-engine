@@ -17,6 +17,7 @@ local pixelgrid = require("engine.pixelgrid")
 local data = require("rooms_data")
 local enemies = require("rooms_enemies")
 local biomes = require("rooms_biomes")
+local VERSION = "V" .. require("rooms_version") .. " E" .. engine._VERSION
 local stats_mod = require("rooms_stats")
 local content = require("rooms_content")
 local pickups = require("rooms_pickups")
@@ -816,6 +817,11 @@ function play:draw(alpha)
     engine.text.draw(self.message, (W - engine.text.width(self.message)) / 2, H - 22)
   end
   draw_minimap(self)
+  -- FPS and build version, bottom left (the FPS text is rebuilt only when the number changes)
+  local fps = love.timer.getFPS()
+  if fps ~= self.fps_shown then self.fps_shown, self.fps_text = fps, "FPS " .. fps end
+  engine.text.draw(self.fps_text, 4, H - 13)
+  engine.text.draw(VERSION, 4, H - 7)
   local cover = self.fade:cover(alpha)
   if cover > 0 then
     g.setColor(0, 0, 0, cover)

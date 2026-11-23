@@ -15,11 +15,10 @@ by room with `engine/modules/rooms`, by the soft-body slime of [examples/slime](
   damage makes the obstacle likelier, a trap resets its chance, and a missed treasure opens the
   super treasure. Their contents (stock, pedestals, casino, larvae, rewards) are not wired yet:
   for now they are only layouts.
-- The floors go through biomes (`rooms_biomes.lua`, `procgen.biomes`). The cellar is always
-  floors 1 and 2 and the core is always floor 10. In between come the caves (1 to 3 floors), the
-  garden (2), the forge (1 or 2, from floor 5), and the ruins (1), which only open once the slime
-  has 12 kills. Each biome has a difficulty, its own enemies (health, bite, colour), wall
-  colours, a music track name and a few rooms more or fewer. The HUD shows its name. Each biome's
+- The floors go through biomes (`rooms_biomes.lua`, `procgen.biomes`), always in the same
+  order: forest (floors 1-2), deep jungle (3-4), grotto (5), fungal cave (6-7), catacombs (8),
+  labs (9) and catastrophe (10). Each biome has a difficulty, its own enemies (health, bite, colour), wall
+  colours, a music track name and a few rooms more or fewer. The HUD shows its name, and the bottom left corner shows the FPS and the build version (`rooms_version.lua`). Each biome's
   mob has an id (`rooms_biomes.lua`), so the content pools can vary by mob.
 - A boss or miniboss room shuts its doors while its enemies are alive: the slime has to win the
   fight (or fall) before it can leave. The first clear gives one mutation, and the boss opens a
