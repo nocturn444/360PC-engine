@@ -45,13 +45,14 @@ M.apply(look, {
 same_color(look.body, { 0.1, 0.2, 0.3 }, "fragment body")
 same_color(look.outline, { 0.4, 0.5, 0.6 }, "fragment outline")
 same_color(look.eye, { 0.7, 0.8, 0.9 }, "fragment eye")
-same_color(look.limb_color, { 0.2, 0.9, 0.4 }, "fragment limb colour")
+same_color(look.limb_colors[1], { 0.2, 0.9, 0.4 }, "fragment limb colour gets its own slot")
+same_color(look.limb_color, { 0.75, 0.85, 0.60 }, "the base limb colour is kept")
 check(look.eye_count == 3, "fragment eye count")
 near(look.shape.sx, 1.5, "fragment shape sx"); near(look.shape.sy, 0.75, "fragment shape sy")
 check(#look.limbs == 1, "one limb appended")
 local l = look.limbs[1]
-check(l.anchor == 0.5 and l.side == 1 and l.length == 4 and l.width == 1 and l.color == 5 and l.kind == "spike",
-  "the limb keeps its fields")
+check(l.anchor == 0.5 and l.side == 1 and l.length == 4 and l.width == 1 and l.color == 6 and l.kind == "spike",
+  "the limb keeps its fields, in its fragment's own colour (index 6)")
 
 -- A limb_color as a palette index sets the index, not the colours.
 M.apply(look, { limb_color = 2 })
@@ -112,6 +113,32 @@ same_color(px.palette[2], look.outline, "palette outline")
 same_color(px.palette[3], look.eye, "palette eye")
 same_color(px.palette[4], look.pupil, "palette pupil")
 same_color(px.palette[5], look.limb_color, "palette limb")
+same_color(px.palette[6], look.limb_colors[1], "palette entry 6: the fragment's limb colour")
+
+-- Regression (console, 2026-11-23): the spring heel's light-blue limb colour painted every limb
+-- taken after it (carapace shell, legs), so its "hairs" seemed to multiply on each floor. Each
+-- mutation's limbs keep their own colour now.
+do
+  local byid = {}
+  for _, e in ipairs(require("rooms_content").mutations) do byid[e.id] = e end
+  local heel, shell, legs = byid.example_spring_heel, byid.example_carapace, byid.example_legs
+  local run = M.rebuild({ heel, shell, legs })
+  check(#run.limbs == 2 + 1 + 4, "spring heel, carapace and legs: 7 limbs (" .. #run.limbs .. ")")
+  check(#run.limb_colors == 1, "one own limb colour (the spring heel's)")
+  same_color(run.limb_color, { 0.75, 0.85, 0.60 }, "the default limb colour stays the base one")
+  for i = 1, #run.limbs do
+    local want = i <= 2 and 6 or 5
+    check(run.limbs[i].color == want, "limb " .. i .. " (" .. run.limbs[i].kind .. ") uses palette index " .. want)
+  end
+  local grid = pixelgrid.new(40, 40, { palette = {
+    { 0, 0, 0 }, { 0, 0, 0 }, { 0, 0, 0 }, { 0, 0, 0 }, { 0, 0, 0 },
+  } })
+  M.palette(run, grid)
+  same_color(grid.palette[6], heel.look.limb_color, "the spring heel's colour is in entry 6")
+  same_color(grid.palette[5], { 0.75, 0.85, 0.60 }, "entry 5 is not overwritten")
+  local again = M.rebuild({ heel, heel })
+  check(#again.limb_colors == 1, "a repeated mutation reuses its colour slot")
+end
 
 -- draw_limbs(): draws outside the outline, inside the grid, deterministically.
 local outline = {}
