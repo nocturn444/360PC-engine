@@ -229,6 +229,8 @@ do
     { initial = "x", states = { x = { 5 } } })
   fails("state x: unknown behaviour nope", Brains.build,
     { initial = "x", states = { x = { "nope" } } })
+  fails("state x: next goes to the unknown state nowhere", Brains.build,
+    { initial = "x", states = { x = { "shoot", attack = "a", next = "nowhere" } } })
   fails("a state name must be a string", Brains.build,
     { initial = "x", states = { x = { "idle" }, [1] = { "idle" } } })
 

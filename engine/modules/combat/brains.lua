@@ -184,6 +184,10 @@ function M.build(spec, ctx)
     if type(name) ~= "string" then
       error("combat.brains: a state name must be a string", 2)
     end
+    if type(entry) == "table" and entry.next ~= nil and states[entry.next] == nil then
+      error("combat.brains: state " .. name .. ": next goes to the unknown state "
+        .. tostring(entry.next), 2)
+    end
     local state = make_state(name, entry, ctx)
     local list = transitions and transitions[name]
     if list ~= nil then state.transitions = make_transitions(name, list, ctx) end
