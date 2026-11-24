@@ -70,9 +70,15 @@ T.near(sy2, sy, "still at rest a second later (y)", 0.05)
 run(s, g, 240, function(_, body) body:push(600, 0) end)
 x0, y0, x1, y1 = s:bounds()
 T.check(s:on_wall() and x1 <= 304 and x1 > 300, "a push brings it to the right wall, not through (" .. x1 .. ")")
+T.check(s:wall_side() == 1 and s.wall_right > 0 and s.wall_left == 0,
+  "the wall it touches is on its right")
 run(s, g, 120)
 x0, y0, x1, y1 = s:bounds()
 T.check(x1 <= 304, "it stays out of the wall")
+run(s, g, 300, function(_, body) body:push(-600, 0) end)
+x0, y0, x1, y1 = s:bounds()
+T.check(s:wall_side() == -1 and s.wall_left > 0 and s.wall_right == 0 and x0 >= 16 and x0 < 16.1,
+  "pushed the other way, the wall is on its left")
 
 -- Impulse: a jump from the floor
 local j = softbody.new({ x = 40, y = 80, radius = 8 })

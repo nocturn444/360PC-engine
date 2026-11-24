@@ -9,6 +9,18 @@ All notable changes to 360PC-Engine. The format follows
 ## [Unreleased]
 
 ### Added
+- `engine/modules/abilities`: movement abilities as data for any body through a small adapter
+  (air jump, wall jump, dash and grappling hook), with an extendable kind registry
+  (`abilities.kind`), stacks, `state` / `set_state` for a run save, and a step that allocates
+  nothing. `dash` supports `trigger = "button"` and `trigger = "double_tap"`; a soft body fits
+  directly. README `engine/modules/abilities/README.md`, tests `tests/engine/abilities_test.lua`.
+- `engine/modules/combat`: ranged attacks gain `gap` (parallel shots across the aim line),
+  `burst` (volleys per trigger) and `burst_interval`, keeping the trigger's aim for every volley;
+  `attack:trigger` and `attack:cancel` stop the rest of a running burst. Documented in
+  `engine/modules/combat/README.md`.
+- `engine/modules/softbody`: `Body:wall_side()` (`-1` left, `1` right, `0` none or both), with
+  `wall_left` and `wall_right` contact counts; `on_wall()` is unchanged. Documented in
+  `engine/modules/softbody/README.md`.
 - `examples/rooms`: enemy types as data (`rooms_enemy_types.lua`): walker, hopper, charger,
   shooter, sniper, sprayer, bat and drone, each with its movement kind, size, health / damage
   multipliers, attacks, `combat.brains` spec and placeholder look. `rooms_enemies.lua` builds
