@@ -9,6 +9,11 @@ All notable changes to 360PC-Engine. The format follows
 ## [Unreleased]
 
 ### Added
+- `examples/rooms`: a title menu (`rooms_title.lua`, the first state) with Start Run,
+  Challenges, Progress, Options and an Exit confirmation, and a game over menu
+  (`rooms_gameover.lua`) with Restart Run, Main Menu and a Stats page (floor, kills, time in
+  m:ss and virus). Both are `engine.ui` screens drawn with `engine.text.font(1)`, open on their
+  safe default focus, set `autopause = false` and fit the 320 x 180 screen.
 - `examples/rooms`: biome art from `art/` (`rooms_art.lua`): a fixed sky, two parallax layers,
   autotiled solid walls in one SpriteBatch per room, additive fireflies in each biome's glow
   colour, and a walking sprite for enemies (bosses at 2x). A biome without art keeps the flat
@@ -17,6 +22,9 @@ All notable changes to 360PC-Engine. The format follows
   engine version) in the bottom left corner.
 
 ### Changed
+- `examples/rooms`: dying ends the run: `rooms_play` pushes the game over menu after a fade
+  instead of sending the slime back to the start room, and tracks `run_time` (reset by
+  `play:enter`) for the Stats page. The game now starts on the title menu, not in the play state.
 - `examples/rooms`: the biomes are Blob's standard path, fixed on every run: forest (floors 1-2),
   deep jungle (3-4), grotto (5), fungal cave (6-7), catacombs (8), labs (9), catastrophe (10),
   with their own names and colours (enemy numbers are still placeholders).

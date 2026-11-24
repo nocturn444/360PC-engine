@@ -454,6 +454,8 @@ function play:enter()
   self.points = {}
   self.facing, self.charging = 1, false
   self.dead, self.deaths = false, 0
+  self.game_over_pending = false
+  self.run_time = 0
   local x, y = self.nav:enter(self.map.start)
   play.load_room(self, x, y)
 end
@@ -581,15 +583,21 @@ end
 function play:update(dt)
   self.fade:update(dt)
   if self.fade:busy() then return end            -- the room is frozen while the screen fades
-  if self.dead then                               -- back to the start room, healed, behind a fade
+  if self.game_over_pending then                 -- the death fade is over: the run ends here
+    self.game_over_pending = false
+    engine.states:push("gameover")
+    return
+  end
+  if self.dead then                               -- dying ends the run, behind a fade
     self.dead, self.deaths = false, self.deaths + 1
     self.floor_damaged = true                       -- a death counts as damage for the floor
+    self.game_over_pending = true
     self.fade:start(function()
-      self.fight.player.dead = true                -- so the next room starts at full health
-      play.load_room(self, self.nav:enter(self.map.start))
+      self.fight.player.dead = true                -- the run's slime stays dead under the menu
     end)
     return
   end
+  self.run_time = self.run_time + dt
   control(self, dt)
   vines.update(self, dt, engine.controls, JUMP * self.stats:get("jump"))
   self.slime:step(dt, self.grid)

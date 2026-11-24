@@ -18,7 +18,8 @@ end
 -- 1. Files and config
 for _, name in ipairs({ "game.lua", "conf.lua", "main.lua", "rooms_play.lua", "rooms_data.lua", "rooms_biomes.lua",
   "rooms_art.lua", "rooms_stats.lua", "rooms_content.lua", "rooms_mutations.lua", "rooms_consumables.lua", "rooms_look.lua",
-  "rooms_pickups.lua", "rooms_props.lua", "rooms_machines.lua", "rooms_pause.lua", "README.md" }) do
+  "rooms_pickups.lua", "rooms_props.lua", "rooms_machines.lua", "rooms_pause.lua",
+  "rooms_title.lua", "rooms_gameover.lua", "README.md" }) do
   check(read("examples/rooms/" .. name), "examples/rooms/" .. name .. " exists")
 end
 local Config = dofile("runtime/lua/config.lua")
@@ -169,11 +170,66 @@ local F = require("fake_love")
 F.install({ width = 1280, height = 720 })
 assert(loadfile("examples/rooms/main.lua"))()
 love.load()
+love.update(1 / 60)                          -- a warm frame so the ui_* actions get defined
 local engine = require("engine")
-local play = engine.states:top()
-check(play == require("rooms_play"), "the state is entered")
-local nav, map, slime = play.nav, play.map, play.slime
+local title = require("rooms_title")
+local gameover = require("rooms_gameover")
 local function frames(n) for _ = 1, n do love.update(1 / 60); love.draw() end end
+-- tap() releases the key for a frame so the next press is a new one.
+local function tap(key) F.keys[key] = true; love.update(1 / 60); F.keys[key] = nil; love.update(1 / 60) end
+-- Every menu page must fit the 320 x 180 screen and draw with the built-in pixel font.
+local function menu_fits(state, what)
+  local page = state:page()
+  check(page and page.root.w <= 320 and page.root.h <= 180, what .. " fits the screen")
+  local inside = true
+  for _, w in ipairs(page.widgets) do
+    if w.x < 0 or w.y < 0 or w.x + w.w > 320 or w.y + w.h > 180 then inside = false end
+  end
+  check(inside and #page.widgets >= 1, what .. ": its buttons stay inside the 320 x 180 screen")
+  F.reset_calls(); state:draw(0)
+  check(#F.find("printf") == 0 and #F.find("setFont") == 0,
+    what .. " draws its text with engine.text rectangles, not love.graphics")
+end
+
+-- the title menu: the first state; Start Run enters the play state
+check(engine.states:top() == title, "the game starts on the title menu")
+check(title.autopause == false and gameover.autopause == false,
+  "the title and game over menus never auto-pause")
+local page = title:page()
+check(page and page.focused == page:get("start"), "the title opens on Start Run")
+menu_fits(title, "the title menu")
+tap("down"); tap("return")                        -- Challenges
+page = title:page()
+check(page:get("title").text == "Challenges" and page:get("message").text == "No challenges yet.",
+  "Challenges says there are no challenges yet")
+menu_fits(title, "the Challenges page")
+tap("return")                                     -- Back
+check((title:page()).focused == title:page():get("start"), "Challenges Back returns to the title")
+tap("down"); tap("down"); tap("return")           -- Progress
+page = title:page()
+check(page:get("title").text == "Progress" and page:get("message").text == "Coming soon.",
+  "Progress is a placeholder page")
+menu_fits(title, "the Progress page")
+tap("return")
+check((title:page()).focused == title:page():get("start"), "Progress Back returns to the title")
+tap("down"); tap("down"); tap("down"); tap("return") -- Options
+page = title:page()
+check(page:get("title").text == "Options" and page:get("message").text == "Coming soon.",
+  "Options is a placeholder page")
+menu_fits(title, "the Options page")
+tap("return")
+check((title:page()).focused == title:page():get("start"), "Options Back returns to the title")
+tap("down"); tap("down"); tap("down"); tap("down"); tap("return") -- Exit
+page = title:page()
+check(page:get("no") and page.focused == page:get("no"),
+  "Exit asks before quitting, with No focused")
+menu_fits(title, "the quit confirmation")
+tap("return")                                     -- No
+check((title:page()).focused == title:page():get("start"), "No goes back to the title menu")
+tap("return")                                     -- Start Run
+local play = engine.states:top()
+check(play == require("rooms_play"), "Start Run enters the play state")
+local nav, map, slime = play.nav, play.map, play.slime
 check(nav.index == map.start, "it starts in the start room")
 frames(60)
 check(slime:on_ground(), "the slime lands in the start room")
@@ -330,12 +386,47 @@ check(play.fight:current().name == "explosive", "the attack chosen is kept from 
 fight = play.fight
 p = fight.player
 
--- dying: back to the start room at full health
+-- dying ends the run: after the fade, the game over menu over the frozen room
+local death_room = nav.index
 p.health = 1; p.invuln = 0
 play.dead = true
 frames(30)
-check(nav.index == map.start and play.deaths == 1, "dying sends it back to the start room")
-check(play.fight.player.health == play.fight.player.stats:get("max_health"), "with full health")
+check(engine.states:top() == gameover and play.deaths == 1 and nav.index == death_room,
+  "dying ends the run and opens the game over menu over the same room")
+check(play.fight.player.dead, "the dead run stays frozen under the menu")
+page = gameover:page()
+check(page and page.focused == page:get("restart"), "the game over menu opens on Restart Run")
+menu_fits(gameover, "the game over menu")
+-- Stats: the floor, the kills, the run time in m:ss and the virus of the run that ended
+local stats_floor, stats_kills = play.floor, play.kills
+local stats_time, stats_virus = play.run_time, play.wallet:get("virus")
+tap("down"); tap("down"); tap("return")           -- Stats
+page = gameover:page()
+check(page:get("floor").text == "Floor: " .. stats_floor
+  and page:get("kills").text == "Kills: " .. stats_kills, "the stats page shows the floor and the kills")
+local secs = math.max(0, math.floor(stats_time))
+check(page:get("time").text == string.format("Time: %d:%02d", math.floor(secs / 60), secs % 60),
+  "the stats page shows the run time in m:ss (" .. page:get("time").text .. ")")
+check(page:get("virus").text == "Virus: " .. stats_virus, "the stats page shows the virus collected")
+menu_fits(gameover, "the stats page")
+tap("return")                                     -- Back
+check((gameover:page()).focused == gameover:page():get("restart"), "Stats Back returns to the game over menu")
+-- Main Menu clears the stack: the dead play state is gone and the title is on top
+tap("down"); tap("return")                        -- Main Menu
+check(engine.states:top() == title and engine.states:depth() == 1 and engine.states:get("play") == play,
+  "Main Menu returns to the title with the play state out of the stack")
+check((title:page()).focused == title:page():get("start"), "the title opens on Start Run again")
+menu_fits(title, "the title menu after Main Menu")
+tap("return")                                     -- Start Run, a fresh run at floor 1
+check(engine.states:top() == play and play.floor == 1, "Start Run starts at floor 1 again")
+-- a second death, then Restart Run pops the menu and restarts the play state
+play.fight.player.health = 1; play.fight.player.invuln = 0
+play.dead = true
+frames(30)
+check(engine.states:top() == gameover and play.deaths == 1, "the new run's death opens it again")
+tap("return")                                     -- Restart Run
+check(engine.states:top() == play and play.floor == 1, "Restart Run starts at floor 1")
+map, nav, slime = play.map, play.nav, play.slime
 
 -- the floor is in its biome, the enemies are the biome's
 check(play.biome and play.map.biome == play.biome.id and play.music == play.biome.music, "the floor has its biome and music")
@@ -670,8 +761,7 @@ F.keys["return"] = true; love.update(1 / 60); F.keys["return"] = nil
 check(engine.states:top() == play and play.floor == 1, "Yes restarts the run at floor 1")
 
 -- reopening starts on Resume, not on the last button used; Quit game confirms (No focused),
--- then quits. tap() releases the key for a frame so the next press is a new one.
-local function tap(key) F.keys[key] = true; love.update(1 / 60); F.keys[key] = nil; love.update(1 / 60) end
+-- then quits.
 tap("escape")
 check(engine.states:top() == pause, "Escape pauses again")
 tap("return")

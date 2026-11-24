@@ -114,9 +114,9 @@ and after `5 + 2.5 * capacity` seconds without a hit it refills. The HUD shows `
   room's grid, each run by a patrol / chase / attack state machine (`combat.behaviours`), in one
   combat world with the slime, which combat sees through `softbody.box`. Landing on an enemy
   while falling fast hurts it and bounces the slime off; a bite hurts the slime and knocks it
-  back, and it blinks while it cannot be hurt. At 0 HP it goes back to the start room, healed. A
-  room remembers its enemies: the dead stay dead and a hurt enemy keeps its health when the slime
-  comes back. The state lasts for the floor.
+  back, and it blinks while it cannot be hurt. At 0 HP the run ends: after a fade the game over
+  menu opens over the frozen room (Restart Run, Main Menu, Stats). A room remembers its enemies:
+  the dead stay dead and a hurt enemy keeps its health while the run lasts.
 - An enemy that falls out of the room through a door moves to the room on the other side and
   turns up there the next time it is loaded, keeping its health. Past an edge with no door, or an
   exit that leads nowhere, it dies. Neither counts as a kill or drops anything.
@@ -148,6 +148,17 @@ and after `5 + 2.5 * capacity` seconds without a hit it refills. The HUD shows `
 | Interact (machine) | E, F | B |
 | Pause (Resume, Restart run, Quit game) | Escape, P | Start |
 | Quit | -- | Hold Back 3 s (console) |
+
+## Menus
+
+The game starts on the title menu (`rooms_title.lua`): Start Run, Challenges, Progress, Options
+and Exit, with each sub page opening on its Back button and Exit asking first (No is focused).
+Start Run enters the play state. When the slime dies, `rooms_play` pushes the game over menu
+(`rooms_gameover.lua`) over the frozen room: Restart Run starts again at floor 1, Main Menu clears
+the stack and returns to the title, and Stats shows the run's floor, kills, time in m:ss
+(`play.run_time`) and virus. Both states set `autopause = false`, so losing the controller never
+pushes the pause menu over them. The menus are `engine.ui` screens drawn with
+`engine.text.font(1)` and fit the 320 x 180 screen.
 
 `rooms_pause.lua` is a transparent state over the play state: while it is open the play state does
 not update. Restart run and Quit game ask first (No is focused). If the controller in use is

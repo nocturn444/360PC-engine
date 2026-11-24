@@ -31,7 +31,12 @@ engine.run({
       move_x = { negative = "left", positive = "right", stick = "leftx" },
     },
   },
-  states = { play = require("rooms_play"), pause = require("rooms_pause") },
-  start = "play",
+  states = {
+    title = require("rooms_title"),
+    play = require("rooms_play"),
+    pause = require("rooms_pause"),
+    gameover = require("rooms_gameover"),
+  },
+  start = "title",
   autopause = { state = "pause" },
 })
