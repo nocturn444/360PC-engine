@@ -863,7 +863,8 @@ an error naming the step index and the field when the cutscene is created.
 **Input.** `advance` (default `ui_accept`) finishes the current typing or continues a
 `wait = "button"` step. `skip` (default `ui_back`) must be **held** for 1 second when the script
 is skippable (a short press does nothing); while held, `HOLD TO SKIP` and a filling bar are drawn
-bottom right. Skipping stops every tween and leaves the music as the script last set it.
+bottom right. Skipping stops every tween and leaves the music as the script last set it. An
+`engine.input` without those actions gets the `engine.ui` defaults defined the first time.
 
 ## engine.tune
 

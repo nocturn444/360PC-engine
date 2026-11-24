@@ -250,4 +250,18 @@ collectgarbage("restart")
 love.graphics.rectangle = real_rect
 T.check(grown < 1, "update and draw allocate nothing once the steps are running (" .. grown .. " KB)")
 
+---------------------------------------------------------------------------
+-- The default size comes from engine.screen; a real engine.input gets the ui_* actions
+---------------------------------------------------------------------------
+local saved_screen = engine.screen
+engine.screen = { width = 256, height = 144 }
+cs = cutscene.new({ steps = { { "wait", time = 1 } } })
+T.check(cs.width == 256 and cs.height == 144, "the default size is engine.screen's")
+engine.screen = saved_screen
+local real_input = engine.input.new({})
+cs = cutscene.new({ steps = { { "text", text = "HI", x = 0, y = 0, speed = 0 } } })
+local ok_input = pcall(cs.input, cs, real_input)
+T.check(ok_input and real_input.actions.ui_accept ~= nil and real_input.actions.ui_back ~= nil,
+  "an engine.input without the ui_* actions gets them defined")
+
 T.no_new_globals(globals)

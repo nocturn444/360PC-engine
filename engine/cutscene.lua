@@ -231,9 +231,11 @@ end
 ---------------------------------------------------------------------------
 -- Construction
 ---------------------------------------------------------------------------
+-- The engine table is loaded as "engine" (init.lua): read it from package.loaded rather than
+-- require(prefix .. ".init"), which would run init.lua again as another module with no screen.
 local function screen_size()
-  local ok, engine = pcall(require, prefix .. ".init")
-  local screen = ok and engine and engine.screen
+  local engine = package.loaded[prefix] or package.loaded[prefix .. ".init"]
+  local screen = type(engine) == "table" and engine.screen
   if screen then return screen.width, screen.height end
   return 320, 180
 end
@@ -527,9 +529,22 @@ local function is_down(input, name)
   return f and f(input, name) or false
 end
 
+-- An engine.input without the default ui_* actions (no engine.ui screen has run yet) gets
+-- them defined, as engine.ui does; checked once per Input.
+local function ensure_actions(self, input)
+  if self.checked_input == input then return end
+  self.checked_input = input
+  local actions = input.actions
+  if type(actions) ~= "table" or not input.define then return end
+  if not actions[self.actions.advance] or not actions[self.actions.skip] then
+    require(prefix .. ".ui").defineActions(input)
+  end
+end
+
 -- Once per fixed step: reads the advance action (an edge) and the skip action (held).
 function Cutscene:input(input)
   if self.done then return end
+  ensure_actions(self, input)
   self.advance = input.pressed and input:pressed(self.actions.advance) or false
   self.skip_held = is_down(input, self.actions.skip)
 end
