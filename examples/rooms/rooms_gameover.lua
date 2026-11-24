@@ -3,6 +3,7 @@
 -- shows the run that just ended. autopause = false, so it is never covered by the pause menu.
 local engine = require("engine")
 local ui = engine.ui
+local profile = require("rooms_profile")
 
 local M = { transparent = true, autopause = false }
 
@@ -41,23 +42,42 @@ local function format_time(t)
   return string.format("%d:%02d", math.floor(secs / 60), secs % 60)
 end
 
+-- What this run saw for the first time, as list rows ("ENEMY FOREST MOB"...). Built when the
+-- page opens; "Nothing new" when the run found nothing.
+local function new_this_run(play)
+  local lines = {}
+  local found = play and play.new_discoveries
+  if found then
+    for _, name in ipairs(found.enemies or {}) do lines[#lines + 1] = "ENEMY " .. name end
+    for _, name in ipairs(found.bosses or {}) do lines[#lines + 1] = "BOSS " .. name end
+    for _, name in ipairs(found.biomes or {}) do lines[#lines + 1] = "BIOME " .. name end
+  end
+  if #lines == 0 then lines[1] = "Nothing new" end
+  return lines
+end
+
 -- The stats of the run that ended; the label strings are built here, only when the page opens.
 local function stats_page(play)
   local floor = play and play.floor or 0
   local kills = play and play.kills or 0
   local time = format_time(play and play.run_time)
   local virus = play and play.wallet and play.wallet:get("virus") or 0
+  local streak = profile.streak_label(play and play.result)
   return ui.screen({
     transparent = true,
     dim = true,
     theme = theme,
     on_back = back_main,
+    focus = "back",
     root = ui.vstack({ background = true, wrap = true, align = "stretch", spacing = 4,
       ui.label({ text = "Run Stats", align = "center" }),
       ui.label({ id = "floor", text = "Floor: " .. floor }),
       ui.label({ id = "kills", text = "Kills: " .. kills }),
       ui.label({ id = "time", text = "Time: " .. time }),
       ui.label({ id = "virus", text = "Virus: " .. virus }),
+      ui.label({ id = "streak", text = streak }),
+      ui.label({ text = "New this run", align = "center" }),
+      ui.list({ id = "new", items = new_this_run(play), rows = 5 }),
       ui.button({ id = "back", label = "Back", on_press = back_main }),
     }),
   })

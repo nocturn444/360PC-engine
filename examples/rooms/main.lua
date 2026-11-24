@@ -10,6 +10,8 @@ if love.filesystem.setRequirePath then      -- official LÖVE on PC only
   package.path = source .. "/../../?.lua;" .. source .. "/../../?/init.lua;" .. package.path
 end
 local engine = require("engine")
+-- The permanent profile (discoveries, record, options), loaded once at startup.
+require("rooms_profile").open()
 
 engine.run({
   rate = 60,

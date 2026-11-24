@@ -14,6 +14,20 @@ All notable changes to 360PC-Engine. The format follows
   (`rooms_gameover.lua`) with Restart Run, Main Menu and a Stats page (floor, kills, time in
   m:ss and virus). Both are `engine.ui` screens drawn with `engine.text.font(1)`, open on their
   safe default focus, set `autopause = false` and fit the 320 x 180 screen.
+- `examples/rooms`: the permanent profile (`rooms_profile.lua`): one `engine.save` progress slot
+  loaded once at startup with the discovered enemies, bosses and biomes, `kills` / `deaths_by`
+  per type, the runs / wins / losses / streak / best win streak record, empty achievements,
+  endings and unlocked-item sets, and the options. It is written only on a first discovery, at
+  the end of a run and when leaving the Options page, never per frame.
+- `examples/rooms`: the Progress pages (`rooms_title.lua`): completion percentage, a Bestiary
+  with one row per enemy and boss type (`???` until discovered, then name and kills / deaths), the
+  biome list with its discovered count, the achievement / ending / unlocked-item lists, and the
+  run record. The Stats page adds the current streak and a "New this run" scrolling list of the
+  first-time discoveries; the game over menu records every run and shows Victory on the final
+  boss.
+- `examples/rooms`: the Options page (`rooms_options.lua`), reachable from the title and the
+  pause menu: music and SFX volume sliders applied live through `engine.audio`, a PC-only
+  fullscreen toggle and Back, which writes the options to the profile.
 - `examples/rooms`: biome art from `art/` (`rooms_art.lua`): a fixed sky, two parallax layers,
   autotiled solid walls in one SpriteBatch per room, additive fireflies in each biome's glow
   colour, and a walking sprite for enemies (bosses at 2x). A biome without art keeps the flat
@@ -26,7 +40,12 @@ All notable changes to 360PC-Engine. The format follows
   instead of sending the slime back to the start room, and tracks `run_time` (reset by
   `play:enter`) for the Stats page. The game now starts on the title menu, not in the play state.
   Clearing the boss of the last floor is a victory: no stairs appear there, the run records
-  `play.result = "win"` and the same end-of-run menu opens titled "Victory".
+  `play.result = "win"` and the same end-of-run menu opens titled "Victory". Deaths and kills are
+  counted in the profile, and breaking the run records last damage source in `deaths_by` (an
+  enemy id or `"spikes"`).
+- `examples/rooms`: the pause menu has Options between Resume and Restart run, and "Quit game"
+  became Main Menu: a "Return to main menu?" confirmation that clears the stack with
+  `engine.states:reset("title")` without recording a loss.
 - `examples/rooms`: the biomes are Blob's standard path, fixed on every run: forest (floors 1-2),
   deep jungle (3-4), grotto (5), fungal cave (6-7), catacombs (8), labs (9), catastrophe (10),
   with their own names and colours (enemy numbers are still placeholders).

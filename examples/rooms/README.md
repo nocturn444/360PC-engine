@@ -148,24 +148,34 @@ and after `5 + 2.5 * capacity` seconds without a hit it refills. The HUD shows `
 | Attack | X, J | X |
 | Switch attack (melee, ranged, explosive) | C, K, Tab | Y |
 | Interact (machine) | E, F | B |
-| Pause (Resume, Restart run, Quit game) | Escape, P | Start |
+| Pause (Resume, Options, Restart run, Main Menu) | Escape, P | Start |
 | Quit | -- | Hold Back 3 s (console) |
 
 ## Menus
 
 The game starts on the title menu (`rooms_title.lua`): Start Run, Challenges, Progress, Options
 and Exit, with each sub page opening on its Back button and Exit asking first (No is focused).
-Start Run enters the play state. When the slime dies, `rooms_play` pushes the game over menu
-(`rooms_gameover.lua`) over the frozen room: Restart Run starts again at floor 1, Main Menu clears
-the stack and returns to the title, and Stats shows the run's floor, kills, time in m:ss
-(`play.run_time`) and virus. Both states set `autopause = false`, so losing the controller never
-pushes the pause menu over them. The menus are `engine.ui` screens drawn with
-`engine.text.font(1)` and fit the 320 x 180 screen.
+Start Run enters the play state. Progress lists the completion percentage and the Bestiary,
+Biomes, Achievements, Unlocked items, Endings and Runs pages; Options has the music and SFX
+sliders and, on PC only, a fullscreen toggle. When the slime dies, `rooms_play` pushes the game
+over menu (`rooms_gameover.lua`) over the frozen room: Restart Run starts again at floor 1, Main
+Menu clears the stack and returns to the title, and Stats shows the run's floor, kills, time in
+m:ss (`play.run_time`), virus, the current streak and what the run discovered for the first time.
+Clearing the last floor's boss opens the same menu titled "Victory". Both states set
+`autopause = false`, so losing the controller never pushes the pause menu over them. The menus
+are `engine.ui` screens drawn with `engine.text.font(1)` and fit the 320 x 180 screen.
 
 `rooms_pause.lua` is a transparent state over the play state: while it is open the play state does
-not update. Restart run and Quit game ask first (No is focused). If the controller in use is
-disconnected (or the PC window loses the focus), `engine.autopause` opens it with a message;
-reconnecting the controller updates the message, and A resumes.
+not update. It has Resume, Options, Restart run and Main Menu; both destructive actions ask first
+(No is focused), and Main Menu clears the stack without recording a loss. If the controller in
+use is disconnected (or the PC window loses the focus), `engine.autopause` opens it with a
+message; reconnecting the controller updates the message, and A resumes.
+
+The permanent profile (`rooms_profile.lua`, `profile.sav` through `engine.save`) stores the
+discovered enemies, bosses and biomes, the kills and deaths by type, the run record and streak,
+the empty achievement/ending/unlocked sets and the options. It is loaded once at startup and
+written only on a first discovery, at the end of a run and when leaving the Options page.
+`docs/MENUS.md` has the labels and the details.
 
 The rooms are in `rooms_data.lua` as rows of strings, the shape LDtk levels read by
 `engine.level` also give. Run it on PC from the repository root: `love examples/rooms`.
@@ -179,6 +189,7 @@ room in the wrong place), the camera never shows outside the room, the extra lim
 the pixel grid, and the frame stays at 30 FPS in the two-by-two room with its three enemies.
 
 Tests: `luajit -joff tests/pc/rooms_example_test.lua`,
+`luajit -joff tests/pc/rooms_profile_test.lua`,
 `luajit -joff tests/pc/rooms_props_test.lua`,
 `luajit -joff tests/pc/rooms_stats_test.lua`,
 `luajit -joff tests/pc/rooms_content_test.lua`,
