@@ -1,6 +1,6 @@
 # Enemy AI plan: modular behaviours and enemy types
 
-Status: step 1 done (audited). Plan, built in three steps on branch `claude/project-thread-2yza81` (stacked on
+Status: steps 1-2 done (audited), step 3 done (pending audit). Plan, built in three steps on branch `claude/project-thread-2yza81` (stacked on
 PR #85). Requested by the owner on 2026-11-24: straight-line shots, pattern shots, free (aimed)
 shots, charge, jumping enemies, flying enemies, and an easy way to add new enemy types later.
 

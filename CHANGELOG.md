@@ -9,6 +9,15 @@ All notable changes to 360PC-Engine. The format follows
 ## [Unreleased]
 
 ### Added
+- `examples/rooms`: enemy types as data (`rooms_enemy_types.lua`): walker, hopper, charger,
+  shooter, sniper, sprayer, bat and drone, each with its movement kind, size, health / damage
+  multipliers, attacks, `combat.brains` spec and placeholder look. `rooms_enemies.lua` builds
+  one brain and one stats table per type per room, uses one shared enemy arsenal (32 shots) and
+  moves flyers with `combat.behaviours.fly_move`; contact damage, windup flashes and enemy shot
+  colours are wired in. Each biome has a PROVISIONAL weighted type pool (`mobs.types`) and
+  `rooms_play.lua` picks a type per spot with a stream from the room seed and the spot index, so
+  re-entered rooms keep their enemies and arrivals keep their type. New test:
+  `tests/pc/rooms_enemies_test.lua`.
 - `engine/modules/combat`: modular enemy behaviours. `combat.behaviours` gains `shoot` (straight,
   pattern with volleys and `rotate`, or aimed at the target), `charge` (windup, fixed dash,
   recovery or `stun` when blocked), `hop`, `fly` (hover, follow, swoop) and `keep_away`; the

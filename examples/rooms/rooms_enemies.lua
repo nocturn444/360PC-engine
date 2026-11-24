@@ -1,52 +1,96 @@
--- The fight in a room: the slime and the room's enemies as fighters of one combat world. The
--- enemies are platformer controller bodies in a bump world made from the room's grid, run by a
--- patrol / chase / attack state machine (combat.behaviours); the slime is a soft body seen by
--- combat through softbody.box. The slime hurts an enemy by landing on it (a hitbox under the
--- body while it falls) and bounces off; an enemy's bite hurts the slime and knocks it back.
--- The slime also has three attacks (rooms_attacks.lua, combat.attacks configs): melee, ranged
--- and explosive, one at a time; Fight:attack() triggers the current one.
--- Everything here is rebuilt when a room is entered; the play state then restores the room's
--- enemies (the dead stay dead and a hurt one keeps its health).
+-- The fight in a room: the slime and the room's enemies as fighters of one combat world. An
+-- enemy type (rooms_enemy_types.lua) says how its body moves: "walk" bodies are platformer
+-- controllers with gravity, "fly" bodies are plain tables moved with combat.behaviours.fly_move
+-- in the same bump world. Every type's brain and stats are built once per room from the type's
+-- data and shared by its enemies; one enemy arsenal steps every type's attacks. The slime is a
+-- soft body seen by combat through softbody.box. The slime hurts an enemy by landing on it (a
+-- hitbox under the body while it falls) and bounces off; an enemy's bite or contact hurts the
+-- slime and knocks it back. The slime also has three attacks (rooms_attacks.lua,
+-- combat.attacks configs): melee, ranged and explosive, one at a time; Fight:attack() triggers
+-- the current one. Everything here is rebuilt when a room is entered; the play state then
+-- restores the room's enemies (the dead stay dead and a hurt one keeps its health).
 local platformer = require("engine.modules.platformer")
 local combat = require("engine.modules.combat")
 local softbody = require("engine.modules.softbody")
 local rng = require("engine.rng")
 local attack_configs = require("rooms_attacks")
+local enemy_types = require("rooms_enemy_types")
 local rooms_art = require("rooms_art")
 
 local B = combat.behaviours
-local W, H = 12, 10                         -- an enemy's box
 local STOMP_SPEED = 120                     -- px/s down: falling at least this fast hurts below
 local BOUNCE = -230                         -- px/s: the slime's bounce after a stomp
+local CONTACT_KNOCKBACK = 120               -- px/s: a contact hitbox pushes the slime away
 
 local SLIME_STATS = combat.stats.new({ max_health = 5, attack_damage = 1, invuln_time = 1.0 })
 local ENEMY_STATS = combat.stats.new({ max_health = 2, attack_damage = 1, invuln_time = 0.25 })
 local BOSS_STATS = combat.stats.new({ max_health = 6, attack_damage = 2, invuln_time = 0.4, knockback_resist = 0.5 })
 local ENEMY_PARAMS = platformer.params.new({ max_speed = 35, ground_accel = 600, air_accel = 400 })
 
--- An enemy's movement: the shared parameters, except max_speed, which its state asks for
+-- An enemy's movement: the shared parameters, except max_speed (which its state asks for) and
+-- jump_velocity (which a hop writes to agent.jump_velocity).
 local EnemyStats = {}
 EnemyStats.__index = EnemyStats
 function EnemyStats:get(name)
-  if name == "max_speed" then return self.agent.move_speed or ENEMY_PARAMS.max_speed end
+  if name == "max_speed" then
+    return self.agent.move_speed or self.agent.type_speed or ENEMY_PARAMS.max_speed
+  end
+  if name == "jump_velocity" then
+    return self.agent.jump_velocity or ENEMY_PARAMS.jump_velocity
+  end
   return ENEMY_PARAMS[name]
 end
 
 local function blocked(agent) return agent.body.wall ~= 0 end
-local BRAIN = { initial = "patrol", states = {
-  patrol = B.patrol({ speed = 22, pause = { 0.3, 0.9 }, blocked = blocked }),
-  chase = B.chase({ speed = 45, stop = 8 }),
-  attack = B.attack({ hitbox = "bite", windup = 0.3, active = 0.12, recovery = 0.4, next = "chase" }),
-} }
-BRAIN.states.patrol.transitions = { { to = "chase", when = B.target_within(80, "xy") } }
-BRAIN.states.chase.transitions = {
-  { to = "attack", when = B.target_within(16, "xy") },
-  { to = "patrol", when = B.target_beyond(120, "xy") },
-}
+
+-- A value of a combat.stats table or of anything with :get(name) (the type's multipliers apply
+-- over it).
+local function stat_value(stats, name)
+  if type(stats.get) == "function" then return stats:get(name) end
+  return stats[name]
+end
+
+-- The type's stats: the biome's, with its health and damage multipliers. Built once per type
+-- per room, never per enemy.
+local function type_stats(base, spec)
+  local health = stat_value(base, "max_health") * (spec.health or 1)
+  if health < 1 then health = 1 end
+  local damage = stat_value(base, "attack_damage") * (spec.damage or 1)
+  if damage < 0 then damage = 0 end
+  return combat.stats.new({
+    max_health = health, attack_damage = damage,
+    invuln_time = stat_value(base, "invuln_time"),
+    knockback_resist = stat_value(base, "knockback_resist"),
+  })
+end
 
 local M = { SLIME_STATS = SLIME_STATS }
 local Fight = {}
 Fight.__index = Fight
+
+-- The type a room's weighted pool gives spot `index`. The stream is made from the room seed and
+-- the spot index, so re-entering a room gives the same enemies and a seed is enough to know them.
+-- The registry order (not pairs) drives the draw, so PC and the console agree.
+function M.pick_type(pool, seed, index)
+  if not pool then return "walker" end
+  local total = 0
+  for i = 1, #enemy_types.order do
+    local id = enemy_types.order[i]
+    local w = pool[id]
+    if w and w > 0 then total = total + w end
+  end
+  if total <= 0 then return "walker" end
+  local r = rng.new(seed * 100 + index):float() * total
+  for i = 1, #enemy_types.order do
+    local id = enemy_types.order[i]
+    local w = pool[id]
+    if w and w > 0 then
+      r = r - w
+      if r < 0 then return id end
+    end
+  end
+  return "walker"
+end
 
 -- M.new(slime, grid, spots, opts): spots = { { x, y } ... } (the bottom centre of each enemy, room
 -- pixels); opts.boss (stronger enemies), opts.seed (their patrol pauses), opts.health (the
@@ -75,6 +119,7 @@ function M.new(slime, grid, spots, opts)
   self.stomp = self.player:hitbox({ w = 1, h = 6, power = 1, knockback = 90, away = true, ky = -0.5 })
   -- the slime's attacks: shots and bombs stop at the room's solid tiles
   self.arsenal = combat.attacks.new(self.fight, { grid = grid, max_projectiles = 24 })
+  self.enemy_arsenal = combat.attacks.new(self.fight, { grid = grid, max_projectiles = 32 })
   self.attacks = {}
   for i = 1, #attack_configs do self.attacks[i] = self.arsenal:equip(self.player, attack_configs[i]) end
   self.mode = opts.mode or 1
@@ -92,18 +137,57 @@ function M.new(slime, grid, spots, opts)
       me.on_killed(hit.target.owner, hit)
     end
   end
+  local base_stats = opts.enemy_stats or (opts.boss and BOSS_STATS or ENEMY_STATS)
+  local built_stats, built_brains = {}, {}
   local stream = rng.new(opts.seed or 1)
   for i = 1, #spots do
     local s = spots[i]
+    local id = s.type or "walker"
+    local spec = enemy_types.types[id]
+    if not spec then
+      error("rooms_enemies: unknown enemy type " .. tostring(id) .. " at spot " .. i, 2)
+    end
+    local brain, stats = built_brains[id], built_stats[id]
+    if not brain then
+      brain = combat.brains.build(spec.brain, { grid = grid, blocked = blocked })
+      stats = type_stats(base_stats, spec)
+      built_brains[id], built_stats[id] = brain, stats
+    end
+    local w, h = spec.w, spec.h
     local agent = { target = self.box, rng = stream, index = i, mob = opts.mob,
-      patrol_points = { { x = s.x - 40 }, { x = s.x + 40 } } }
-    agent.body = platformer.controller.new(self.world, { x = s.x - W / 2, y = s.y - H, w = W, h = H,
-      stats = setmetatable({ agent = agent }, EnemyStats), actions = { move_x = "move_x" } })
+      type = id, move = spec.move, shape = spec.look and spec.look.shape or id,
+      type_speed = spec.speed, patrol_points = { { x = s.x - 40 }, { x = s.x + 40 } } }
+    if spec.move == "fly" then
+      agent.body = { x = s.x - w / 2, y = s.y - h, w = w, h = h,
+        px = s.x - w / 2, py = s.y - h, facing = 1, world = self.world }
+      self.world:add(agent.body, agent.body.x, agent.body.y, w, h)
+    else
+      agent.body = platformer.controller.new(self.world, { x = s.x - w / 2, y = s.y - h, w = w, h = h,
+        stats = setmetatable({ agent = agent }, EnemyStats), actions = { move_x = "move_x" } })
+    end
     agent.fighter = self.fight:fighter({ body = agent.body, team = "enemy", owner = agent,
-      params = opts.enemy_stats or (opts.boss and BOSS_STATS or ENEMY_STATS) })
-    agent.fighter:hurtbox({ w = W, h = H })
-    agent.hitboxes = { bite = agent.fighter:hitbox({ ox = W - 2, oy = 2, w = 9, h = 7, knockback = 160, ky = -0.6 }) }
-    agent.machine = combat.fsm.new(BRAIN, agent)
+      params = stats })
+    agent.fighter:hurtbox({ w = w, h = h })
+    agent.hitboxes = {}
+    if spec.hitboxes then
+      for name, hb in pairs(spec.hitboxes) do
+        agent.hitboxes[name] = agent.fighter:hitbox({ ox = hb.ox, oy = hb.oy, w = hb.w, h = hb.h,
+          power = hb.power, damage = hb.damage, knockback = hb.knockback, kx = hb.kx, ky = hb.ky,
+          away = hb.away })
+      end
+    end
+    if spec.contact then
+      agent.contact = agent.fighter:hitbox({ ox = 0, oy = 0, w = w, h = h,
+        knockback = CONTACT_KNOCKBACK, ky = -0.4 })
+      agent.contact:activate()
+    end
+    if spec.attacks then
+      agent.attacks = {}
+      for name, config in pairs(spec.attacks) do
+        agent.attacks[name] = self.enemy_arsenal:equip(agent.fighter, config)
+      end
+    end
+    agent.machine = combat.fsm.new(brain, agent)
     agent.input = B.input(agent)
     self.enemies[i] = agent
   end
@@ -145,16 +229,26 @@ function Fight:step(dt)
       if not e.removed then
         e.removed = true
         self.fight:remove(f)
-        body:remove()
+        if e.move == "fly" then
+          if self.world:hasItem(body) then self.world:remove(body) end
+        else
+          body:remove()
+        end
       end
     elseif not f:frozen() then
       e.machine:update(dt)
-      body:step(e.input, dt)
+      if e.move == "fly" then
+        B.fly_move(e, self.world, platformer.collision.filter, dt)
+      else
+        body:step(e.input, dt)
+      end
+      if e.contact then e.contact:activate() end
     else
       body.px, body.py = body.x, body.y
     end
   end
   self.arsenal:step(dt)
+  self.enemy_arsenal:step(dt)
   return self.fight:step(dt)
 end
 
@@ -178,17 +272,33 @@ function Fight:draw(alpha, boss)
       elseif self.color then g.setColor(self.color[1], self.color[2], self.color[3], 1)
       elseif boss then g.setColor(0.85, 0.30, 0.55, 1)
       else g.setColor(0.85, 0.55, 0.25, 1) end
-      rooms_art.draw_enemy(x, y, W, H, b.facing, boss)
-      local bite = e.hitboxes.bite
-      if bite.active then
+      if e.machine and e.machine.phase == "windup" then g.setColor(1, 0.95, 0.65, 1) end
+      rooms_art.draw_enemy(x, y, b.w, b.h, b.facing, boss, e.shape)
+      local bite = e.hitboxes and e.hitboxes.bite
+      if bite and bite.active then
         local bx, by, bw, bh = bite:rect()
         g.setColor(1, 1, 1, 0.8)
         g.rectangle("fill", math.floor(bx + 0.5), math.floor(by + 0.5), bw, bh)
       end
     end
   end
+  self:draw_enemy_attacks(alpha)
   self:draw_attacks(alpha)
   g.setColor(1, 1, 1, 1)
+end
+
+-- The enemies' shots, on the pixel grid like the slime's, in a colour of their own.
+function Fight:draw_enemy_attacks(alpha)
+  local g = love.graphics
+  local list = self.enemy_arsenal.projectiles
+  g.setColor(0.95, 0.35, 0.45, 1)
+  for i = 1, #list do
+    local p = list[i]
+    if p.alive then
+      local x, y = combat.attacks.position(p, alpha)
+      g.rectangle("fill", x, y, p.w, p.h)
+    end
+  end
 end
 
 -- The slime's attacks, on the pixel grid: the melee box while it is out, the shots, the bombs
