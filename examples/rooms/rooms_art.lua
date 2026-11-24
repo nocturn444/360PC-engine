@@ -111,16 +111,75 @@ function M.mob()
   return mob
 end
 
--- Draws a body's sprite (x, y, w, h is its room box): centred, bottom aligned, flipped by
--- facing, at twice the size for a boss or miniboss. The caller sets the colour (the hit flash).
-function M.draw_enemy(x, y, w, h, facing, boss)
-  local art = M.mob()
+-- Draws a body (x, y, w, h is its room box): centred, bottom aligned, flipped by facing, at
+-- twice the size for a boss or miniboss. The caller sets the colour (the hit flash). `shape`
+-- picks the look: nil or "walker" is the shared mob sprite; the other types get a simple
+-- placeholder silhouette of rectangles in the caller's colour (the owner will draw the real
+-- sprites later; no new image files are needed).
+function M.draw_enemy(x, y, w, h, facing, boss, shape)
+  local g = love.graphics
   local scale = boss and 2 or 1
-  local frame = math.floor(love.timer.getTime() * 6) % 4 + 1
-  local sx = (facing or 1) < 0 and -scale or scale
-  local ox = (facing or 1) < 0 and TS or 0
-  love.graphics.draw(art.image, art.quads[frame], x + w / 2 - 8 * scale, y + h - TS * scale,
-    0, sx, scale, ox, 0)
+  if not shape or shape == "walker" then
+    local art = M.mob()
+    local frame = math.floor(love.timer.getTime() * 6) % 4 + 1
+    local sx = (facing or 1) < 0 and -scale or scale
+    local ox = (facing or 1) < 0 and TS or 0
+    g.draw(art.image, art.quads[frame], x + w / 2 - 8 * scale, y + h - TS * scale,
+      0, sx, scale, ox, 0)
+    return
+  end
+  local f = (facing or 1) < 0 and -1 or 1
+  local ww, hh = w * scale, h * scale
+  local left = math.floor(x + w / 2 - ww / 2 + 0.5)
+  local bottom = math.floor(y + h + 0.5)
+  local top = bottom - hh
+  if shape == "hopper" then
+    g.rectangle("fill", left + 2, top + 2, ww - 4, hh - 2)
+    g.rectangle("fill", left, bottom - 2, 3, 2)
+    g.rectangle("fill", left + ww - 3, bottom - 2, 3, 2)
+    g.rectangle("fill", left + ww / 2 - 2, top - 2, 4, 2)
+  elseif shape == "charger" then
+    g.rectangle("fill", left, top + 3, ww, hh - 3)
+    if f > 0 then
+      g.rectangle("fill", left + ww - 2, top + 4, 4, 3)
+      g.rectangle("fill", left + ww, top + 3, 2, 2)
+    else
+      g.rectangle("fill", left - 2, top + 4, 4, 3)
+      g.rectangle("fill", left - 2, top + 3, 2, 2)
+    end
+    g.rectangle("fill", left + 1, bottom - 2, 3, 2)
+    g.rectangle("fill", left + ww - 4, bottom - 2, 3, 2)
+  elseif shape == "shooter" then
+    g.rectangle("fill", left + 1, top + 2, ww - 2, hh - 2)
+    if f > 0 then g.rectangle("fill", left + ww - 1, top + 4, 5, 3)
+    else g.rectangle("fill", left - 4, top + 4, 5, 3) end
+    g.rectangle("fill", left + ww / 2 - 2, top - 1, 4, 3)
+  elseif shape == "sniper" then
+    g.rectangle("fill", left + 2, top, ww - 4, hh)
+    if f > 0 then g.rectangle("fill", left + ww - 2, top + 4, 8, 2)
+    else g.rectangle("fill", left - 6, top + 4, 8, 2) end
+    g.rectangle("fill", left + ww / 2 - 2, top - 2, 4, 2)
+  elseif shape == "sprayer" then
+    g.rectangle("fill", left, top + 3, ww, hh - 3)
+    if f > 0 then
+      g.rectangle("fill", left + ww, top + 4, 4, 2)
+      g.rectangle("fill", left + ww, top + 7, 4, 2)
+    else
+      g.rectangle("fill", left - 4, top + 4, 4, 2)
+      g.rectangle("fill", left - 4, top + 7, 4, 2)
+    end
+    g.rectangle("fill", left + ww / 2 - 2, top, 4, 3)
+  elseif shape == "bat" then
+    g.rectangle("fill", left + ww / 2 - 2, top + 1, 4, hh - 1)
+    g.rectangle("fill", left, top + 2, ww / 2 - 2, 3)
+    g.rectangle("fill", left + ww / 2 + 2, top + 2, ww / 2 - 2, 3)
+    g.rectangle("fill", left + ww / 2 - 3, top, 2, 2)
+    g.rectangle("fill", left + ww / 2 + 1, top, 2, 2)
+  else -- drone
+    g.rectangle("fill", left + 1, top + 3, ww - 2, hh - 3)
+    g.rectangle("fill", left - 1, top, ww + 2, 2)
+    g.rectangle("fill", left + ww / 2 - 2, top + 5, 4, 2)
+  end
 end
 
 return M
