@@ -5,6 +5,7 @@
 local engine = require("engine")
 local ui = engine.ui
 local options = require("rooms_options")
+local profile = require("rooms_profile")
 
 local M = { transparent = true }
 
@@ -36,6 +37,7 @@ end
 function M:page() return active end
 
 local function restart_run()
+  profile.write()                           -- keep the kills and discoveries of the run left
   engine.states:pop()
   local play = engine.states:top()
   if play and play.restart then play:restart() end
@@ -43,6 +45,7 @@ end
 
 -- Ends the run without recording a loss: the play state is dropped with the whole stack.
 local function main_menu()
+  profile.write()                           -- keep the kills and discoveries, but no loss
   engine.states:reset("title")
 end
 
