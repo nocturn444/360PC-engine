@@ -277,7 +277,8 @@ function M.templates()
       machine = kind == "shop" and { tx = 10, ty = 11, kind = "healer" } or nil }
     list[#list + 1] = { id = kind .. "_d", type = kind,
       exits = { { side = "down", tx = 7, ty = 11 } }, enemies = enemies, rows = rows,
-      machine = kind == "shop" and { tx = 10, ty = 11, kind = "healer" } or nil }
+      -- off columns 9..11: the down door opens them in the floor under the machine
+      machine = kind == "shop" and { tx = 15, ty = 11, kind = "healer" } or nil }
   end
   return list
 end
