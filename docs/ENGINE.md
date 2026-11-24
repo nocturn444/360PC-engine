@@ -962,7 +962,8 @@ Optional, loaded by the game that wants them; nothing above requires one.
   [engine/modules/platformer/README.md](../engine/modules/platformer/README.md).
 - `engine/modules/combat`: hitboxes and hurtboxes, damage through stats and modifier events,
   invulnerability frames, knockback, hitstop, a state machine with enemy behaviours, brains built
-  from data, and attacks as data. It needs no other module. Reference:
+  from data, a boss director (`combat.boss`: phases by health, attack rotation, telegraphs, a
+  health bar value), and attacks as data. It needs no other module. Reference:
   [engine/modules/combat/README.md](../engine/modules/combat/README.md).
 - `engine/modules/procgen`: maps of hand-made rooms joined by their exits, zones locked by
   ability tags (keys always before their locks), validation by breadth-first search, minimap

@@ -364,6 +364,53 @@ compiled conditions and states allocate nothing per step. Unknown behaviours, un
 conditions, an unknown initial state and a wrong field type are errors that name the brain state
 and the field. An unknown target state is named by `combat.fsm` when the machine is made.
 
+## Bosses
+
+A boss uses the same behaviours as any enemy; `combat.boss` adds only what bosses have.
+
+```lua
+local def = combat.boss.build({
+  name = "Big One",
+  phases = {
+    { at = 1.0, brain = { initial = "pick", states = {
+        pick  = { "rotate", options = { { to = "spray", weight = 2 }, { to = "dash" } },
+                  no_repeat = true, pause = 0.6 },
+        spray = { "shoot", attack = "ring", volleys = 3, interval = 0.3, windup = 0.5, next = "pick" },
+        dash  = { "charge", speed = 160, windup = 0.6, next = "pick" },
+    } } },
+    { at = 0.5, brain = { ... }, transition = { time = 1.2, invulnerable = true } },
+  },
+}, { grid = grid })                            -- ctx for combat.brains.build
+local b = combat.boss.new(def, agent, { on_phase = function(b, index) end })
+b:update(dt)                                   -- once per fixed step, instead of a fsm update
+```
+
+| Field / call | Meaning |
+|---|---|
+| `phases[i].at` | Health fraction where the phase starts: 1 for the first, then strictly lower. |
+| `phases[i].brain` | A `combat.brains` spec, built once by `build`. |
+| `phases[i].transition` | `{ time, invulnerable }`: the boss halts `time` seconds before the phase's brain starts; `invulnerable` sets `fighter.invuln` for that time. |
+| `spec.bar` | `{ down = 1.5, up = 0.5 }`: how fast `b.bar` follows the health (units per second). |
+| `b.phase` | Current phase. One hit past several thresholds goes straight to the lowest one (one `on_phase` call). |
+| `b.bar` | Displayed health fraction 0..1, eased towards the real one. The game draws the bar. |
+| `b.telegraph`, `b.telegraph_t` | The state being wound up (`m.phase == "windup"` of `attack`, `shoot` or `charge`) and its progress 0..1 (from the state's `windup`, or the behaviour's default), else `nil` and 0. |
+| `b.transitioning` | True during a phase change. |
+| `b:state()` | The current brain state's name (`nil` during a transition). |
+| `b:enter_phase(i)` | Go to a phase now (scripted phases). |
+| `opts.on_phase(b, i)` | Called when a later phase begins (start of its transition). |
+
+The behaviour `rotate` (in `combat.behaviours`, registered in `combat.brains`, usable by any
+enemy) picks the next attack: it stands still facing the target for `pause` seconds (a number or
+`{ min, max }` from `agent.rng`), then goes to one of `options` (`{ to, weight }`), `order =
+"random"` (weighted draw with `agent.rng`, default) or `"cycle"`; `no_repeat = true` never takes
+the same option twice in a row. `agent.rotate_last` keeps the last index. An option naming an
+unknown state is an error when the brain is built. Each attack state ends with `next = "<the
+rotate state>"`, so a phase loops: pick, tell, attack, recover, pick.
+
+The director allocates nothing per step; the machine of a later phase is made once, when that
+phase first starts. It draws nothing and reads the health from `agent.fighter` (its stats'
+`max_health`).
+
 ## Attacks as data
 
 `combat.attacks` turns a plain config table into an attack a fighter can trigger, on top of a

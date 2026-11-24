@@ -9,6 +9,12 @@ All notable changes to 360PC-Engine. The format follows
 ## [Unreleased]
 
 ### Added
+- `engine/modules/combat`: a boss director, `combat.boss`: phases by health fraction (each a
+  `combat.brains` spec, a phase change halts the boss for a transition and can make it
+  invulnerable, one hit past several thresholds goes to the lowest), the telegraph of the attack
+  being wound up with its progress, and an eased health bar value; and a `rotate` behaviour that
+  picks the next attack by weight or in order, with `no_repeat`. Bosses reuse every enemy
+  behaviour; the director draws nothing and allocates nothing per step.
 - `engine/modules/progress`: a generic progress layer for achievements, unlocks and content
   chosen by what the player did. Conditions as plain data (`all`, `any`, `none`, `count`, `has`,
   `build`, `size`, `result`, `test`), run and floor counters (named numbers and named sets of
