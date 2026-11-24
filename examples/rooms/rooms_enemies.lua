@@ -147,12 +147,18 @@ function M.new(slime, grid, spots, opts)
   for i = 1, #spots do
     local s = spots[i]
     local id = s.type or "walker"
-    local spec = enemy_types.types[id]
+    local spec = s.spec or enemy_types.types[id]     -- a final boss brings its own spec
     if not spec then
       error("rooms_enemies: unknown enemy type " .. tostring(id) .. " at spot " .. i, 2)
     end
     local brain, stats = built_brains[id], built_stats[id]
-    if not brain then
+    if not brain and spec.phases then
+      -- a boss with phases: combat.boss drives it (its brains are built per phase)
+      -- (its health and damage are absolute, already in opts.enemy_stats: no multipliers)
+      brain = combat.boss.build({ name = spec.name, phases = spec.phases }, { grid = grid, blocked = blocked })
+      stats = type_stats(base_stats, {})
+      built_brains[id], built_stats[id] = brain, stats
+    elseif not brain then
       brain = combat.brains.build(spec.brain, { grid = grid, blocked = blocked })
       stats = type_stats(base_stats, spec)
       built_brains[id], built_stats[id] = brain, stats
@@ -191,7 +197,13 @@ function M.new(slime, grid, spots, opts)
         agent.attacks[name] = self.enemy_arsenal:equip(agent.fighter, config)
       end
     end
-    agent.machine = combat.fsm.new(brain, agent)
+    if spec.phases then
+      agent.director = combat.boss.new(brain, agent, { on_phase = opts.on_phase })
+      agent.machine = agent.director.machine
+      self.director = agent.director
+    else
+      agent.machine = combat.fsm.new(brain, agent)
+    end
     agent.input = B.input(agent)
     self.enemies[i] = agent
   end
@@ -240,7 +252,12 @@ function Fight:step(dt)
         end
       end
     elseif not f:frozen() then
-      e.machine:update(dt)
+      if e.director then
+        e.director:update(dt)
+        e.machine = e.director.machine
+      else
+        e.machine:update(dt)
+      end
       if e.move == "fly" then
         B.fly_move(e, self.world, platformer.collision.filter, dt)
         -- a flyer stays inside the room: the door gaps would let it out, and a room is only
@@ -288,7 +305,11 @@ function Fight:draw(alpha, boss)
       elseif self.color then g.setColor(self.color[1], self.color[2], self.color[3], 1)
       elseif boss then g.setColor(0.85, 0.30, 0.55, 1)
       else g.setColor(0.85, 0.55, 0.25, 1) end
-      if e.machine and e.machine.phase == "windup" then g.setColor(1, 0.95, 0.65, 1) end
+      if e.director then
+        -- a boss's tell: it flashes faster as the windup runs out
+        local t = e.director.telegraph_t
+        if e.director.telegraph and math.floor(t * t * 12) % 2 == 0 then g.setColor(1, 0.95, 0.65, 1) end
+      elseif e.machine and e.machine.phase == "windup" then g.setColor(1, 0.95, 0.65, 1) end
       rooms_art.draw_enemy(x, y, b.w, b.h, b.facing, boss, e.shape)
       local bite = e.hitboxes and e.hitboxes.bite
       if bite and bite.active then

@@ -679,6 +679,87 @@ function M.fly(opts)
   return state
 end
 
+-- Picks the next attack: stands still facing the target for `pause` seconds, then goes to one
+-- of `options` ({ { to = "spray", weight = 2 }, { to = "charge" } }, weight default 1).
+-- opts:
+--   options    array of { to = state name, weight = number } (required, at least one)
+--   order      "random" (default: weighted draw with agent.rng) or "cycle" (in list order)
+--   no_repeat  true: never the same option twice in a row (when there are two or more)
+--   pause      seconds to wait first: a number, or { min, max } drawn from agent.rng (default 0.6)
+-- Each attack state usually ends with next = this state, so a boss phase loops: pick, tell,
+-- attack, recover, pick. Per agent: agent.rotate_last (index of the last option taken).
+-- Allocates nothing per step (the weight function is built here, once).
+function M.rotate(opts)
+  opts = opts or {}
+  local options = opts.options
+  if type(options) ~= "table" or #options == 0 then
+    error("behaviours.rotate: options is a non-empty array of { to = state }", 2)
+  end
+  for i = 1, #options do
+    local o = options[i]
+    if type(o) ~= "table" or type(o.to) ~= "string" then
+      error("behaviours.rotate: options[" .. i .. "].to is a state name", 2)
+    end
+    if o.weight ~= nil and (type(o.weight) ~= "number" or o.weight < 0) then
+      error("behaviours.rotate: options[" .. i .. "].weight is a number >= 0", 2)
+    end
+  end
+  local order = opts.order or "random"
+  if order ~= "random" and order ~= "cycle" then
+    error("behaviours.rotate: order is \"random\" or \"cycle\"", 2)
+  end
+  local n, no_repeat = #options, opts.no_repeat == true and #options > 1
+  local pause = opts.pause or 0.6
+  local skip = 0                                   -- the option index the draw leaves out
+  local function weight(o, i)
+    if i == skip then return 0 end
+    return o.weight or 1
+  end
+  local function choose(agent)
+    local last = agent.rotate_last
+    local i
+    if order == "cycle" then
+      i = ((last or 0) % n) + 1
+    else
+      skip = (no_repeat and last) or 0
+      local rng = agent.rng
+      if rng == nil then error("behaviours.rotate: agent.rng is needed for order \"random\"", 3) end
+      local total = 0
+      for k = 1, n do total = total + weight(options[k], k) end
+      if total > 0 then
+        local _, k = rng:weighted(options, weight)
+        i = k
+      else
+        i = (last or 0) % n + 1                    -- every other weight is 0: take the next one
+      end
+      skip = 0
+    end
+    agent.rotate_last = i
+    return options[i].to
+  end
+  local state = {}
+  function state.enter(m, agent)
+    halt(agent)
+    m.phase = "pause"
+    local p = pause
+    if type(p) == "table" then
+      local rng = agent.rng
+      p = rng and (p[1] + (p[2] - p[1]) * rng:float()) or p[1]
+    end
+    m.wait = p
+  end
+  function state.update(m, agent)
+    halt(agent)
+    local t, b = agent.target, body_of(agent)
+    if t then
+      local dx = cx(t) - cx(b)
+      if dx > 0 then b.facing = 1 elseif dx < 0 then b.facing = -1 end
+    end
+    if m.time >= (m.wait or 0) - EPS then return choose(agent) end
+  end
+  return state
+end
+
 -- Kites the target: walks away when closer than `min`, towards it when farther than `max`,
 -- stands still (facing it) in between. opts: min (48), max (96), speed (40), axis ("x" or "xy").
 function M.keep_away(opts)

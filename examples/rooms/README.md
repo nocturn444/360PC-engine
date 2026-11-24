@@ -199,9 +199,24 @@ message; reconnecting the controller updates the message, and A resumes.
 
 The permanent profile (`rooms_profile.lua`, `profile.sav` through `engine.save`) stores the
 discovered enemies, bosses and biomes, the kills and deaths by type, the run record and streak,
-the seen endings, the empty achievement/unlocked sets and the options. It is loaded once at
-startup and written only on a first discovery, a first ending, at the end of a run and when
-leaving the Options page. `docs/MENUS.md` and `docs/CUTSCENES.md` have the details.
+the seen endings, the earned achievements and unlock tags, lifetime counters and the options.
+It is loaded once at startup and written only on a first discovery, a first ending, something
+earned, at the end of a run and when leaving the Options page. `docs/MENUS.md` and
+`docs/CUTSCENES.md` have the details.
+
+Achievements and unlocks (`rooms_progress.lua`, on `engine.modules.progress`) are PLACEHOLDER
+rules as data: what a run did (kills per type, hearts, hits, mutations held) is counted per run
+and per floor and checked after each event, at each floor's end and at the run's end. Content
+is locked with `unlock = "<tag>"` (the mutation THORNS, the CRYSTAL CAVE biome that can take
+floors 6-7 instead of the fungal cave); it opens from the next run once its tag is earned.
+Earned things show on the HUD and in the run's Stats list; Progress has Achievements and
+Unlocks pages (in preview builds Unlocks starts with UNLOCK ALL). `docs/UNLOCKS.md` has the plan.
+
+The last floor's boss is one of three PLACEHOLDER final bosses (`rooms_final_bosses.lua`),
+picked when floor 10 starts from what the run did and the profile: The Mutant by default, The
+Caretaker AI after an earlier win with 3+ mutations, The Last Scientist when no heart was picked
+up. Each is driven by `combat.boss` (two phases, attacks from the enemy behaviours picked by
+`rotate`, a flashing tell), has a name and health bar on the HUD, and leads to its own ending.
 
 The rooms are in `rooms_data.lua` as rows of strings, the shape LDtk levels read by
 `engine.level` also give. Run it on PC from the repository root: `love examples/rooms`.
@@ -217,6 +232,8 @@ the pixel grid, and the frame stays at 30 FPS in the two-by-two room with its th
 Tests: `luajit -joff tests/pc/rooms_example_test.lua`,
 `luajit -joff tests/pc/rooms_enemies_test.lua`,
 `luajit -joff tests/pc/rooms_profile_test.lua`,
+`luajit -joff tests/pc/rooms_progress_test.lua`,
+`luajit -joff tests/pc/rooms_final_boss_test.lua`,
 `luajit -joff tests/pc/rooms_props_test.lua`,
 `luajit -joff tests/pc/rooms_stats_test.lua`,
 `luajit -joff tests/pc/rooms_content_test.lua`,

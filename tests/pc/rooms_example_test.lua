@@ -277,10 +277,19 @@ check(page:get("count").text == "Discovered: 0/" .. #profile.known_biomes(),
 check(page:get("list").items[1] == "???", "an undiscovered biome is ???")
 tap("return")
 open_progress_page("achievements", "Achievements")
-check(title:page():get("list").items[1] == "None yet.", "Achievements says None yet.")
+check(title:page():get("list").items[1] == "?? Win a run.",
+  "Achievements lists each one with its hint until earned")
 tap("return")
-open_progress_page("items", "Unlocked items")
-check(title:page():get("list").items[1] == "None yet.", "Unlocked items says None yet.")
+title.set_preview(false)
+open_progress_page("items", "Unlocks")
+local unlock_rows = title:page():get("list").items
+check(unlock_rows[1].label == "?? Earn the HEARTLESS achievement." and unlock_rows[3].label == "???",
+  "Unlocks lists each one with its hint, ??? when hidden")
+tap("return")
+title.set_preview(true)
+open_progress_page("items", "Unlocks")
+check(title:page():get("list").items[1].unlock_all == true, "in preview mode Unlocks offers UNLOCK ALL")
+menu_fits(title, "the Unlocks page")
 tap("return")
 title.set_preview(false)
 open_progress_page("endings", "Endings")
@@ -573,6 +582,20 @@ map, nav, slime = play.map, play.nav, play.slime
 for n = 2, 10 do play.new_floor(play, n) end
 play:load_room(play.nav:enter(play.map.start))
 play:load_room(play.nav:enter(play.map.boss))
+check(play.final_boss ~= nil and #play.fight.enemies == 1 and play.fight.enemies[1].mob == play.final_boss.id,
+  "the last floor's boss room holds the picked final boss alone")
+check(play.fight.director ~= nil and play.fight.director.name == play.final_boss.name,
+  "the final boss is driven by combat.boss")
+check(play.fight.enemies[1].fighter.health == play.final_boss.health, "the final boss has its own health")
+frames(3)
+F.reset_calls(); play:draw(0)
+local bar_ok = false
+for _, c in ipairs(F.find("rectangle")) do
+  local x, y, w, h = c[3], c[4], c[5], c[6]
+  if w == 160 and h == 4 and x >= 0 and x + w <= 320 and y >= 0 and y + h <= 180 then bar_ok = true end
+end
+check(bar_ok, "the boss health bar is drawn inside the 320 x 180 screen")
+check(#F.find("printf") == 0 and #F.find("setFont") == 0, "the boss HUD uses engine.text")
 for _, e in ipairs(play.fight.enemies) do e.fighter.dead = true; e.fighter.health = 0 end
 frames(2)
 check(play.result == "win" and not play.stairs,
@@ -595,6 +618,12 @@ page = gameover:page()
 check(page:get("title").text == "Victory", "the end-of-run menu is titled Victory")
 check(profile.get().wins == 1 and profile.get().streak >= 1 and profile.get().best_win_streak >= 1,
   "the victory is recorded in the profile with a win streak")
+check(profile.get().achievements.first_win == true, "the victory earns FIRST VICTORY (rooms_progress)")
+local earned_line = false
+for _, line in ipairs(play.track.earned) do
+  if line == "ACHIEVEMENT: FIRST VICTORY" then earned_line = true end
+end
+check(earned_line, "the run lists FIRST VICTORY among what it earned")
 menu_fits(gameover, "the victory menu")
 tap("down"); tap("down"); tap("return")           -- Stats of the victory
 page = gameover:page()

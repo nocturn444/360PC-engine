@@ -1,5 +1,6 @@
 -- The biomes of a run (procgen.biomes), Blob's standard path, the same every run: floors 1-2
--- forest, 3-4 deep jungle, 5 grotto, 6-7 fungal cave, 8 catacombs, 9 labs, 10 catastrophe.
+-- forest, 3-4 deep jungle, 5 grotto, 6-7 fungal cave (or the unlockable crystal cave), 8 catacombs,
+-- 9 labs, 10 catastrophe.
 -- Each biome is fixed to its floor and carries the game's own data:
 --   difficulty  1..5: copied to map.difficulty; the enemies' health and bite grow with it
 --   mobs        the enemies of the biome: health, damage, colour and the weighted types that
@@ -33,12 +34,21 @@ M.list = {
     boss = { id = "grotto_boss", health = 8, damage = 2, color = { 0.35, 0.50, 0.95 } },
     colors = { wall = { 0.16, 0.20, 0.26 }, ledge = { 0.42, 0.58, 0.68 } },
     glow = { 0.62, 0.88, 0.94 } },
-  { id = "fungal_cave", name = "FUNGAL CAVE", fixed = 6, span = 2, difficulty = 3, music = "music/fungal_cave",
+  { id = "fungal_cave", name = "FUNGAL CAVE", min_floor = 6, max_floor = 6, span = 2, difficulty = 3, music = "music/fungal_cave",
     mobs = { id = "fungal_cave_mob", health = 3, damage = 2, color = { 0.40, 0.95, 0.85 },
       types = { walker = 2, hopper = 2, charger = 1, bat = 2, shooter = 2, sniper = 1 } },
     boss = { id = "fungal_cave_boss", health = 9, damage = 3, color = { 0.95, 0.45, 0.80 } },
     colors = { wall = { 0.20, 0.12, 0.26 }, ledge = { 0.70, 0.40, 0.80 } },
     glow = { 0.77, 0.44, 0.82 } },
+  -- PLACEHOLDER unlockable biome: once "unlock_crystal_cave" is earned (rooms_progress.lua) it can
+  -- take floors 6-7 instead of the fungal cave (weight 1 each).
+  { id = "crystal_cave", name = "CRYSTAL CAVE", min_floor = 6, max_floor = 6, span = 2, difficulty = 3,
+    unlock = "unlock_crystal_cave", music = "music/fungal_cave",
+    mobs = { id = "crystal_cave_mob", health = 3, damage = 2, color = { 0.70, 0.85, 1.00 },
+      types = { walker = 2, hopper = 2, charger = 1, bat = 2, shooter = 2, sniper = 1 } },
+    boss = { id = "crystal_cave_boss", health = 9, damage = 3, color = { 0.55, 0.75, 1.00 } },
+    colors = { wall = { 0.12, 0.16, 0.28 }, ledge = { 0.55, 0.75, 0.95 } },
+    glow = { 0.60, 0.80, 1.00 } },
   { id = "catacombs", name = "CATACOMBS", fixed = 8, span = 1, difficulty = 3, music = "music/catacombs",
     mobs = { id = "catacombs_mob", health = 3, damage = 1, color = { 0.88, 0.84, 0.70 },
       types = { walker = 2, hopper = 1, charger = 2, bat = 2, shooter = 2, sniper = 2, sprayer = 1 } },

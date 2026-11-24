@@ -962,7 +962,8 @@ Optional, loaded by the game that wants them; nothing above requires one.
   [engine/modules/platformer/README.md](../engine/modules/platformer/README.md).
 - `engine/modules/combat`: hitboxes and hurtboxes, damage through stats and modifier events,
   invulnerability frames, knockback, hitstop, a state machine with enemy behaviours, brains built
-  from data, and attacks as data. It needs no other module. Reference:
+  from data, a boss director (`combat.boss`: phases by health, attack rotation, telegraphs, a
+  health bar value), and attacks as data. It needs no other module. Reference:
   [engine/modules/combat/README.md](../engine/modules/combat/README.md).
 - `engine/modules/procgen`: maps of hand-made rooms joined by their exits, zones locked by
   ability tags (keys always before their locks), validation by breadth-first search, minimap
@@ -971,6 +972,13 @@ Optional, loaded by the game that wants them; nothing above requires one.
 - `engine/modules/items`: weighted item pools drawn with the run's `"loot"` stream, filtered by
   room type and the run's tags, with unique items per run and entries that permanent unlocks add.
   Reference: [engine/modules/items/README.md](../engine/modules/items/README.md).
+- `engine/modules/progress`: achievements, unlocks and content chosen by what the player did.
+  Conditions as data (`all`, `any`, `none`, `count`, `has`, `build`, `size`, `result`, `test`),
+  run and floor counters (named numbers and named sets of ids), rules checked at an event, a
+  floor end or a run end that write earned ids into a profile set (an unlock's id is the tag
+  content declares), and `progress.pick` to choose an entry by conditions, priority and a
+  weighted draw with an `engine.rng` stream. It needs no other module. Reference:
+  [engine/modules/progress/README.md](../engine/modules/progress/README.md).
 - `engine/modules/wallet`: named integer currencies for a run, with add/can/spend (never
   negative) and plain-data state for a run save. Reference:
   [engine/modules/wallet/README.md](../engine/modules/wallet/README.md).

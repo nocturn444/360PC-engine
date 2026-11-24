@@ -188,6 +188,15 @@ function M.build(spec, ctx)
       error("combat.brains: state " .. name .. ": next goes to the unknown state "
         .. tostring(entry.next), 2)
     end
+    if type(entry) == "table" and entry[1] == "rotate" and type(entry.options) == "table" then
+      for i = 1, #entry.options do
+        local o = entry.options[i]
+        if type(o) == "table" and states[o.to] == nil then
+          error("combat.brains: state " .. name .. ": options[" .. i .. "] goes to the unknown state "
+            .. tostring(o.to), 2)
+        end
+      end
+    end
     local state = make_state(name, entry, ctx)
     local list = transitions and transitions[name]
     if list ~= nil then state.transitions = make_transitions(name, list, ctx) end
@@ -204,6 +213,7 @@ M.behaviour("charge", behaviours.charge)
 M.behaviour("hop", behaviours.hop)
 M.behaviour("fly", behaviours.fly)
 M.behaviour("keep_away", behaviours.keep_away)
+M.behaviour("rotate", behaviours.rotate)
 M.behaviour("idle", idle)
 
 M.condition("target_within", builtin(behaviours.target_within))
