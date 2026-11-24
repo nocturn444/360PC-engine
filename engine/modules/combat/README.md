@@ -34,7 +34,8 @@ end
 | `stats.lua` | The combat stats and their defaults. |
 | `world.lua` | Fighters, hitboxes, hurtboxes, the overlap search, the damage pipeline, i-frames, knockback, hitstop. |
 | `fsm.lua` | A state machine: states with enter / update / exit, transitions, time in the state. |
-| `behaviours.lua` | States for enemies: patrol, chase, attack. |
+| `behaviours.lua` | States for enemies: patrol, chase, attack, shoot, charge, hop, fly, keep_away, and their conditions. |
+| `brains.lua` | Brains as data: builds a `combat.fsm` definition from plain tables, with an extendable registry of behaviours and conditions. |
 | `attacks.lua` | Attacks as data: melee sweeps, ranged shots, explosive bombs, on top of a world. |
 
 Units: pixels and seconds. `y` grows downwards; a body's `x, y` is its top left corner. Every
@@ -290,6 +291,78 @@ if not enemy.fighter:frozen() and not enemy.fighter.dead then
 end
 world:step(dt)
 ```
+
+## Brains as data
+
+`combat.brains.build(spec, ctx)` turns a plain table into a `combat.fsm` definition. The
+`spec` is pure data, so an enemy type can keep its brain in a table and a game can build the
+same definition for every enemy of that type:
+
+```lua
+local brains = combat.brains
+local def = brains.build({
+  initial = "patrol",
+  states = {
+    patrol = { "patrol", speed = 22, pause = { 0.3, 0.9 } },
+    chase  = { "chase", speed = 45, stop = 8 },
+    shoot  = { "shoot", attack = "spit", aim = "target", volleys = 3, interval = 0.25,
+               next = "chase" },
+  },
+  transitions = {
+    patrol = { { to = "chase", when = { "target_within", 80, "xy" } } },
+    chase  = { { to = "shoot", when = { "target_in_sight", 140 }, after = 1.0 },
+               { to = "patrol", when = { "target_beyond", 160, "xy" } } },
+  },
+}, { grid = grid, blocked = function(agent) return agent.body.wall ~= 0 end })
+local machine = combat.fsm.new(def, enemy)
+```
+
+A state entry is `{ behaviour_name, opts... }`: the rest of the table is copied (without `[1]`)
+and given to the constructor of that behaviour, exactly like calling `behaviours.patrol(opts)`.
+The name `"idle"` is a state that halts the agent.
+
+A transition is `{ to = name, when = condition, after = seconds }` (`when` or `after`, at least
+one). A condition is one of:
+
+- `{ "name", args... }`, calling the registered condition with those positional arguments
+- `{ "all", c1, c2, ... }`, `{ "any", ... }` or `{ "not", c }`
+- a plain function `function(m, agent) -> boolean` (the escape hatch)
+
+The built-in conditions are the ones in `behaviours`: `target_within`, `target_beyond`,
+`target_in_sight` (range as its argument; the grid comes from `ctx.grid` or a third element),
+`target_above`, `target_below`, `grounded` and `health_below`.
+
+`ctx` is an optional table of values a behaviour or condition may need (`grid`, `blocked`,
+`grounded`, `points`, ...). For a state, the fields of `ctx` are copied under the spec opts and
+**the spec wins**; so `{ "patrol", speed = 22 }` with `ctx.blocked` gets the `blocked` function
+while keeping its own speed. Conditions get `(args, ctx)`, with `args` being the condition spec
+(`args[1]` is its name). `build` never changes `spec` or `ctx`.
+
+A game extends the registry with its own behaviours and conditions:
+
+```lua
+brains.behaviour("spin", function(opts)
+  local state = {}
+  function state.update(_, agent) agent.spin_time = (agent.spin_time or 0) + opts.speed end
+  return state
+end)
+brains.condition("health_under", function(args)
+  local fraction = args[2]
+  return function(_, agent)
+    return agent.fighter.health / agent.fighter.stats:get("max_health") < fraction
+  end
+end)
+```
+
+`brains.behaviour(name, ctor)` takes `ctor(opts) -> state`; `brains.condition(name, ctor)` takes
+`ctor(args, ctx) -> function(m, agent)`. They can replace a built-in name, and the registry is
+global to the module (register a game's names once, before building).
+
+`build` is called once per enemy type (never per enemy and never per frame), and the definition
+it returns is shared by every machine of that type. It allocates only while building; the
+compiled conditions and states allocate nothing per step. Unknown behaviours, unknown
+conditions, an unknown initial state and a wrong field type are errors that name the brain state
+and the field. An unknown target state is named by `combat.fsm` when the machine is made.
 
 ## Attacks as data
 

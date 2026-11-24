@@ -21,5 +21,6 @@ return {
   world = require(prefix .. "world"),
   fsm = require(prefix .. "fsm"),
   behaviours = require(prefix .. "behaviours"),
+  brains = require(prefix .. "brains"),
   attacks = require(prefix .. "attacks"),
 }

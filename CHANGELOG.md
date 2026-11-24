@@ -15,6 +15,13 @@ All notable changes to 360PC-Engine. The format follows
   conditions `target_in_sight`, `target_above` / `target_below`, `grounded`, `health_below` and
   `all` / `any` / `negate`; and `fly_move` for a body in a bump world. Every state writes only
   the agent's wish (`move_x`, `move_y`, `move_speed`, `jump`) and allocates nothing per step.
+- `engine/modules/combat`: brains as data. `combat.brains.build(spec, ctx)` turns a plain table
+  (states as `{ behaviour_name, opts... }`, transitions with `when` / `after`) into a
+  `combat.fsm` definition, with `"idle"`, condition combinators (`all`, `any`, `not`), plain
+  function conditions, and the step 1 behaviours and conditions registered by name. `ctx` fills
+  the opts a behaviour or condition needs while the spec wins; `brains.behaviour` /
+  `brains.condition` let a game register its own. `build` never changes the spec, is called once
+  per definition, and the result allocates nothing per step.
 - `examples/rooms`: biome art from `art/` (`rooms_art.lua`): a fixed sky, two parallax layers,
   autotiled solid walls in one SpriteBatch per room, additive fireflies in each biome's glow
   colour, and a walking sprite for enemies (bosses at 2x). A biome without art keeps the flat
