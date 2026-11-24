@@ -1,7 +1,6 @@
 # Ability mutations plan: movement abilities, shot modifiers, bombs as consumables, Isaac-style HUD
 
-Status: plan. Step 1 (engine) ready to build; step 2 (game) waits for the owner's answers on the
-open points at the end. Branch `claude/project-thread-j7uxll`, stacked on PR #87
+Status: plan. Step 1 (engine) ready to build; step 2 (game) has the owner's answers (end of file). Branch `claude/project-thread-j7uxll`, stacked on PR #87
 (`claude/project-thread-2yza81`, modular enemy AI), because both change `rooms_enemies.lua`.
 
 Requested by the owner on 2026-11-24: mutations that give special abilities instead of only stats
@@ -148,16 +147,16 @@ row in `engine/modules/README.md`, section in `docs/ENGINE.md`, `CHANGELOG.md` u
 
 ## Step 2: game (one opencode run, after the owner's answers)
 
-### Controls (`examples/rooms/main.lua`), pending confirmation
+### Controls (`examples/rooms/main.lua`), confirmed by the owner 2026-11-24
 
 | Action | Pad | Keyboard / mouse (PC) |
 |---|---|---|
 | `jump` | A | space, up, w |
-| `shoot` | X | x, j |
+| `shoot` | RT (`triggerright+`) | x, j |
 | `melee` | Y | c, k |
 | `interact` | B | e, f |
-| `bomb` | RT (`triggerright+`) | v, l |
-| `dash` | RB | lshift |
+| `bomb` | RB | v, l |
+| `dash` | LT (`triggerleft+`) (pending: LT or X) | lshift |
 | `hook` | LB | q |
 | axes `aim_x`, `aim_y` | right stick (`rightx`, `righty`) | mouse position relative to the slime |
 | `aim_fire` (PC) | n/a | mouse button 1 |
@@ -172,7 +171,7 @@ and the hook.
   equips all three; `Fight:attack`, `Fight:switch`, `Fight.mode` are replaced by
   `Fight:shoot(ax, ay)`, `Fight:melee()`, `Fight:bomb()` (the game checks and spends the bomb
   before calling it). Keep the statues working (`TURRET_ATTACKS` reads `ranged` and `bomb`).
-- Bombs: a wallet currency `bomb`, the run starts with 1 (pending), max 99. `rooms_pickups.lua`
+- Bombs: a wallet currency `bomb`, the run starts with 1 (confirmed), max 99. `rooms_pickups.lua`
   gets `M.bomb(x, y, amount)`; `rooms_consumables.lua` a `bomb` entry (sources `mob`,
   `room_clear`, `obstacle`, weight like the heart's); `rooms_shop.lua` price `bomb = 5`; the
   room template pickups accept kind `bomb`. Breaking props with the attack keeps working with
@@ -204,8 +203,8 @@ They must work with the soft body: the abilities set is created with the slime a
 Room change: `set:reset()` in `load_room`. New run: a new set. The vines and the hook must not
 fight: grabbing a vine releases the hook.
 
-Free aim: with `aim = "free"`, the right stick past the deadzone aims and fires every time the
-attack is ready (auto-fire while held); X still fires toward the facing. On PC with keyboard, the
+Free aim: with `aim = "free"`, RT fires toward the right stick when it is past the deadzone,
+and toward the facing when it is centred. Holding RT keeps firing whenever the attack is ready. On PC with keyboard, the
 mouse aims (screen to game with `engine.pixel`'s `toGame`, plus the camera offset) and mouse
 button 1 fires. Without the mutation, the right stick does nothing.
 
@@ -236,11 +235,12 @@ throw and none is thrown at 0; double shot + burst give 2 x 3 shots; the HUD dra
 Update `examples/rooms/README.md`, `examples/rooms/docs/CONTENT.md` (new mutation fields),
 `CHANGELOG.md`, and bump `examples/rooms/rooms_version.lua` when it goes to `test-build`.
 
-## Open points for the owner (asked 2026-11-24)
+## Owner decisions (2026-11-24)
 
-1. Pad mapping above.
-2. Dash with invulnerability or not.
-3. Bombs at the start of a run (proposed 1).
-4. Ability mutations in the same pools as the stat ones (proposed yes; the unlock system of PR #90
-   can gate some later).
-5. HUD layout above.
+1. Pad mapping above: shoot on RT, bomb on RB. Dash button still open (LT proposed, or X).
+2. The dash makes the slime invulnerable while `active`, and has a cooldown: the game sets the
+   player fighter's i-frames for the dash `time` (no blink) when it starts.
+3. A run starts with 1 bomb.
+4. Ability mutations are in the same pools as the stat ones (the unlock system of PR #90 can gate
+   some later).
+5. HUD layout above (no objection).
