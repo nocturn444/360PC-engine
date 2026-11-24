@@ -9,6 +9,11 @@ All notable changes to 360PC-Engine. The format follows
 ## [Unreleased]
 
 ### Added
+- `engine.cutscene`: a data-driven cutscene player (wait, fade, show, hide, move, pan, shake,
+  typed text and dialogue, sound, music and call steps) validated when it is created, advanced
+  with A and skipped by holding B for 1 s. Drawn with `engine.text`, no allocation per step or
+  frame, loaded on first use as `engine.cutscene`. `engine.text.wrap` exposes the font's word
+  wrap for laying out text once.
 - `examples/rooms`: biome art from `art/` (`rooms_art.lua`): a fixed sky, two parallax layers,
   autotiled solid walls in one SpriteBatch per room, additive fireflies in each biome's glow
   colour, and a walking sprite for enemies (bosses at 2x). A biome without art keeps the flat
