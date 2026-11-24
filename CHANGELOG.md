@@ -9,6 +9,13 @@ All notable changes to 360PC-Engine. The format follows
 ## [Unreleased]
 
 ### Added
+- `engine/modules/progress`: a generic progress layer for achievements, unlocks and content
+  chosen by what the player did. Conditions as plain data (`all`, `any`, `none`, `count`, `has`,
+  `build`, `size`, `result`, `test`), run and floor counters (named numbers and named sets of
+  ids), rules checked at an event, a floor end or a run end that write earned ids into a profile
+  set (an unlock's id is the tag content declares with `unlock = id`), and `progress.pick` to
+  choose an entry by conditions, priority and a weighted draw with an `engine.rng` stream. It
+  needs no other module and knows nothing about a game.
 - `examples/rooms`: biome art from `art/` (`rooms_art.lua`): a fixed sky, two parallax layers,
   autotiled solid walls in one SpriteBatch per room, additive fireflies in each biome's glow
   colour, and a walking sprite for enemies (bosses at 2x). A biome without art keeps the flat
