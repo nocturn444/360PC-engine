@@ -17,7 +17,7 @@ end
 
 -- 1. Files and config
 for _, name in ipairs({ "game.lua", "conf.lua", "main.lua", "rooms_play.lua", "rooms_data.lua", "rooms_biomes.lua",
-  "rooms_stats.lua", "rooms_content.lua", "rooms_mutations.lua", "rooms_consumables.lua", "rooms_look.lua",
+  "rooms_art.lua", "rooms_stats.lua", "rooms_content.lua", "rooms_mutations.lua", "rooms_consumables.lua", "rooms_look.lua",
   "rooms_pickups.lua", "rooms_props.lua", "rooms_machines.lua", "rooms_pause.lua", "README.md" }) do
   check(read("examples/rooms/" .. name), "examples/rooms/" .. name .. " exists")
 end
@@ -714,5 +714,10 @@ F.reset_calls(); love.draw()
 minimap_mod.draw = minimap_draw
 check(minimap_calls == 1, "the minimap is drawn through rooms_minimap")
 check(#F.find("rectangle") >= 5 and play.pixels.count > 150, "the room, the slime and the minimap are drawn")
+check(play.art and play.art.quads and play.tile_batch and #play.fireflies == 8,
+  "the biome has art, a tile batch and eight fireflies")
+local drawn_batch = false
+for _, c in ipairs(F.find("draw")) do if c[2] == play.tile_batch then drawn_batch = true end end
+check(drawn_batch, "the tile batch is drawn inside the camera")
 
 print(string.format("OK: %d checks; the rooms example boots and walks its map", checks))

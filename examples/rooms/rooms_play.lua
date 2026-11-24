@@ -17,6 +17,7 @@ local pixelgrid = require("engine.pixelgrid")
 local data = require("rooms_data")
 local enemies = require("rooms_enemies")
 local biomes = require("rooms_biomes")
+local rooms_art = require("rooms_art")
 local VERSION = "V" .. require("rooms_version") .. " E" .. engine._VERSION
 local stats_mod = require("rooms_stats")
 local content = require("rooms_content")
@@ -261,6 +262,28 @@ function play.load_room(self, x, y)
     end
   end
   self.runs, self.ones = runs, ones
+  -- biome art: the solid tiles as one SpriteBatch (the variant picked from the open sides) and
+  -- a few fireflies placed by the room's own stream. Without art the flat runs above are drawn.
+  self.art = rooms_art.biome(self.biome.id)
+  if self.art then
+    self.tile_batch = rooms_art.build_tiles(self.art, base_grid)
+    if not state.fireflies then
+      local stream = self.streams:get("fireflies:" .. self.floor .. ":" .. index)
+      local room_w, room_h = base_grid.width * TS, base_grid.height * TS
+      local flies = {}
+      for i = 1, 8 do
+        flies[i] = {
+          x = stream:float() * room_w, y = stream:float() * room_h,
+          ax = 2 + stream:float() * 6, ay = 2 + stream:float() * 6,
+          phase = stream:float() * math.pi * 2, speed = 0.4 + stream:float() * 0.5,
+        }
+      end
+      state.fireflies = flies
+    end
+    self.fireflies = state.fireflies
+  else
+    self.tile_batch, self.fireflies = nil, nil
+  end
   -- the room's props, with one persistent state each, stamped on the collision grid
   state.props = state.props or {}
   self.props = props.set(prop_types, template.props, { tile_size = TS, state = state.props })
@@ -733,14 +756,50 @@ local function draw_minimap(self)
   minimap.draw(love.graphics, mm, self.nav.index, x0, y0, MINIMAP_OPTS)
 end
 
+-- A few fireflies per room: an additive glow and a bright centre, drifting with sin and cos of
+-- time. Their positions and phases were picked when the room loaded, so this allocates nothing.
+local function draw_fireflies(self, g)
+  local flies, color = self.fireflies, self.biome.glow
+  if not flies or not color then return end
+  local glow = rooms_art.glow()
+  local t = love.timer.getTime()
+  g.setBlendMode("add")
+  g.setColor(color[1], color[2], color[3], 0.5)
+  for i = 1, #flies do
+    local f = flies[i]
+    local x = f.x + math.sin(t * f.speed + f.phase) * f.ax
+    local y = f.y + math.cos(t * f.speed * 0.8 + f.phase) * f.ay
+    g.draw(glow, math.floor(x) - 16, math.floor(y) - 16)
+  end
+  g.setColor(1, 1, 1, 1)
+  for i = 1, #flies do
+    local f = flies[i]
+    local x = math.floor(f.x + math.sin(t * f.speed + f.phase) * f.ax)
+    local y = math.floor(f.y + math.cos(t * f.speed * 0.8 + f.phase) * f.ay)
+    g.rectangle("fill", x, y, 1, 1)
+  end
+  g.setBlendMode("alpha")
+end
+
 function play:draw(alpha)
   local g, camera = love.graphics, self.camera
   local colors = self.biome.colors
+  local art, boss = self.art, self.nav.room.type == "boss"
+  if art then
+    local cam_x, cam_y = camera:getDrawPosition(alpha)
+    rooms_art.draw_background(art, cam_x, cam_y)
+  end
   camera:attach(alpha)
-  if self.nav.room.type == "boss" then g.setColor(0.32, 0.16, 0.20, 1) else g.setColor(colors.wall[1], colors.wall[2], colors.wall[3], 1) end
-  for i = 1, #self.runs do local r = self.runs[i]; g.rectangle("fill", r[1], r[2], r[3], TS) end
+  if art then
+    if boss then g.setColor(0.8, 0.6, 0.65, 1) else g.setColor(1, 1, 1, 1) end
+    g.draw(self.tile_batch, 0, 0)
+  else
+    if boss then g.setColor(0.32, 0.16, 0.20, 1) else g.setColor(colors.wall[1], colors.wall[2], colors.wall[3], 1) end
+    for i = 1, #self.runs do local r = self.runs[i]; g.rectangle("fill", r[1], r[2], r[3], TS) end
+  end
   g.setColor(colors.ledge[1], colors.ledge[2], colors.ledge[3], 1)
   for i = 1, #self.ones do local r = self.ones[i]; g.rectangle("fill", r[1], r[2], r[3], 3) end
+  if art then draw_fireflies(self, g) end
   -- prop collision, drawn like the room's own walls and ledges
   g.setColor(colors.wall[1], colors.wall[2], colors.wall[3], 1)
   for i = 1, #self.prop_solid do local r = self.prop_solid[i]; g.rectangle("fill", r[1], r[2], r[3], r[4]) end
@@ -797,7 +856,7 @@ function play:draw(alpha)
     g.setColor(1, 1, 1, 0.6)
     engine.text.draw(label, (CW * TS - engine.text.width(label, 2)) / 2, 2 * TS, 2)
   end
-  self.fight:draw(alpha, self.nav.room.type == "boss")
+  self.fight:draw(alpha, self.nav.room.type == "boss" or self.nav.room.type == "miniboss")
   g.setColor(1, 1, 1, 1)
   -- the slime blinks while nothing can hurt it
   local p = self.fight.player

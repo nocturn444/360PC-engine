@@ -28,6 +28,33 @@ by room with `engine/modules/rooms`, by the soft-body slime of [examples/slime](
   wave 2 types their own colours and icons) through `rooms_minimap.lua`. The floor number and the
   run's resources are shown top left.
 
+## Art
+
+The "8-bit hi-fi" look: simple pixel art made rich by light, parallax and particles, drawn at the
+320x180 internal resolution with 16 px tiles.
+
+```
+art/
+  palette.png, palette.hex         the 32-colour master palette
+  <biome>/sky.png                  fixed sky, 320x180
+  <biome>/bg_far.png               far parallax layer, scrolls at 0.25 of the camera
+  <biome>/bg_mid.png               mid parallax layer, scrolls at 0.5 of the camera
+  <biome>/tiles.png                4x4 autotile sheet, 16x16 per variant
+  fx/glow.png                      additive light for the fireflies
+  enemies/mob_walk.png             4 walk frames of 16x16
+```
+
+`rooms_art.lua` loads a biome's images once (cached, nearest filtering) and builds one
+SpriteBatch per room from the solid tiles; the variant is picked from the open sides (mask 1
+up, 2 right, 4 down, 8 left; outside the room counts as solid). One-way ledges stay the flat
+rectangles. A biome without art keeps the older flat wall drawing. Every room gets fireflies in
+its biome's `glow` colour (`rooms_biomes.lua`), and enemies use `mob_walk.png` (bosses and
+minibosses at 2x).
+
+`tools/art/gen_placeholders.py` (PC only, needs Pillow) regenerates the placeholder PNGs. Each
+file is a stand-in: hand-drawn art replaces it by keeping the same file name and size, and the
+file can then be listed in the script's `KEEP` set so a rerun leaves it alone.
+
 ## Stats and mutations
 
 Pending the owner's confirmation: the stats, the virus currency, the shield, the machines and the
