@@ -9,6 +9,12 @@ All notable changes to 360PC-Engine. The format follows
 ## [Unreleased]
 
 ### Added
+- `engine/modules/combat`: modular enemy behaviours. `combat.behaviours` gains `shoot` (straight,
+  pattern with volleys and `rotate`, or aimed at the target), `charge` (windup, fixed dash,
+  recovery or `stun` when blocked), `hop`, `fly` (hover, follow, swoop) and `keep_away`; the
+  conditions `target_in_sight`, `target_above` / `target_below`, `grounded`, `health_below` and
+  `all` / `any` / `negate`; and `fly_move` for a body in a bump world. Every state writes only
+  the agent's wish (`move_x`, `move_y`, `move_speed`, `jump`) and allocates nothing per step.
 - `examples/rooms`: biome art from `art/` (`rooms_art.lua`): a fixed sky, two parallax layers,
   autotiled solid walls in one SpriteBatch per room, additive fireflies in each biome's glow
   colour, and a walking sprite for enemies (bosses at 2x). A biome without art keeps the flat
