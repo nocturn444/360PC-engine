@@ -1,6 +1,6 @@
 # Ability mutations plan: movement abilities, shot modifiers, bombs as consumables, Isaac-style HUD
 
-Status: plan. Step 1 (engine) ready to build; step 2 (game) has the owner's answers (end of file). Branch `claude/project-thread-j7uxll`, stacked on PR #87
+Status: step 1 (engine) built by opencode and audited; step 2 (game) built by Claude (the opencode run failed to install twice). Branch `claude/project-thread-j7uxll`, stacked on PR #87
 (`claude/project-thread-2yza81`, modular enemy AI), because both change `rooms_enemies.lua`.
 
 Requested by the owner on 2026-11-24: mutations that give special abilities instead of only stats

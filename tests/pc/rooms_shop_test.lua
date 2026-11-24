@@ -40,7 +40,7 @@ end
 check(#S.stock(C.new_pools(), Rng.new(7), {}, nil) == 3, "no n means the default three")
 check(#S.stock(C.new_pools(), Rng.new(7), {}, 1) == 1, "n can be smaller")
 check(#S.stock(C.new_pools(), Rng.new(7), {}, 0) == 0, "n can be zero")
-check(#S.stock(C.new_pools(), Rng.new(7), {}, 10) <= #C.mutations + #C.hearts,
+check(#S.stock(C.new_pools(), Rng.new(7), {}, 10) <= #C.mutations + #C.hearts + #C.bombs,
   "n is capped by what is available")
 refuses(function() S.stock(nil, Rng.new(1), {}, 3) end, "no pools", "pools")
 refuses(function() S.stock(C.new_pools(), nil, {}, 3) end, "no rng", "rng")
@@ -50,7 +50,9 @@ refuses(function() S.stock(C.new_pools(), Rng.new(1), {}, 1.5) end, "a fractiona
 local heart_pools = C.new_pools()
 for i = 1, #heart_pools.mutations.entries do heart_pools.mutations:take(heart_pools.mutations.entries[i]) end
 local hearts = S.stock(heart_pools, Rng.new(3), {}, 3)
-check(#hearts == 1 and hearts[1].entry.kind == "heart", "a heart fills an empty mutation pool")
+check(#hearts == 2 and hearts[1].entry.kind == "heart" and hearts[2].entry.kind == "bomb",
+  "a heart and a bomb fill an empty mutation pool")
+check(hearts[2].price == 5, "the bomb costs 5 virus")
 check(hearts[1].price == 3, "the heart costs 3 virus")
 
 -- 4. Same rng and context, same stock; another seed differs

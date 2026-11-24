@@ -18,7 +18,7 @@ local M = {}
 -- Prices in virus of one offer, by kind. A pool entry with `kind` is a consumable (heart, ...);
 -- one without `kind` is a mutation. Change these numbers to tune the shop.
 M.tuning = {
-  prices = { mutation = 15, heart = 3 },
+  prices = { mutation = 15, heart = 3, bomb = 5 },
   size = 3,
 }
 
@@ -31,7 +31,7 @@ end
 
 -- Draws up to `count` distinct entries of one pool into `offers`, remembering what was drawn so
 -- the next pool cannot repeat an id. Nothing is taken from the pool.
-local POOL_ORDER = { "mutations", "hearts" }
+local POOL_ORDER = { "mutations", "hearts", "bombs" }
 
 local function draw_into(pool, rng, ctx, count, offers, exclude)
   if count <= 0 or pool == nil then return end
@@ -53,7 +53,7 @@ end
 
 -- M.stock(pools, rng, ctx, n) -> an array of up to n (default M.tuning.size, 3) offers. Each
 -- offer is { entry = mutation or consumable, price = virus, pool = the items pool }. The stock
--- fills from the mutation pool first, then from the hearts pool, without repeats and without
+-- fills from the mutation pool first, then from the hearts and bombs pools, without repeats and without
 -- taking anything (a bought item is taken later by M.buy). Same rng and context, same stock.
 -- `ctx` is the pool's own context (room, biome, have, exclude, filter, weight); pass the content
 -- filter in ctx.filter if the game's source rules should apply.

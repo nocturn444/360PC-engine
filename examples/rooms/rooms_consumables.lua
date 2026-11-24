@@ -3,10 +3,10 @@
 -- `kind` and effect. These are examples only: the real content is the game's to design.
 --
 -- Fields:
---   id, name, weight, kind ("heart" | "virus" | "bonus_key")
+--   id, name, weight, kind ("heart" | "virus" | "bomb" | "bonus_key")
 --   sources   where it can drop: "mob", "room_clear", "obstacle", "machine"
 --   heal      hearts: health restored
---   amount    virus: stacks (or damage) the game applies
+--   amount    virus: stacks (or damage) the game applies; bomb: bombs given
 --   color     RGB, for the game to draw
 local M = {}
 
@@ -31,6 +31,17 @@ M.entries = {
     amount = 1,
     tags = { "hazard" },
     color = { 0.55, 0.85, 0.30 },
+    example = true,
+  },
+  {
+    id = "bomb",
+    name = "BOMB",
+    weight = 10,
+    kind = "bomb",
+    sources = { "mob", "room_clear", "obstacle" },
+    amount = 1,
+    tags = { "bomb" },
+    color = { 0.35, 0.35, 0.40 },
     example = true,
   },
 }

@@ -18,6 +18,11 @@ All notable changes to 360PC-Engine. The format follows
   `burst` (volleys per trigger) and `burst_interval`, keeping the trigger's aim for every volley;
   `attack:trigger` and `attack:cancel` stop the rest of a running burst. Documented in
   `engine/modules/combat/README.md`.
+- `examples/rooms`: seven ability mutations with placeholder names (double jump, wall jump,
+  grappling hook, dash on a double tap with i-frames, free aim, double shot, burst); bombs are a
+  consumable (wallet `bomb`, pickups, drops, shop); each attack has its own button (RT shoot,
+  Y melee, RB bomb, LB hook) instead of switching; an Isaac-style HUD (`rooms_hud.lua`). Plan in
+  `examples/rooms/docs/ABILITIES.md`.
 - `engine/modules/softbody`: `Body:wall_side()` (`-1` left, `1` right, `0` none or both), with
   `wall_left` and `wall_right` contact counts; `on_wall()` is unchanged. Documented in
   `engine/modules/softbody/README.md`.
