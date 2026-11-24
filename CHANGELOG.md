@@ -9,6 +9,28 @@ All notable changes to 360PC-Engine. The format follows
 ## [Unreleased]
 
 ### Added
+- `examples/rooms`: enemy types as data (`rooms_enemy_types.lua`): walker, hopper, charger,
+  shooter, sniper, sprayer, bat and drone, each with its movement kind, size, health / damage
+  multipliers, attacks, `combat.brains` spec and placeholder look. `rooms_enemies.lua` builds
+  one brain and one stats table per type per room, uses one shared enemy arsenal (32 shots) and
+  moves flyers with `combat.behaviours.fly_move`; contact damage, windup flashes and enemy shot
+  colours are wired in. Each biome has a PROVISIONAL weighted type pool (`mobs.types`) and
+  `rooms_play.lua` picks a type per spot with a stream from the room seed and the spot index, so
+  re-entered rooms keep their enemies and arrivals keep their type. New test:
+  `tests/pc/rooms_enemies_test.lua`.
+- `engine/modules/combat`: modular enemy behaviours. `combat.behaviours` gains `shoot` (straight,
+  pattern with volleys and `rotate`, or aimed at the target), `charge` (windup, fixed dash,
+  recovery or `stun` when blocked), `hop`, `fly` (hover, follow, swoop) and `keep_away`; the
+  conditions `target_in_sight`, `target_above` / `target_below`, `grounded`, `health_below` and
+  `all` / `any` / `negate`; and `fly_move` for a body in a bump world. Every state writes only
+  the agent's wish (`move_x`, `move_y`, `move_speed`, `jump`) and allocates nothing per step.
+- `engine/modules/combat`: brains as data. `combat.brains.build(spec, ctx)` turns a plain table
+  (states as `{ behaviour_name, opts... }`, transitions with `when` / `after`) into a
+  `combat.fsm` definition, with `"idle"`, condition combinators (`all`, `any`, `not`), plain
+  function conditions, and the step 1 behaviours and conditions registered by name. `ctx` fills
+  the opts a behaviour or condition needs while the spec wins; `brains.behaviour` /
+  `brains.condition` let a game register its own. `build` never changes the spec, is called once
+  per definition, and the result allocates nothing per step.
 - `examples/rooms`: biome art from `art/` (`rooms_art.lua`): a fixed sky, two parallax layers,
   autotiled solid walls in one SpriteBatch per room, additive fireflies in each biome's glow
   colour, and a walking sprite for enemies (bosses at 2x). A biome without art keeps the flat
