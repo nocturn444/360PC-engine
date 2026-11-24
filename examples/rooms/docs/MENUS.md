@@ -9,8 +9,8 @@ The permanent data behind Progress and Options is the **profile** (`rooms_profil
 meaningful moments (a first discovery, the end of a run, leaving the Options page), never per
 frame. It holds `discovered.enemies`, `discovered.bosses` and `discovered.biomes` (sets keyed by
 id), `kills[id]`, `deaths_by[id]`, `runs`, `wins`, `losses`, the current `streak` (positive: wins,
-negative: losses), `best_win_streak`, empty `achievements` / `endings` / `unlocked_items` sets,
-and `options` (`music_volume`, `sfx_volume`, `fullscreen`).
+negative: losses), `best_win_streak`, the seen `endings` set, empty `achievements` /
+`unlocked_items` sets, and `options` (`music_volume`, `sfx_volume`, `fullscreen`).
 
 ## Title menu (`rooms_title.lua`)
 
@@ -36,17 +36,22 @@ The main page shows the completion percentage and one button per list; every lis
 button that returns to the main page.
 
 - **Completion** = discovered things / total known in the game data, as one percentage.
-  "Things" are enemies, bosses and biomes (read from `rooms_biomes.lua`) plus achievements,
-  endings and unlocked items. The last three have no data yet, so they add 0 of 0; they will be
-  counted then.
+  "Things" are enemies, bosses and biomes (read from `rooms_biomes.lua`), the ten endings
+  (`rooms_endings.lua`) and achievements / unlocked items. The last two have no data yet, so
+  they add 0 of 0; they will be counted then.
 - **Bestiary**: one scrolling `ui.list` row per enemy and boss type in the game data.
   Undiscovered: `???`. Discovered: `Name  K:<kills>  D:<deaths_by>` (the profile's counts for
   that id). The first time the slime enters a room with enemies of a type, or a boss room with
   its boss, that type is discovered (and saved).
 - **Biomes**: `Discovered: n/total` and a list of the biome names, `???` for undiscovered.
   Entering a floor discovers its biome.
-- **Achievements**, **Unlocked items**, **Endings**: lists; `None yet.` while nothing awards
-  them. The profile has the empty sets ready.
+- **Achievements**, **Unlocked items**: lists; `None yet.` while nothing awards them. The
+  profile has the empty sets ready.
+- **Endings**: one `ui.list` row per ending in `rooms_endings.list` order. Seen endings show
+  their name and can be selected to replay their cutscene (it returns to this page when it
+  ends); unseen ones show `???` and do nothing. In preview mode (the `debug` flag of game.lua or
+  a `-test` build version) every ending shows its name and is playable, and the page title is
+  "Endings (PREVIEW)".
 - **Runs**: runs, wins, losses, the current streak (`Win streak: n` / `Loss streak: n` / `No
   streak`) and the best win streak.
 
@@ -60,9 +65,12 @@ dims the frozen room under it. `autopause = false`. The death records a loss in 
 
 The same menu ends a victory: clearing the boss room of the last floor (`FLOORS`) is the end of
 the run. On that floor no stairs appear; after a short fade `rooms_play` records
-`play.result = "win"` and pushes the menu, whose title is "Victory" instead of "Game Over". The
-victory records a win and the streak in the profile. The buttons and the Stats page are the
-same.
+`play.result = "win"` and plays the ending picked by `rooms_endings.pick(play)` (always "The
+Plush" for now) in the `cutscene` state. When the ending finishes (played or skipped, holding
+Back 1 s) the profile marks it seen with `profile.see_ending(id)` and the menu opens with the
+title "Victory" instead of "Game Over". The play state stays under the menu, so Stats and
+Restart Run work as after a death. The victory records a win and the streak in the profile. The
+buttons and the Stats page are the same.
 
 | Button | What it does |
 |---|---|

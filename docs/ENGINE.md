@@ -49,7 +49,7 @@ together, under load: [examples/perf_platformer](../examples/perf_platformer/REA
 | `engine.init(config)`, `engine.update(dt)`, `engine.draw()` | The same three steps, to call from the game's own callbacks instead of `run`. |
 | `engine.autopause(reason, ...)` | Pushes the configured pause state unless it is already on top or the top state has `autopause = false`; returns true when it pushed. See the auto-pause options below. |
 | `engine.time`, `engine.states`, `engine.controls`, `engine.screen` | The Timestep, the state Machine, the Input (if `config.input`) and the Pixel (if `config.pixel`), once `love.load` ran. |
-| `engine.state`, `.timestep`, `.input`, `.camera`, `.pixel`, `.layers`, `.entity`, `.modifiers`, `.rng`, `.save`, `.level`, `.ui`, `.text`, `.anim`, `.debug`, `.tune` | The modules. `engine.anim` loads anim8 on first use; `engine.debug` and `engine.tune` are loaded on first use too. |
+| `engine.state`, `.timestep`, `.input`, `.camera`, `.pixel`, `.layers`, `.entity`, `.modifiers`, `.rng`, `.save`, `.level`, `.ui`, `.text`, `.anim`, `.debug`, `.tune`, `.cutscene` | The modules. `engine.anim` loads anim8 on first use; `engine.debug`, `engine.tune` and `engine.cutscene` are loaded on first use too. |
 
 Config: `rate` (Hz, 60), `max_steps` (5), `max_frame` (0.25 s), `input`, `pixel`, `states`
 (`name = table`), `load` (`function(engine)`, runs in `love.load` before the first state is
@@ -799,6 +799,72 @@ its lines) and `printf(s, x, y, limit, align)` (the wrapped lines, aligned left,
 Give it to `engine.ui` as `theme = { font = engine.text.font(1) }` and the menus draw with the
 built-in font, with no `default_font` needed on the console. `getWrap` allocates because it runs
 on layout; `printf` keeps the wrapped lines per string and limit, so drawing allocates nothing.
+`engine.text.wrap(s, limit, scale)` is that same word wrap as a plain function, for laying out
+text once outside a Font.
+
+## engine.cutscene
+
+A data-driven cutscene player for intros and endings: a script is a list of steps run in order.
+Loaded on first use. It knows nothing about a game; text is drawn with `engine.text` (no TTF on
+the console) and nothing is allocated in `update` or `draw` (a step allocates its own state when
+it starts). No scissor, no canvas, no video.
+
+```lua
+local cs = engine.cutscene.new({
+  id = "intro",
+  skippable = true,                 -- default true
+  background = { 0, 0, 0 },         -- full-screen colour drawn first
+  steps = {
+    { "fade", to = 1, time = 0 },
+    { "show", id = "sky", rect = { 320, 180 }, color = { 0.1, 0.1, 0.3 } },
+    { "fade", to = 0, time = 1 },
+    { "text", text = "HELLO", x = 20, y = 80, w = 280 },
+    { "say", text = "WHO ARE YOU?", speaker = "BLOB" },
+    { "call", fn = function(c) unlocked = true end, always = true },
+  },
+}, { audio = sfx, on_finish = function(c, skipped) ... end })
+
+function state:input(input) cs:input(input) end
+function state:update(dt) cs:update(dt) end
+function state:draw() cs:draw() end             -- in game pixels, inside engine.pixel
+```
+
+| | |
+|---|---|
+| `cs:input(input)`, `cs:update(dt)` | Once per fixed step: `input` reads the advance and skip actions; `update` advances the steps. |
+| `cs:draw()` | In game pixels: background, elements, text blocks, the fade overlay, then the skip hint. |
+| `cs:skip()` | Ends at once: `done = true`, `on_finish(cs, true)`; `call` steps not reached with `always = true` still run. |
+| `cs.done`, `cs.step_index` | Whether it ended, and the step being run (the last one started; the last index after a skip). |
+
+Options: `width`, `height` (default `engine.screen`'s, else 320 x 180), `audio` (an
+`engine.audio`; without it `sound` and `music` do nothing), `image(file)` (default
+`love.graphics.newImage`, cached per file), `actions` (`{ advance = "ui_accept", skip =
+"ui_back" }`), `skippable` (overrides the script) and `on_finish(cs, skipped)` (once).
+
+A step is a table whose first item is its kind; steps with `wait = false` start the next one at
+once, so moves, fades and text can run together. Unknown kinds and missing or invalid fields raise
+an error naming the step index and the field when the cutscene is created.
+
+| Kind | Fields | |
+|---|---|---|
+| `wait` | `time` | Waits that many seconds. |
+| `fade` | `to` (0..1, 1 = covered), `time`, `color` (black) | Full-screen overlay, drawn on top of everything but the skip hint. |
+| `show` | `id`, then `image` (file) with optional `quad = { x, y, w, h }`, or `rect = { w, h }` with `color`; `x`, `y`, `layer` (0), `alpha` (1), `scale` (1), `parallax` (1) | Adds or replaces an element. `parallax` is how much a pan moves it (0 = fixed to the screen). |
+| `hide` | `id` | Removes an element (or a text block). |
+| `move` | `id`, `x` / `y` / `alpha`, `time`, `ease` (`"linear"`, `"in"`, `"out"`, `"inout"`) | Tweens an element. |
+| `pan` | `x`, `y`, `time`, `ease` | Tweens the view offset: elements are drawn at `pos - view * parallax`, rounded to whole pixels. |
+| `shake` | `amount`, `time` | Shakes the view with a fixed, deterministic pattern. |
+| `text` | `text`, `x`, `y`, `w` (wrap width), `align`, `color`, `scale` (1), `speed` (30 characters a second; 0 = all at once), `id`, `wait` | A typed text block. `wait` is `"button"` (default: a press finishes the typing, a second one continues), a number of seconds or `false`. It stays until hidden or replaced by a `text` with the same `id`. |
+| `say` | `text`, `speaker`, `speed`, `wait` | A dialogue box at the bottom (about three lines); the box goes away when the next step that is not a `say` starts. |
+| `sound` | `name`, `volume`, `pitch` | `audio:play(...)`; never waits. |
+| `music` | `name` (nil = stop), `fade` | `audio:music(name, { fade = ... })`; never waits. |
+| `call` | `fn`, `always` | `fn(cs)`, a hook for the game; `always = true` also runs it when the cutscene is skipped. |
+
+**Input.** `advance` (default `ui_accept`) finishes the current typing or continues a
+`wait = "button"` step. `skip` (default `ui_back`) must be **held** for 1 second when the script
+is skippable (a short press does nothing); while held, `HOLD TO SKIP` and a filling bar are drawn
+bottom right. Skipping stops every tween and leaves the music as the script last set it. An
+`engine.input` without those actions gets the `engine.ui` defaults defined the first time.
 
 ## engine.tune
 

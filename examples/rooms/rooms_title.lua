@@ -6,8 +6,22 @@ local engine = require("engine")
 local ui = engine.ui
 local profile = require("rooms_profile")
 local options = require("rooms_options")
+local endings_data = require("rooms_endings")
+local VERSION = require("rooms_version")
 
 local M = { autopause = false }
+
+-- Debug builds list and play every ending (the owner previews them without winning a run).
+-- A build version with "-test" counts as a debug build too; M.set_preview is for the tests.
+local preview_override
+local function preview_mode()
+  if preview_override ~= nil then return preview_override end
+  return engine.debug.flag() or tostring(VERSION):find("-test", 1, true) ~= nil
+end
+function M.set_preview(value)
+  if value == nil then preview_override = nil else preview_override = value and true or false end
+end
+function M.preview_mode() return preview_mode() end
 
 -- The built-in pixel font: the console has no TTF, so the menu draws its text with rectangles.
 local theme = { font = engine.text.font(1) }
@@ -15,7 +29,7 @@ local W, H = 320, 180
 local BACKGROUND = { 0.07, 0.08, 0.12 }
 
 local main, challenges, progress_main, bestiary, biomes_page, achievements, items_page
-local endings, runs_page, options_page, confirm_quit
+local endings, endings_list, endings_title, runs_page, options_page, confirm_quit
 local active
 
 -- Each page opens on its safe default (Start Run, Back or No), whatever was focused the last
@@ -85,8 +99,8 @@ local function bestiary_items()
   return items
 end
 
--- The achievements, endings and unlocked items have no data yet; the pages still list whatever
--- the profile set holds, or "None yet.".
+-- The achievements and unlocked items have no data yet; the pages still list whatever the
+-- profile set holds, or "None yet.".
 local function set_items(kind)
   local d = profile.get()
   local items = {}
@@ -96,13 +110,51 @@ local function set_items(kind)
   return items
 end
 
+-- One row per ending, in rooms_endings.list order: the name when seen (or in preview mode),
+-- "???" until then. A playable row pushes the cutscene state over the title; when it finishes
+-- the state pops back to this page.
+local function endings_items()
+  local d, preview = profile.get(), preview_mode()
+  local items = {}
+  for i, ending in ipairs(endings_data.list) do
+    local seen = d.endings ~= nil and d.endings[ending.id] == true
+    local playable = seen or preview
+    items[i] = { id = ending.id, ending = ending, seen = seen, playable = playable,
+      label = playable and ending.name or "???" }
+  end
+  return items
+end
+
+local function replay_ending(ending)
+  engine.states:push("cutscene", ending.script, function(skipped)
+    engine.states:pop()
+  end)
+end
+
 local function ensure()
   if main then return end
   challenges = sub_page("Challenges", "No challenges yet.")
   bestiary = list_page("Bestiary", bestiary_items)
   achievements = list_page("Achievements", function() return set_items("achievements") end)
   items_page = list_page("Unlocked items", function() return set_items("unlocked_items") end)
-  endings = list_page("Endings", function() return set_items("endings") end)
+  endings_title = ui.label({ id = "title", text = "Endings", align = "center" })
+  endings_list = ui.list({ id = "list", rows = 5, on_select = function(list, i, item)
+    if item and item.playable then replay_ending(item.ending) end
+  end })
+  endings = ui.screen({
+    theme = theme,
+    on_back = back_progress,
+    focus = "back",
+    root = ui.vstack({ background = true, wrap = true, align = "stretch", spacing = 4,
+      endings_title,
+      endings_list,
+      ui.button({ id = "back", label = "Back", on_press = back_progress }),
+    }),
+  })
+  endings.refresh = function()
+    endings_title:setText(preview_mode() and "Endings (PREVIEW)" or "Endings")
+    endings_list:setItems(endings_items())
+  end
 
   local biome_count = ui.label({ id = "count", text = "" })
   local biome_list = ui.list({ id = "list", rows = 5 })

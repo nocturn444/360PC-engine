@@ -5,6 +5,7 @@
 -- the Progress page lists (enemy, boss and biome types) is read from rooms_biomes.lua.
 local engine = require("engine")
 local biomes = require("rooms_biomes")
+local endings = require("rooms_endings")
 
 local M = {}
 
@@ -137,6 +138,17 @@ function M.is_discovered(kind, id)
   return d.discovered ~= nil and d.discovered[kind] ~= nil and d.discovered[kind][id] == true
 end
 
+-- First time only: marks an ending as seen and writes the profile. Returns true if it is new.
+function M.see_ending(id)
+  if id == nil then return false end
+  local d = M.get()
+  d.endings = d.endings or {}
+  if d.endings[id] then return false end
+  d.endings[id] = true
+  M.write()
+  return true
+end
+
 function M.kill(id)
   if id == nil then return end
   local d = M.get()
@@ -197,7 +209,11 @@ function M.completion_counts()
   local biome_ids = {}
   for i, b in ipairs(M.known_biomes()) do biome_ids[i] = b.id end
   add("biomes", biome_ids)
-  -- achievements, endings and unlocked items have no known data yet: they add 0 and 0
+  for _, ending in ipairs(endings.list) do
+    total = total + 1
+    if d.endings and d.endings[ending.id] then n = n + 1 end
+  end
+  -- achievements and unlocked items have no known data yet: they add 0 and 0
   return n, total
 end
 
