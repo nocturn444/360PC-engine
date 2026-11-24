@@ -1,6 +1,6 @@
 # Enemy AI plan: modular behaviours and enemy types
 
-Status: plan, to be built in three steps on branch `claude/project-thread-2yza81` (stacked on
+Status: step 1 done (audited). Plan, built in three steps on branch `claude/project-thread-2yza81` (stacked on
 PR #85). Requested by the owner on 2026-11-24: straight-line shots, pattern shots, free (aimed)
 shots, charge, jumping enemies, flying enemies, and an easy way to add new enemy types later.
 
@@ -240,7 +240,8 @@ PC and console. Arrivals (enemies that fell from the room above) keep their type
 `state.arrivals[k].type`. Flyers never fall. A template spot may force a type later
 (`t.type` in the level), not required now.
 
-Default introduction (gradual; pending the owner's confirmation):
+Provisional introduction (the owner will set the real table later; mark it in the code as
+PROVISIONAL, pure data in `rooms_biomes.lua`):
 - forest (1-2): walker, hopper
 - deep jungle (3-4): + charger, bat
 - grotto (5): + shooter
