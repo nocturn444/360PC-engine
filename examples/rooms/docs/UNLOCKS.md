@@ -16,14 +16,17 @@ What already exists and is reused: `items.pool` and `procgen.biomes` already hid
 `unlock = "<tag>"` is not in their `unlocked` set. So the unlock system only has to **produce
 tags** and persist them; locked content is declared with the existing `unlock` field.
 
-Three steps, each a commit on this branch:
+Four steps, each a commit on this branch:
 
 1. **Engine:** `engine/modules/progress/` (conditions, run counters, rules, pick), tests, docs.
 2. **Game, unlocks and achievements:** `rooms_progress.lua` (achievements, unlock rules, run
    counters hooked into play), profile fields, Progress pages, unlock notices. Needs the
    profile of PR #88.
-3. **Game, final boss:** `rooms_final_bosses.lua`, chosen on the last floor, hooked into the
-   victory of PR #88 and the ending pick of PR #89.
+3. **Engine, boss director:** `engine/modules/combat/boss.lua`: phases by health, attack
+   rotation with telegraphs, health bar values. Reuses the behaviours and brains of PR #87
+   (merged into this branch first); no behaviour code is duplicated.
+4. **Game, final boss:** `rooms_final_bosses.lua`, chosen on the last floor and driven by the
+   boss director, hooked into the victory of PR #88 and the ending pick of PR #89.
 
 ## 1. Engine: `engine/modules/progress/`
 
@@ -172,7 +175,72 @@ a locked mutation is never drawn until its tag is unlocked, then can be; the loc
 appears before unlock and can appear after; notices and Stats list; Progress pages fit 320x180
 with no printf/setFont.
 
-## 3. Game: the final boss (`examples/rooms`)
+## 3. Engine: the boss director (`engine/modules/combat/boss.lua`)
+
+The owner asked whether bosses need their own AI. Answer (approved 2026-11-24): bosses reuse the
+modular enemy behaviours and `combat.brains` from PR #87, plus a thin generic **director** on top
+for what only bosses have: phases, an attack rotation with clear tells, and a health bar.
+Before this step, merge `claude/project-thread-2yza81` (PR #87, steps 1-2: `combat.behaviours`,
+`combat.brains`) into this branch with a merge commit.
+
+### API (exported as `combat.boss`)
+
+```lua
+local def = combat.boss.build(spec, ctx)   -- once per boss type (ctx: the brains build context)
+local b = combat.boss.new(def, agent, opts) -- once per fight; opts.on_phase(b, index)
+b:update(dt)        -- once per fixed step, instead of the agent's fsm update
+b.phase             -- current phase index (1..n)
+b.bar               -- displayed health fraction 0..1, eased towards the real one (no allocation)
+b.telegraph         -- nil, or the current state's name while it is in its "windup" phase
+b.telegraph_t       -- 0..1 progress of that windup (for a flashing tell or a charge-up bar)
+b.transitioning     -- true during a phase change
+```
+
+A spec:
+
+```lua
+{
+  name = "The Mutant",
+  phases = {
+    { at = 1.0, brain = { ... } },                         -- a combat.brains spec
+    { at = 0.5, brain = { ... }, transition = { time = 1.2, invulnerable = true, shake = 4 } },
+  },
+}
+```
+
+- `phases[i].at`: health fraction at which the phase starts (first is 1.0, strictly
+  decreasing). Each phase has its own brain (built once by `build` through `combat.brains`, so
+  every behaviour and condition from PR #87 is available by name).
+- Phase change: when health drops to `at` or below, the current state exits, the boss halts for
+  `transition.time` seconds (invulnerable if asked: the director sets `agent.invulnerable`, the
+  game's damage hook respects it), `opts.on_phase` is called (the game plays a sound, a shake,
+  spawns adds), then the new phase's fsm starts at its `initial`. Skipping several thresholds
+  with one hit goes straight to the lowest one reached.
+- **Attack rotation**: a new behaviour `"rotate"` registered in `combat.brains` (generic, also
+  usable by normal enemies): `{ "rotate", options = { { to = "spray", weight = 2 }, { to =
+  "charge" } }, order = "random" | "cycle", no_repeat = true, pause = 0.6 }`. It waits `pause`
+  seconds (facing the target), then goes to the next state picked from `options` with
+  `agent.rng` (an `engine.rng` stream; `"cycle"` takes them in order). Each attack state ends
+  with `next = "<the rotate state>"`, so a phase is a loop: pick, tell, attack, recover, pick.
+- **Telegraphs**: the attack behaviours already expose `m.phase == "windup"`; the director only
+  reads it into `b.telegraph` / `b.telegraph_t` so the game can draw one standard tell (flash,
+  exclamation mark, charge-up) for every boss attack. A `windup` value in the spec controls its
+  length per attack.
+- **Health bar**: `b.bar` eases towards `health / max` (fast down, so damage reads at once). The
+  game draws it; the engine draws nothing.
+
+Plain Lua 5.1, no allocation in `update` (phases and machines are built in `build` / `new`),
+randomness only through `agent.rng`.
+
+### Docs and tests
+
+`engine/modules/combat/README.md` (Bosses section), `docs/ENGINE.md`, `CHANGELOG.md`.
+`tests/engine/boss_test.lua` (registered in `run.lua`): phase thresholds (including skipping
+two with one hit), transition time and invulnerability, `on_phase` once per phase, `rotate`
+cycle and random with `no_repeat` (deterministic per seed), telegraph values during a shoot and
+a charge windup, `bar` easing, no allocation over 600 steps.
+
+## 4. Game: the final boss (`examples/rooms`)
 
 ### `rooms_final_bosses.lua`
 
@@ -188,10 +256,20 @@ profile. Each entry: `id`, `name`, `health`, `damage`, `color`, `size` (scale of
 | `final_scientist` | "The Last Scientist" | priority 2: the run never picked up a heart (`hearts` at_most 0) |
 
 The chosen boss replaces the biome boss in the boss room of the last floor (stats, colour,
-size; the existing enemy body and behaviour). It is shown on the boss room's name banner and
-discovered in the profile's bestiary like other bosses. When PR #87 (modular enemy AI) is in
-the stack, each entry gets an optional `brain` field using `combat.brains`; until then the
-behaviour is the existing boss one.
+size) and is driven by `combat.boss` with the entry's `phases` (each a brain spec). It is
+shown on the boss room's name banner and discovered in the profile's bestiary like other
+bosses. HUD: while a director-driven boss is alive, its name and health bar (`b.bar`) are drawn
+at the top of the screen with the built-in pixel font; during a windup the boss flashes
+(`b.telegraph_t`). The attacks it uses are entries of `rooms_attacks.lua` (placeholders).
+
+Placeholder patterns, two phases each (the second at 50% health, faster and with one more
+attack):
+
+| Boss | Phase 1 | Phase 2 |
+|---|---|---|
+| `final_mutant` | walks at the player, charge, ring of 8 shots | adds hop slams and a spiral (`rotate`) |
+| `final_ai` | flies (`fly` follow), aimed 3-shot volleys, swoop | spray patterns, faster swoops |
+| `final_scientist` | keeps away, throws bombs (explosive), aimed shots | adds a charge and a bomb volley |
 
 ### Hooks
 
@@ -207,4 +285,6 @@ behaviour is the existing boss one.
 
 The pick is deterministic per seed; each placeholder condition selects its boss (simulated
 run state) and the default otherwise; the last floor's boss room spawns the picked boss with
-its stats; killing it wins and plays the mapped ending; the boss appears in the bestiary.
+its stats; every boss spec builds; each boss reaches phase 2 at half health; the HUD bar fits
+320x180 with no printf/setFont; killing it wins and plays the mapped ending; the boss appears
+in the bestiary.
