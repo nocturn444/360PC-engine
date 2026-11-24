@@ -21,7 +21,7 @@ for _, name in ipairs({ "game.lua", "conf.lua", "main.lua", "rooms_play.lua", "r
   "rooms_art.lua", "rooms_stats.lua", "rooms_content.lua", "rooms_mutations.lua", "rooms_consumables.lua", "rooms_look.lua",
   "rooms_pickups.lua", "rooms_props.lua", "rooms_machines.lua", "rooms_pause.lua",
   "rooms_title.lua", "rooms_gameover.lua", "rooms_profile.lua", "rooms_options.lua",
-  "README.md" }) do
+  "rooms_endings.lua", "rooms_cutscene.lua", "README.md" }) do
   check(read("examples/rooms/" .. name), "examples/rooms/" .. name .. " exists")
 end
 local Config = dofile("runtime/lua/config.lua")
@@ -193,6 +193,47 @@ local function menu_fits(state, what)
     what .. " draws its text with engine.text rectangles, not love.graphics")
 end
 
+-- Every ending script is valid data, plays to the end with advance presses inside 120 s, and
+-- draws with engine.text rectangles within the 320 x 180 screen (no printf / print / setFont).
+local endings_data = require("rooms_endings")
+local cutscene_state = require("rooms_cutscene")
+local function advance_input()
+  local input = { actions = { ui_accept = true, ui_back = true }, step = 0 }
+  function input:down(name) return false end
+  function input:pressed(name) return name == "ui_accept" and self.step % 2 == 1 end
+  return input
+end
+local function play_script(script)
+  local cs = engine.cutscene.new(script)
+  local input = advance_input()
+  local steps = 0
+  while not cs.done and steps < 7200 do
+    input.step = input.step + 1
+    cs:input(input)
+    cs:update(1 / 60)
+    steps = steps + 1
+    F.reset_calls(); cs:draw()
+    if #F.find("printf") > 0 or #F.find("print") > 0 or #F.find("setFont") > 0 then
+      return false, steps, "text drawn with love.graphics"
+    end
+    for _, c in ipairs(F.find("rectangle")) do
+      local x, y, w, h = c[3], c[4], c[5], c[6]
+      if x < -0.001 or y < -0.001 or x + w > 320.001 or y + h > 180.001 then
+        return false, steps, "a rectangle outside 320 x 180"
+      end
+    end
+  end
+  return cs.done, steps
+end
+for _, ending in ipairs(endings_data.list) do
+  check(engine.cutscene.new(ending.script) ~= nil, ending.id .. ": its script validates")
+  check(#ending.script.steps >= 6 and #ending.script.steps <= 12,
+    ending.id .. ": its placeholder has 6 to 12 steps")
+  local ok, steps, why = play_script(ending.script)
+  check(ok, ending.id .. ": plays to the end (" .. tostring(why or steps) .. ")")
+  check(steps / 60 <= 120, ending.id .. ": finishes within 120 s of steps")
+end
+
 -- the title menu: the first state; Start Run enters the play state
 check(engine.states:top() == title, "the game starts on the title menu")
 check(title.autopause == false and gameover.autopause == false,
@@ -241,9 +282,50 @@ tap("return")
 open_progress_page("items", "Unlocked items")
 check(title:page():get("list").items[1] == "None yet.", "Unlocked items says None yet.")
 tap("return")
+title.set_preview(false)
 open_progress_page("endings", "Endings")
-check(title:page():get("list").items[1] == "None yet.", "Endings says None yet.")
-tap("return")
+page = title:page()
+local ending_list = page:get("list")
+check(#ending_list.items == #endings_data.list, "Endings has one row per ending in order")
+check(ending_list.items[1].label == "???", "an unseen ending is ???")
+page:focus(ending_list); ending_list:select(1); ending_list:accept(page)
+check(engine.states:top() == title, "an unseen ending cannot be replayed")
+local plush = endings_data.list[1]
+check(profile.see_ending(plush.id), "the plush ending is marked seen")
+page:focus("back"); tap("return")                 -- Back to Progress
+open_progress_page("endings", "Endings")
+page = title:page()
+ending_list = page:get("list")
+check(ending_list.items[1].label == plush.name, "a seen ending shows its name")
+check(ending_list.items[2].label == "???", "the other endings are still ???")
+page:focus(ending_list); ending_list:select(1); ending_list:accept(page)
+check(engine.states:top() == cutscene_state and engine.states:top().script == plush.script,
+  "replaying a seen ending pushes its cutscene")
+local replay_steps = 0
+while engine.states:top() == cutscene_state and replay_steps < 1000 do
+  tap("return"); replay_steps = replay_steps + 1
+end
+check(engine.states:top() == title and title:page() == page, "the replay returns to the Endings page")
+page:focus("back"); tap("return")                 -- Back to Progress
+title.set_preview(true)
+open_progress_page("endings", "Endings (PREVIEW)")
+page = title:page()
+ending_list = page:get("list")
+local named, playable = true, true
+for i, ending in ipairs(endings_data.list) do
+  if ending_list.items[i].label ~= ending.name then named = false end
+  if not ending_list.items[i].playable then playable = false end
+end
+check(named and playable, "preview mode lists every ending by name and playable")
+page:focus(ending_list); ending_list:select(#endings_data.list); ending_list:accept(page)
+check(engine.states:top() == cutscene_state, "preview mode plays an unseen ending")
+replay_steps = 0
+while engine.states:top() == cutscene_state and replay_steps < 1000 do
+  tap("return"); replay_steps = replay_steps + 1
+end
+check(engine.states:top() == title and title:page() == page, "the preview returns to the Endings page")
+page:focus("back"); tap("return")                 -- Back to Progress
+title.set_preview(nil)
 open_progress_page("runs", "Runs")
 page = title:page()
 check(page:get("runs").text == "Runs: 0" and page:get("wins").text == "Wins: 0"
@@ -496,7 +578,19 @@ frames(2)
 check(play.result == "win" and not play.stairs,
   "the last floor's boss wins the run, with no stairs")
 frames(30)
-check(engine.states:top() == gameover, "the victory opens the end-of-run menu")
+local win_ending = endings_data.pick(play)
+check(engine.states:top() == cutscene_state and engine.states:top().script == win_ending.script,
+  "the victory plays the picked ending first")
+check(engine.states:depth() == 2 and engine.states:get("play") == play,
+  "the play state waits under the ending")
+local victory_steps = 0
+while engine.states:top() == cutscene_state and victory_steps < 1000 do
+  tap("return"); victory_steps = victory_steps + 1
+end
+check(engine.states:top() == gameover, "after the ending the end-of-run menu opens")
+check(engine.states:depth() == 2 and engine.states:get("play") == play,
+  "the play state stays under the Victory menu")
+check(profile.get().endings[win_ending.id] == true, "the victory records its ending")
 page = gameover:page()
 check(page:get("title").text == "Victory", "the end-of-run menu is titled Victory")
 check(profile.get().wins == 1 and profile.get().streak >= 1 and profile.get().best_win_streak >= 1,
@@ -510,6 +604,23 @@ tap("return")                                     -- Back
 tap("return")                                     -- Restart Run
 check(engine.states:top() == play and play.floor == 1,
   "Restart Run after a victory starts a new run")
+map, nav, slime = play.map, play.nav, play.slime
+
+-- skipping an ending (hold ui_back 1 s) still records it before the Victory menu
+profile.get().endings[win_ending.id] = nil
+for n = 2, 10 do play.new_floor(play, n) end
+play:load_room(play.nav:enter(play.map.start))
+play:load_room(play.nav:enter(play.map.boss))
+for _, e in ipairs(play.fight.enemies) do e.fighter.dead = true; e.fighter.health = 0 end
+frames(2); frames(30)
+check(engine.states:top() == cutscene_state, "the second victory plays an ending too")
+F.keys.escape = true
+frames(70)
+F.keys.escape = nil
+check(engine.states:top() == gameover, "holding Back skips the ending and opens the menu")
+check(profile.get().endings[win_ending.id] == true, "a skipped ending is still recorded")
+tap("return")                                     -- Restart Run
+check(engine.states:top() == play and play.floor == 1, "Restart Run after a skipped ending works")
 map, nav, slime = play.map, play.nav, play.slime
 
 -- the floor is in its biome, the enemies are the biome's
