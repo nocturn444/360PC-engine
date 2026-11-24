@@ -47,11 +47,11 @@ M.list = {
     script = placeholder("lab_evidence", "LAB EVIDENCE", "A FEMALE OF YOUR KIND IS ALIVE SOMEWHERE.",
       { 0.10, 0.12, 0.16 }, { 0.65, 0.72, 0.82 }, { 0.30, 0.90, 0.55 }) },
   -- The cryo scientist found asleep.
-  { id = "cryo_scientist", kind = "partial", name = "THE CRYO SCIENTIST",
+  { id = "cryo_scientist", kind = "partial", name = "THE CRYO SCIENTIST", final_boss = "final_scientist",
     script = placeholder("cryo_scientist", "THE CRYO SCIENTIST", "A SCIENTIST SLEEPS IN THE POD.",
       { 0.08, 0.14, 0.22 }, { 0.45, 0.70, 0.95 }, { 0.85, 0.95, 1.00 }) },
   -- The helpful AI that caused the massacre.
-  { id = "helpful_ai", kind = "partial", name = "THE HELPFUL AI",
+  { id = "helpful_ai", kind = "partial", name = "THE HELPFUL AI", final_boss = "final_ai",
     script = placeholder("helpful_ai", "THE HELPFUL AI", "THE AI HELPED UNTIL THE MASSACRE.",
       { 0.10, 0.06, 0.18 }, { 0.72, 0.40, 0.95 }, { 0.30, 1.00, 0.85 }) },
   -- The AI and the scientist against each other.
@@ -80,9 +80,16 @@ for _, ending in ipairs(M.list) do by_id[ending.id] = ending end
 
 function M.get(id) return by_id[id] end
 
--- Which ending a victory plays. The rules are not defined yet, so it is always the first
--- partial ending; the run argument is here so the rules have one place to go.
+-- Which ending a victory plays. PLACEHOLDER rule until the owner defines them: the first ending
+-- whose `final_boss` is the final boss the run killed (rooms_final_bosses.lua), else the first
+-- partial ending.
 function M.pick(play)
+  local boss = play and play.final_boss and play.final_boss.id
+  if boss then
+    for i = 1, #M.list do
+      if M.list[i].final_boss == boss then return M.list[i] end
+    end
+  end
   return M.get("plush")
 end
 

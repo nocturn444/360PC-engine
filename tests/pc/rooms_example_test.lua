@@ -582,6 +582,20 @@ map, nav, slime = play.map, play.nav, play.slime
 for n = 2, 10 do play.new_floor(play, n) end
 play:load_room(play.nav:enter(play.map.start))
 play:load_room(play.nav:enter(play.map.boss))
+check(play.final_boss ~= nil and #play.fight.enemies == 1 and play.fight.enemies[1].mob == play.final_boss.id,
+  "the last floor's boss room holds the picked final boss alone")
+check(play.fight.director ~= nil and play.fight.director.name == play.final_boss.name,
+  "the final boss is driven by combat.boss")
+check(play.fight.enemies[1].fighter.health == play.final_boss.health, "the final boss has its own health")
+frames(3)
+F.reset_calls(); play:draw(0)
+local bar_ok = false
+for _, c in ipairs(F.find("rectangle")) do
+  local x, y, w, h = c[3], c[4], c[5], c[6]
+  if w == 160 and h == 4 and x >= 0 and x + w <= 320 and y >= 0 and y + h <= 180 then bar_ok = true end
+end
+check(bar_ok, "the boss health bar is drawn inside the 320 x 180 screen")
+check(#F.find("printf") == 0 and #F.find("setFont") == 0, "the boss HUD uses engine.text")
 for _, e in ipairs(play.fight.enemies) do e.fighter.dead = true; e.fighter.health = 0 end
 frames(2)
 check(play.result == "win" and not play.stairs,

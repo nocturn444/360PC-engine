@@ -146,7 +146,7 @@ end
 d = profile.get()
 check(d.runs == 2 and d.wins == 1 and d.losses == 1 and d.streak == 1 and d.best_win_streak == 1,
   "the victory is recorded as a win, ending the loss streak")
-check(d.endings.plush == true, "the ending is recorded in the profile")
+check(d.endings[endings.pick(play).id] == true, "the ending is recorded in the profile")
 check(profile.is_discovered("biomes", "catastrophe"), "the last biome was discovered on the way")
 check(engine.states:top() == require("rooms_gameover"), "the victory opens the end-of-run menu")
 

@@ -1,6 +1,6 @@
 # Final boss and unlocks (plan)
 
-Status: steps 1, 2 and 3 done; step 4 in progress.
+Status: all four steps done (placeholders for the owner to replace).
 
 The owner asked for two things:
 

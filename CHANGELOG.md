@@ -9,6 +9,14 @@ All notable changes to 360PC-Engine. The format follows
 ## [Unreleased]
 
 ### Added
+- `examples/rooms`: three placeholder final bosses (`rooms_final_bosses.lua`): The Mutant
+  (default), The Caretaker AI (after a win, with 3+ mutations) and The Last Scientist (no heart
+  picked up this run), picked with `progress.pick` when the last floor starts and fought alone
+  in its boss room through `combat.boss`: two phases each (the second at half health, after an
+  invulnerable pause), attacks chosen with `rotate` from the enemy behaviours, a flashing tell
+  before each attack and a name and health bar at the bottom of the HUD. They are in the
+  bestiary, and `rooms_endings.pick` plays the ending whose `final_boss` matches (AI: The Helpful
+  AI, Scientist: The Cryo Scientist, else The Plush). New test: `tests/pc/rooms_final_boss_test.lua`.
 - `examples/rooms`: achievements and unlockable content (`rooms_progress.lua`, placeholders):
   run and floor counters fed by kills, hearts, hits and mutations, five achievements (First
   Victory, Exterminator, Untouchable, Heartless, Bouncy Build) and unlocks that open a locked

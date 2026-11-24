@@ -6,6 +6,7 @@
 local engine = require("engine")
 local biomes = require("rooms_biomes")
 local endings = require("rooms_endings")
+local final_bosses = require("rooms_final_bosses")
 
 local M = {}
 
@@ -54,6 +55,7 @@ local function collect_known()
     if b.boss and b.boss.id then known_bosses[#known_bosses + 1] = b.boss.id end
     known_biomes[#known_biomes + 1] = { id = b.id, name = b.name or M.name(b.id) }
   end
+  for _, f in ipairs(final_bosses.list) do known_bosses[#known_bosses + 1] = f.id end
 end
 
 function M.known_enemies() if not known_enemies then collect_known() end; return known_enemies end
