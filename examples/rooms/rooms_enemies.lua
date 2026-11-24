@@ -102,6 +102,7 @@ function M.new(slime, grid, spots, opts)
   opts = opts or {}
   local self = setmetatable({ slime = slime, enemies = {}, stomps = 0, kills = 0, color = opts.color }, Fight)
   self.world = platformer.collision.newWorld(grid)
+  self.room_w, self.room_h = grid.width * grid.tile_size, grid.height * grid.tile_size
   self.fight = combat.world.new()
   self.box = softbody.box(slime)
   local me = self
@@ -239,10 +240,22 @@ function Fight:step(dt)
       e.machine:update(dt)
       if e.move == "fly" then
         B.fly_move(e, self.world, platformer.collision.filter, dt)
+        -- a flyer stays inside the room: the door gaps would let it out, and a room is only
+        -- cleared when every enemy is dead
+        local nx, ny = body.x, body.y
+        if nx < 0 then nx = 0 elseif nx > self.room_w - body.w then nx = self.room_w - body.w end
+        if ny < 0 then ny = 0 elseif ny > self.room_h - body.h then ny = self.room_h - body.h end
+        if nx ~= body.x or ny ~= body.y then
+          body.x, body.y = nx, ny
+          self.world:update(body, nx, ny)
+        end
       else
         body:step(e.input, dt)
       end
-      if e.contact then e.contact:activate() end
+      -- touching hurts, except while the slime stomps: landing on an enemy is its attack
+      if e.contact then
+        if self.stomp.active then e.contact:deactivate() else e.contact:activate() end
+      end
     else
       body.px, body.py = body.x, body.y
     end
