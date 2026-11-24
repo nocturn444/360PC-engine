@@ -418,6 +418,7 @@ function play.new_run(self)
   if self.pixels then looks.palette(self.look, self.pixels) end
   if self.slime then self.slime:set_rest_shape({ radius = 9, width = 0, height = 0 }) end
   self.kills, self.got = 0, nil
+  self.result = nil
   self.spawn = rooms_spawn.new_state()
   self.rooms_state = {}
 end
@@ -591,6 +592,7 @@ function play:update(dt)
   if self.dead then                               -- dying ends the run, behind a fade
     self.dead, self.deaths = false, self.deaths + 1
     self.floor_damaged = true                       -- a death counts as damage for the floor
+    self.result = "loss"
     self.game_over_pending = true
     self.fade:start(function()
       self.fight.player.dead = true                -- the run's slime stays dead under the menu
@@ -698,9 +700,17 @@ function play:update(dt)
     self.message_time = self.message_time - dt
     if self.message_time <= 0 then self.message, self.message_time = nil, nil end
   end
-  -- the boss room, once cleared, opens a stairway down to the next floor (after the last: floor 1)
-  if self.nav.room.type == "boss" and not self.stairs and self.fight:alive() == 0 then
-    self.stairs = { x = 9 * TS, y = 10 * TS }
+  -- the boss room, once cleared, opens a stairway down to the next floor; the last floor's boss
+  -- ends the run as a victory instead (no stairs, the menu comes after the fade)
+  if self.nav.room.type == "boss" and not self.stairs and not self.game_over_pending
+      and self.fight:alive() == 0 then
+    if self.floor >= FLOORS then
+      self.result = "win"
+      self.game_over_pending = true
+      self.fade:start(nil)
+    else
+      self.stairs = { x = 9 * TS, y = 10 * TS }
+    end
   end
   local st = self.stairs
   if st and cx > st.x - 4 and cx < st.x + 2 * TS + 4 and cy > st.y - 12 then

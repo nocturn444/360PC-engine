@@ -27,6 +27,11 @@ Dying ends the run (it used to send the Blob back to the start room). When the p
 `rooms_play` pushes the `gameover` state after a short fade or delay; it is transparent and
 dims the frozen room under it. `autopause = false`.
 
+The same menu ends a victory: clearing the boss room of the last floor (`FLOORS`) is the end of
+the run. On that floor no stairs appear; after a short fade `rooms_play` records
+`play.result = "win"` and pushes the menu, whose title is "Victory" instead of "Game Over". The
+buttons and the Stats page are the same.
+
 | Button | What it does |
 |---|---|
 | Restart Run | Pops itself and calls `play:restart()`: a new run from floor 1. |

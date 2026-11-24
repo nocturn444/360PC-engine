@@ -428,6 +428,24 @@ tap("return")                                     -- Restart Run
 check(engine.states:top() == play and play.floor == 1, "Restart Run starts at floor 1")
 map, nav, slime = play.map, play.nav, play.slime
 
+-- the last floor's boss is the final fight: clearing it wins the run, with no stairs
+for n = 2, 10 do play.new_floor(play, n) end
+play:load_room(play.nav:enter(play.map.start))
+play:load_room(play.nav:enter(play.map.boss))
+for _, e in ipairs(play.fight.enemies) do e.fighter.dead = true; e.fighter.health = 0 end
+frames(2)
+check(play.result == "win" and not play.stairs,
+  "the last floor's boss wins the run, with no stairs")
+frames(30)
+check(engine.states:top() == gameover, "the victory opens the end-of-run menu")
+page = gameover:page()
+check(page:get("title").text == "Victory", "the end-of-run menu is titled Victory")
+menu_fits(gameover, "the victory menu")
+tap("return")                                     -- Restart Run
+check(engine.states:top() == play and play.floor == 1,
+  "Restart Run after a victory starts a new run")
+map, nav, slime = play.map, play.nav, play.slime
+
 -- the floor is in its biome, the enemies are the biome's
 check(play.biome and play.map.biome == play.biome.id and play.music == play.biome.music, "the floor has its biome and music")
 check(play.floor > 2 or play.biome.id == "forest", "floors 1 and 2 are in the forest")

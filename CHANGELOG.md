@@ -25,6 +25,8 @@ All notable changes to 360PC-Engine. The format follows
 - `examples/rooms`: dying ends the run: `rooms_play` pushes the game over menu after a fade
   instead of sending the slime back to the start room, and tracks `run_time` (reset by
   `play:enter`) for the Stats page. The game now starts on the title menu, not in the play state.
+  Clearing the boss of the last floor is a victory: no stairs appear there, the run records
+  `play.result = "win"` and the same end-of-run menu opens titled "Victory".
 - `examples/rooms`: the biomes are Blob's standard path, fixed on every run: forest (floors 1-2),
   deep jungle (3-4), grotto (5), fungal cave (6-7), catacombs (8), labs (9), catastrophe (10),
   with their own names and colours (enemy numbers are still placeholders).

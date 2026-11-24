@@ -23,7 +23,9 @@ by room with `engine/modules/rooms`, by the soft-body slime of [examples/slime](
 - A boss or miniboss room shuts its doors while its enemies are alive: the slime has to win the
   fight (or fall) before it can leave. The first clear gives one mutation, and the boss opens a
   stairway. Going down it, behind a fade, leads to the next floor, a new map. The slime keeps its
-  health and everything the run gave it. After floor 10 the run starts again at floor 1.
+  health and everything the run gave it. Clearing the boss of the last floor (10) wins the run:
+  no stairs appear there, and after a fade the end-of-run menu opens with the title "Victory"
+  (`docs/MENUS.md`).
 - The minimap colours the room types (boss red, treasure gold, shop green, miniboss orange, the
   wave 2 types their own colours and icons) through `rooms_minimap.lua`. The floor number and the
   run's resources are shown top left.

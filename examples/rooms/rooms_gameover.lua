@@ -10,6 +10,7 @@ local M = { transparent = true, autopause = false }
 local theme = { font = engine.text.font(1) }
 
 local main
+local main_title
 local active
 local game_play
 
@@ -64,13 +65,14 @@ end
 
 local function ensure()
   if main then return end
+  main_title = ui.label({ id = "title", text = "Game Over", align = "center" })
   main = ui.screen({
     transparent = true,
     dim = true,
     theme = theme,
     on_back = function() end,                -- no way back into a dead run
     root = ui.vstack({ background = true, wrap = true, align = "stretch", spacing = 4,
-      ui.label({ text = "Game Over", align = "center" }),
+      main_title,
       ui.button({ id = "restart", label = "Restart Run", on_press = restart_run }),
       ui.button({ label = "Main Menu", on_press = main_menu }),
       ui.button({ id = "stats", label = "Stats", on_press = function()
@@ -83,6 +85,7 @@ end
 function M:enter(previous, reason, joystick)
   ensure()
   game_play = previous
+  main_title:setText(previous and previous.result == "win" and "Victory" or "Game Over")
   show(main, "restart")
 end
 
