@@ -14,6 +14,14 @@ All notable changes to 360PC-Engine. The format follows
   with A and skipped by holding B for 1 s. Drawn with `engine.text`, no allocation per step or
   frame, loaded on first use as `engine.cutscene`. `engine.text.wrap` exposes the font's word
   wrap for laying out text once.
+- `examples/rooms`: the ending cutscenes (`rooms_endings.lua`, `rooms_cutscene.lua`): ten
+  placeholder endings (`plush`, `clone_machine`, `lab_evidence`, `cryo_scientist`, `helpful_ai`,
+  `ai_vs_scientist`, `true_natural`, `true_ai`, `true_human` and `secret`) as data for
+  `engine.cutscene`, and a `cutscene` state that plays one over the game and ticks its audio.
+  `rooms_endings.pick(run)` chooses the ending (always `plush` until the rules are defined). The
+  Progress > Endings page lists them in order (`???` until seen), replays seen ones and lists
+  every one as playable in preview mode (the `debug` flag or a `-test` version). Completion now
+  counts the endings, and `profile.see_ending(id)` writes the save only the first time.
 - `examples/rooms`: a title menu (`rooms_title.lua`, the first state) with Start Run,
   Challenges, Progress, Options and an Exit confirmation, and a game over menu
   (`rooms_gameover.lua`) with Restart Run, Main Menu and a Stats page (floor, kills, time in
@@ -45,9 +53,10 @@ All notable changes to 360PC-Engine. The format follows
   instead of sending the slime back to the start room, and tracks `run_time` (reset by
   `play:enter`) for the Stats page. The game now starts on the title menu, not in the play state.
   Clearing the boss of the last floor is a victory: no stairs appear there, the run records
-  `play.result = "win"` and the same end-of-run menu opens titled "Victory". Deaths and kills are
-  counted in the profile, and breaking the run records last damage source in `deaths_by` (an
-  enemy id or `"spikes"`).
+  `play.result = "win"`, a placeholder ending cutscene plays (the ending is recorded in the
+  profile even when skipped) and the same end-of-run menu opens titled "Victory", with the play
+  state still under it for Stats and Restart Run. Deaths and kills are counted in the profile,
+  and breaking the run records last damage source in `deaths_by` (an enemy id or `"spikes"`).
 - `examples/rooms`: the pause menu has Options between Resume and Restart run, and "Quit game"
   became Main Menu: a "Return to main menu?" confirmation that clears the stack with
   `engine.states:reset("title")` without recording a loss.

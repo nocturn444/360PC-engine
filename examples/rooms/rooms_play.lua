@@ -29,6 +29,7 @@ local looks = require("rooms_look")
 local rooms_spawn = require("rooms_spawn")
 local minimap = require("rooms_minimap")
 local profile = require("rooms_profile")
+local endings = require("rooms_endings")
 local wallet = require("engine.modules.wallet")
 local combat = require("engine.modules.combat")
 local props = require("engine.modules.props")
@@ -625,9 +626,21 @@ end
 function play:update(dt)
   self.fade:update(dt)
   if self.fade:busy() then return end            -- the room is frozen while the screen fades
-  if self.game_over_pending then                 -- the death fade is over: the run ends here
+  if self.game_over_pending then                 -- the fade is over: the run ends here
     self.game_over_pending = false
-    engine.states:push("gameover")
+    if self.result == "win" then
+      local ending = endings.pick(self)
+      local id = ending.id
+      -- The cutscene goes over the play state (the menu needs its stats), and its finish
+      -- replaces it with the end-of-run menu, so play stays under gameover as after a death.
+      engine.states:push("cutscene", ending.script, function(skipped)
+        profile.see_ending(id)
+        engine.states:pop()
+        engine.states:push("gameover")
+      end)
+    else
+      engine.states:push("gameover")
+    end
     return
   end
   if self.dead then                               -- dying ends the run, behind a fade

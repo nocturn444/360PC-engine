@@ -24,8 +24,9 @@ by room with `engine/modules/rooms`, by the soft-body slime of [examples/slime](
   fight (or fall) before it can leave. The first clear gives one mutation, and the boss opens a
   stairway. Going down it, behind a fade, leads to the next floor, a new map. The slime keeps its
   health and everything the run gave it. Clearing the boss of the last floor (10) wins the run:
-  no stairs appear there, and after a fade the end-of-run menu opens with the title "Victory"
-  (`docs/MENUS.md`).
+  no stairs appear there, and after a fade a placeholder ending cutscene plays
+  (`rooms_endings.lua`, `rooms_cutscene.lua`) before the end-of-run menu opens with the title
+  "Victory" (`docs/CUTSCENES.md`, `docs/MENUS.md`).
 - The minimap colours the room types (boss red, treasure gold, shop green, miniboss orange, the
   wave 2 types their own colours and icons) through `rooms_minimap.lua`. The floor number and the
   run's resources are shown top left.
@@ -157,13 +158,17 @@ The game starts on the title menu (`rooms_title.lua`): Start Run, Challenges, Pr
 and Exit, with each sub page opening on its Back button and Exit asking first (No is focused).
 Start Run enters the play state. Progress lists the completion percentage and the Bestiary,
 Biomes, Achievements, Unlocked items, Endings and Runs pages; Options has the music and SFX
-sliders and, on PC only, a fullscreen toggle. When the slime dies, `rooms_play` pushes the game
-over menu (`rooms_gameover.lua`) over the frozen room: Restart Run starts again at floor 1, Main
-Menu clears the stack and returns to the title, and Stats shows the run's floor, kills, time in
-m:ss (`play.run_time`), virus, the current streak and what the run discovered for the first time.
-Clearing the last floor's boss opens the same menu titled "Victory". Both states set
-`autopause = false`, so losing the controller never pushes the pause menu over them. The menus
-are `engine.ui` screens drawn with `engine.text.font(1)` and fit the 320 x 180 screen.
+sliders and, on PC only, a fullscreen toggle. The Endings page shows `???` until an ending is
+seen, then its name; selecting a seen one replays its cutscene. Debug builds (or a `-test` build
+version) list every ending as playable under "Endings (PREVIEW)". When the slime dies,
+`rooms_play` pushes the game over menu (`rooms_gameover.lua`) over the frozen room: Restart Run
+starts again at floor 1, Main Menu clears the stack and returns to the title, and Stats shows
+the run's floor, kills, time in m:ss (`play.run_time`), virus, the current streak and what the
+run discovered for the first time. Clearing the last floor's boss plays the picked ending
+cutscene, records it in the profile (also when skipped with a 1 s hold of Back) and then opens
+the same menu titled "Victory" with the play state still under it. The menu and cutscene states
+set `autopause = false`, so losing the controller never pushes the pause menu over them. The
+menus are `engine.ui` screens drawn with `engine.text.font(1)` and fit the 320 x 180 screen.
 
 `rooms_pause.lua` is a transparent state over the play state: while it is open the play state does
 not update. It has Resume, Options, Restart run and Main Menu; both destructive actions ask first
@@ -173,9 +178,9 @@ message; reconnecting the controller updates the message, and A resumes.
 
 The permanent profile (`rooms_profile.lua`, `profile.sav` through `engine.save`) stores the
 discovered enemies, bosses and biomes, the kills and deaths by type, the run record and streak,
-the empty achievement/ending/unlocked sets and the options. It is loaded once at startup and
-written only on a first discovery, at the end of a run and when leaving the Options page.
-`docs/MENUS.md` has the labels and the details.
+the seen endings, the empty achievement/unlocked sets and the options. It is loaded once at
+startup and written only on a first discovery, a first ending, at the end of a run and when
+leaving the Options page. `docs/MENUS.md` and `docs/CUTSCENES.md` have the details.
 
 The rooms are in `rooms_data.lua` as rows of strings, the shape LDtk levels read by
 `engine.level` also give. Run it on PC from the repository root: `love examples/rooms`.

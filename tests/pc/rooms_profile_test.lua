@@ -15,6 +15,7 @@ F.install({ width = 1280, height = 720, identity = "rooms_profile_test" })
 local engine = require("engine")
 local profile = require("rooms_profile")
 local options = require("rooms_options")
+local endings = require("rooms_endings")
 
 local function clear_files() for k in pairs(F.files) do F.files[k] = nil end end
 local function frames(n) for _ = 1, n do love.update(1 / 60); love.draw() end end
@@ -47,11 +48,15 @@ check(profile.discover("biomes", biome.id) == false, "the same discovery is not 
 check(profile.is_discovered("biomes", biome.id) and not profile.is_discovered("enemies", "forest_mob"),
   "the discovered sets are separate")
 local n, total = profile.completion_counts()
-check(n == 1 and total == #profile.known_enemies() + #profile.known_bosses() + #profile.known_biomes(),
-  "completion counts the discovered and the known things (" .. n .. "/" .. total .. ")")
+check(n == 1 and total == #profile.known_enemies() + #profile.known_bosses()
+  + #profile.known_biomes() + #endings.list,
+  "completion counts the discovered and the known things, endings included (" .. n .. "/" .. total .. ")")
 check(profile.completion() == math.floor(100 / total), "completion is the percentage")
 
--- 3. Save / load round trip
+-- 3. Endings and a save / load round trip
+check(profile.see_ending("plush") == true, "a first ending is new")
+check(profile.see_ending("plush") == false, "the same ending is not new again")
+check(profile.get().endings.plush == true, "the ending is in the profile")
 profile.set_option("music_volume", 0.3)
 profile.set_option("sfx_volume", 0.7)
 check(profile.write() == true, "the profile writes")
@@ -60,6 +65,7 @@ check(back.kills.forest_mob == 2 and back.deaths_by.spikes == 1
   and back.discovered.biomes[biome.id] == true, "the counts and discoveries survive a reload")
 check(back.options.music_volume == 0.3 and back.options.sfx_volume == 0.7,
   "the options survive a reload")
+check(back.endings.plush == true, "the seen endings survive a reload")
 
 -- 4. Streaks: win, win, loss -> -1 and a best of 2
 clear_files(); profile.open()
@@ -77,7 +83,8 @@ check(profile.streak_label() == "Loss streak: 1", "the streak line says Loss str
 for _, id in ipairs(profile.known_enemies()) do profile.discover("enemies", id) end
 for _, id in ipairs(profile.known_bosses()) do profile.discover("bosses", id) end
 for _, b in ipairs(profile.known_biomes()) do profile.discover("biomes", b.id) end
-check(profile.completion() == 100, "discovering everything is 100%")
+for _, e in ipairs(endings.list) do profile.see_ending(e.id) end
+check(profile.completion() == 100, "discovering and seeing everything is 100%")
 
 -- 6. The Options page: sliders change engine.audio live, Back writes the profile
 clear_files(); profile.open()
@@ -128,9 +135,15 @@ play:load_room(play.nav:enter(play.map.start))
 play:load_room(play.nav:enter(play.map.boss))
 for _, e in ipairs(play.fight.enemies) do e.fighter.dead = true; e.fighter.health = 0 end
 frames(2); frames(30)
+check(engine.states:top() == require("rooms_cutscene"), "the victory plays the picked ending first")
+local steps = 0
+while engine.states:top() == require("rooms_cutscene") and steps < 1000 do
+  tap("return"); steps = steps + 1
+end
 d = profile.get()
 check(d.runs == 2 and d.wins == 1 and d.losses == 1 and d.streak == 1 and d.best_win_streak == 1,
   "the victory is recorded as a win, ending the loss streak")
+check(d.endings.plush == true, "the ending is recorded in the profile")
 check(profile.is_discovered("biomes", "catastrophe"), "the last biome was discovered on the way")
 check(engine.states:top() == require("rooms_gameover"), "the victory opens the end-of-run menu")
 

@@ -38,6 +38,7 @@ engine.run({
     play = require("rooms_play"),
     pause = require("rooms_pause"),
     gameover = require("rooms_gameover"),
+    cutscene = require("rooms_cutscene"),
   },
   start = "title",
   autopause = { state = "pause" },
