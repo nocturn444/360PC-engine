@@ -172,7 +172,16 @@ if (typeof module !== "undefined" && module.exports) {
   // --- editing helpers ---------------------------------------------------------------------
 
   function begin() { App.before(App.state.roomIndex); }
-  function done() { App.changed(room()); updateBadge(); redraw(); }
+  // Every edit ends here: gaps in the border become doors (and walled-up ones stop being doors).
+  function done() {
+    var rm = room();
+    if (rm && RoomModel.syncBorderDoors(level(), rm) && selection && selection.kind === "door" &&
+        rm.exits.indexOf(selection.obj) < 0) {
+      selection = null;
+      updateSelectionButtons();
+    }
+    App.changed(rm); updateBadge(); redraw();
+  }
 
   // Drops the last history step without keeping it for redo (a cancelled gesture).
   function revert() {
@@ -262,6 +271,10 @@ if (typeof module !== "undefined" && module.exports) {
       var side = RoomModel.exitSide(level(), rm, tx, ty, s.obj.side === "up" || s.obj.side === "down");
       if (!side) return;
       var req = s.obj.requires;
+      if (s.obj.tx === tx && s.obj.ty === ty) return;
+      // the gap moves with the door: wall up the old tile, open the new one
+      RoomModel.set(rm, s.obj.tx, s.obj.ty, RoomModel.SOLID);
+      RoomModel.set(rm, tx, ty, RoomModel.EMPTY);
       rm.exits.splice(rm.exits.indexOf(s.obj), 1);
       RoomModel.toggleExit(level(), rm, tx, ty, side === "up" || side === "down");
       var nd = RoomModel.exitAt(rm, tx, ty);
@@ -297,6 +310,8 @@ if (typeof module !== "undefined" && module.exports) {
       begin();
       var r = RoomModel.toggleExit(level(), rm, t.tx, t.ty, t.ty === 1 || t.ty === rm.tiles_h);
       if (!r) { revert(); App.toast("Doors go on the border"); return; }
+      // taking a door away walls up its gap, or the next edit would bring it back
+      if (existing) RoomModel.closeStretch(level(), rm, existing.side, existing.offset);
       // a new door opens its tile, so it is never inside a wall
       if (!existing && RoomModel.get(rm, t.tx, t.ty) === RoomModel.SOLID) RoomModel.set(rm, t.tx, t.ty, RoomModel.EMPTY);
       selection = existing ? null : { kind: "door", obj: RoomModel.exitAt(rm, t.tx, t.ty) };
@@ -587,7 +602,10 @@ if (typeof module !== "undefined" && module.exports) {
     begin();
     if (s.kind === "prop") RoomModel.removeProp(rm, s.obj);
     else if (s.kind === "entity") RoomModel.removeEntity(rm, s.obj);
-    else if (s.kind === "door") rm.exits.splice(rm.exits.indexOf(s.obj), 1);
+    else if (s.kind === "door") {
+      rm.exits.splice(rm.exits.indexOf(s.obj), 1);
+      RoomModel.closeStretch(level(), rm, s.obj.side, s.obj.offset);
+    }
     else if (s.kind === "item") delete rm.item;
     selection = null;
     updateSelectionButtons();

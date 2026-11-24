@@ -573,4 +573,39 @@ eq(M.toText(propsLevel), withLamp, "redo adds it back");
   check(/type x: w and h/.test(bad.error || ""), "a bad catalog names the type and field");
 })();
 
+// A gap in the border is a door.
+(function () {
+  var lv = M.newLevel({ tileSize: 16, cellW: 10, cellH: 6 });
+  var r = M.addRoom(lv, "Gap", 2, 1);
+  eq(M.syncBorderDoors(lv, r), 0, "a closed room has no doors to sync");
+  M.set(r, 1, 3, M.EMPTY);
+  M.set(r, 1, 4, M.EMPTY);
+  check(M.checkRoom(lv, r).some(function (c) { return /has no door yet/.test(c.message); }),
+    "the check names a gap without a door");
+  eq(M.syncBorderDoors(lv, r), 1, "a gap on the left adds a door");
+  eq(r.exits.length, 1, "one door");
+  eq([r.exits[0].side, r.exits[0].offset, r.exits[0].tx, r.exits[0].ty].join(" "), "left 0 1 3",
+    "the door is on the gap, in its cell");
+  M.setRequires(r.exits[0], "dash");
+  M.set(r, 1, 3, M.SOLID);
+  eq(M.syncBorderDoors(lv, r), 1, "the door follows its gap");
+  eq(r.exits[0].ty + " " + r.exits[0].requires.join(","), "4 dash", "it keeps its requirements");
+  M.set(r, 1, 5, M.EMPTY);
+  eq(M.syncBorderDoors(lv, r), 0, "a second gap in the same stretch is the same door");
+  M.set(r, 15, 1, M.ONE_WAY);
+  M.syncBorderDoors(lv, r);
+  check(r.exits.some(function (e) { return e.side === "up" && e.offset === 1; }),
+    "a one-way tile in the ceiling of the second cell is a gap too");
+  M.closeStretch(lv, r, "left", 0);
+  M.syncBorderDoors(lv, r);
+  check(!r.exits.some(function (e) { return e.side === "left"; }), "walling up the gap takes the door away");
+  M.set(r, 1, 1, M.EMPTY);
+  M.toggleExit(lv, r, 1, 1);
+  eq(M.syncBorderDoors(lv, r), 0, "a door on an open corner stays");
+  M.resizeRoom(lv, r, 3, 2);
+  var openBorder = 0;
+  for (var x = 21; x <= r.tiles_w; x++) if (M.get(r, x, 1) !== M.SOLID) openBorder++;
+  eq(openBorder, 0, "growing a room keeps the new border closed");
+})();
+
 console.log("OK: " + checks + " checks");

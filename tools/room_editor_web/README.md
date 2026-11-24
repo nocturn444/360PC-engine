@@ -53,6 +53,9 @@ editing operations, props, undo, checks, filters, grouping and import conflicts.
   Tools: Solid, Way (one-way), Erase (Free/Rect/Fill mode), Door (tap a border tile; a new door
   opens its tile), Item, Ent (entity, pick the name on the button above), Prop (pick a type from
   the palette), Sel (select, drag to move, corner handle to resize a prop, Edit for its fields).
+  A gap in the border is a door: after every edit, each stretch of edge (one map cell long,
+  corners left out) with an open or one-way tile gets a door, and a stretch that is all wall
+  loses it (`RoomModel.syncBorderDoors`). Taking a door away with Door or Del walls up its gap.
 - **Sync:** export or share the file, import or merge one, and with the Android app open files
   from the repository and upload changed projects as a pull request (never to `main`).
 - **Settings:** GitHub token (stored only in the app), folders, biome/type/entity lists, grid,

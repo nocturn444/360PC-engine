@@ -302,7 +302,8 @@ RoomModel.resizeRoom = function (level, room, w, h) {
       var v;
       if (tx <= ow && ty <= oh) v = old[(ty - 1) * ow + tx - 1];
       else v = RoomModel.EMPTY;
-      if ((tx > ow || ty > oh) && (tx === tw || ty === th)) v = RoomModel.SOLID;
+      // new tiles on the border are wall, so growing a room never opens a gap (a door)
+      if ((tx > ow || ty > oh) && (tx === 1 || ty === 1 || tx === tw || ty === th)) v = RoomModel.SOLID;
       fresh.push(v);
     }
   }
@@ -532,6 +533,80 @@ RoomModel.toggleExit = function (level, room, tx, ty, vertical) {
   return "added";
 };
 
+// Border tiles of one stretch of edge (one map cell long), without the room's corners.
+RoomModel.stretchTiles = function (level, room, side, offset) {
+  var out = [];
+  var tw = room.tiles_w, th = room.tiles_h, i;
+  if (side === "left" || side === "right") {
+    var x = side === "left" ? 1 : tw;
+    for (i = 1; i <= level.cell.h; i++) {
+      var y = offset * level.cell.h + i;
+      if (y > 1 && y < th) out.push({ tx: x, ty: y });
+    }
+  } else {
+    var yy = side === "up" ? 1 : th;
+    for (i = 1; i <= level.cell.w; i++) {
+      var xx = offset * level.cell.w + i;
+      if (xx > 1 && xx < tw) out.push({ tx: xx, ty: yy });
+    }
+  }
+  return out;
+};
+
+function findExit(room, side, offset) {
+  var exits = list(room.exits);
+  for (var i = 0; i < exits.length; i++) {
+    if (exits[i].side === side && exits[i].offset === offset) return exits[i];
+  }
+  return null;
+}
+
+// A gap in the border is a door: every stretch of edge with an open (not solid) tile gets
+// a door, and a stretch that is all wall loses its door. A door keeps its requirements and
+// its tile while that tile stays open; otherwise it moves to the middle of the gap.
+// Returns how many doors were added, moved or removed.
+RoomModel.syncBorderDoors = function (level, room) {
+  if (!room.exits) room.exits = [];
+  var changes = 0;
+  var sides = [["left", room.h], ["right", room.h], ["up", room.w], ["down", room.w]];
+  for (var s = 0; s < sides.length; s++) {
+    for (var k = 0; k < sides[s][1]; k++) {
+      var side = sides[s][0];
+      var tiles = RoomModel.stretchTiles(level, room, side, k);
+      var open = [];
+      for (var t = 0; t < tiles.length; t++) {
+        if (RoomModel.get(room, tiles[t].tx, tiles[t].ty) !== RoomModel.SOLID) open.push(tiles[t]);
+      }
+      var exit = findExit(room, side, k);
+      if (!open.length) {
+        // a door on an open corner tile (corners are in no stretch) stays
+        if (exit && RoomModel.get(room, exit.tx, exit.ty) === RoomModel.SOLID) {
+          room.exits.splice(room.exits.indexOf(exit), 1);
+          changes++;
+        }
+        continue;
+      }
+      var mid = open[Math.floor((open.length - 1) / 2)];
+      if (!exit) {
+        room.exits.push({ side: side, offset: k, tx: mid.tx, ty: mid.ty, requires: [] });
+        changes++;
+      } else if (RoomModel.get(room, exit.tx, exit.ty) === RoomModel.SOLID) {
+        exit.tx = mid.tx;
+        exit.ty = mid.ty;
+        changes++;
+      }
+    }
+  }
+  if (changes) RoomModel.sortExits(room);
+  return changes;
+};
+
+// Walls up the gap of a door's stretch of edge (taking a door away closes its gap).
+RoomModel.closeStretch = function (level, room, side, offset) {
+  var tiles = RoomModel.stretchTiles(level, room, side, offset);
+  for (var t = 0; t < tiles.length; t++) RoomModel.set(room, tiles[t].tx, tiles[t].ty, RoomModel.SOLID);
+};
+
 RoomModel.setRequires = function (exit, tags) {
   var parsed = [];
   if (typeof tags === "string") {
@@ -710,6 +785,16 @@ RoomModel.checkRoom = function (level, room) {
         message: "the " + e.side + " door at " + e.tx + "," + e.ty + " is inside a wall",
         tx: e.tx, ty: e.ty
       });
+    }
+  }
+  // a file made elsewhere can have a gap the editor has not turned into a door yet
+  var probe = { exits: copy(list(room.exits)), collision: room.collision, tiles_w: room.tiles_w,
+    tiles_h: room.tiles_h, w: room.w, h: room.h };
+  RoomModel.syncBorderDoors(level, probe);
+  for (var g = 0; g < probe.exits.length; g++) {
+    var pe = probe.exits[g];
+    if (!findExit(room, pe.side, pe.offset)) {
+      out.push({ message: "the gap at " + pe.tx + "," + pe.ty + " has no door yet: any edit adds it", tx: pe.tx, ty: pe.ty });
     }
   }
   if (room.item && RoomModel.get(room, room.item.tx, room.item.ty) === RoomModel.SOLID) {
