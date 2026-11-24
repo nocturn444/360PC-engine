@@ -34,7 +34,8 @@ end
 | `stats.lua` | The combat stats and their defaults. |
 | `world.lua` | Fighters, hitboxes, hurtboxes, the overlap search, the damage pipeline, i-frames, knockback, hitstop. |
 | `fsm.lua` | A state machine: states with enter / update / exit, transitions, time in the state. |
-| `behaviours.lua` | States for enemies: patrol, chase, attack. |
+| `behaviours.lua` | States for enemies: patrol, chase, attack, shoot, charge, hop, fly, keep_away, and their conditions. |
+| `brains.lua` | Brains as data: builds a `combat.fsm` definition from plain tables, with an extendable registry of behaviours and conditions. |
 | `attacks.lua` | Attacks as data: melee sweeps, ranged shots, explosive bombs, on top of a world. |
 
 Units: pixels and seconds. `y` grows downwards; a body's `x, y` is its top left corner. Every
@@ -229,22 +230,39 @@ add `transitions` to it. What one enemy needs is read from its agent (the machin
 | `agent.body` | `x`, `y`, `w`, `h`, `facing`. Default: the agent itself. |
 | `agent.target` | A body-like table, or nil. |
 | `agent.patrol_points` | `{ { x =, y = }, ... }` for patrol. |
-| `agent.hitboxes` | `{ name = hitbox }` for attack. |
+| `agent.hitboxes` | `{ name = hitbox }` for attack and charge. |
+| `agent.attacks` | `{ name = combat.attacks Attack }` for shoot. |
+| `agent.jump` | `true` for one step to press jump (hop). |
+| `agent.jump_velocity` | Optional per-agent jump strength (hop writes it on enter). |
+| `agent.anchor` | `{ x =, y = }` home point for a flyer (default: the body centre on enter). |
 | `agent.rng` | An `engine.rng` stream: the only source of randomness. |
 
 A state moves nothing. It writes what the agent wants: `agent.move_x`, `agent.move_y` (a
 direction, each -1..1) and `agent.move_speed` (px/s), and turns `body.facing`. The game
-applies it: `behaviours.move(agent, dt)` moves the body directly (no physics), and
+applies it: `behaviours.move(agent, dt)` moves the body directly (no physics),
+`behaviours.fly_move(agent, world, filter, dt)` moves it in a bump world, and
 `behaviours.input(agent)` is an input to give to a platformer controller made with
-`actions = { move_x = "move_x" }` (`agent.jump = true` presses jump).
+`actions = { move_x = "move_x" }` (`agent.jump = true` presses jump; `pressed("jump")` is true
+only on that step).
 
 | | |
 |---|---|
 | `behaviours.patrol(opts)` | Walks from point to point and back. `points` (for every agent; default `agent.patrol_points`), `speed` (30), `axis` (`"x"`: only x matters; or `"xy"`), `reach` (1 px), `loop`, `pause` (seconds at each point: a number, or `{ min, max }` drawn from `agent.rng`), `blocked(agent)` (true at a wall or a ledge: it goes for the next point; one turn per block). |
 | `behaviours.chase(opts)` | Goes for `agent.target`. `speed` (60), `axis`, `stop` (distance between centres at which it stands still, facing the target). |
 | `behaviours.attack(opts)` | Stands still through `windup`, `active`, `recovery` (seconds; `m.phase` has the name), with `agent.hitboxes[opts.hitbox]` on during `active`, then goes to `next`. `face = false`: do not turn to the target first. Leaving the state early turns the hitbox off. |
+| `behaviours.shoot(opts)` | Stands still and fires `volleys` (1) volleys of `agent.attacks[opts.attack]` `interval` (0.2) seconds apart, then goes to `next`. `aim`: `"facing"` (default: the config's own angle), `"target"` (at the target's centre each volley) or `"angle"` (`opts.angle` degrees above the facing); `rotate` (0) degrees more after each volley (a spiral). `windup` (0.3) and `recovery` (0.4) are the tell and the pause; `m.phase` is `"windup"`, `"firing"` or `"recovery"`. `face = false`: do not turn to the target first. A ranged config with `count = 8, spread = 315` is a ring; with `volleys = 6, rotate = 15` a spiral. The attack's own `cooldown` must not be longer than `interval` when there is more than one volley (an error at enter says so). |
+| `behaviours.charge(opts)` | Winds up (`windup`, 0.4 s), dashes at the direction fixed at the end of the windup for at most `time` (0.6 s) or `distance` px at `speed` (140 px/s), then recovers (`recovery`, 0.3 s; `stun`, 0.8 s, if `blocked(agent)` stopped it), then goes to `next`. `hitbox` (optional): a name in `agent.hitboxes`, on only during the dash. `axis`: `"x"` (default) or `"xy"`. `m.phase`: `"windup"`, `"dash"`, `"recovery"`. |
+| `behaviours.hop(opts)` | On the ground waits `wait` s (a number, or `{ min, max }` from `agent.rng`; default 0), sets `agent.jump = true` for one step, and moves `speed` (60) px/s towards the target (`toward = "target"`, default) or forwards (`"facing"`) until it lands. `grounded(agent)` (default `body.on_ground`) says where the ground is; `jump_velocity` is written to `agent.jump_velocity` on enter. Endless: leave it with transitions. |
+| `behaviours.fly(opts)` | Moves a body without gravity (always `"xy"`). `mode = "hover"`: bobs around `agent.anchor` on a circle of `radius` (8) with `period` (2). `"follow"`: goes for the target, keeps `keep` (60) px away, backs off closer than `keep - band` (12) and bobs vertically by `bob` (4) px while holding. `"swoop"`: flies at the target's position taken on enter for at most `time` (1 s), then goes to `next`. `speed` (40); only `sin`/`cos` of numbers, so it is deterministic. |
+| `behaviours.keep_away(opts)` | Kites the target: walks away closer than `min` (48), towards it farther than `max` (96), stands still (facing it) in between. `speed` (40), `axis` (`"x"` default, or `"xy"`). |
 | `behaviours.target_within(range, axis)`, `target_beyond(range, axis)` | Conditions for `when`. No target counts as beyond. |
+| `behaviours.target_in_sight(grid, range)` | The target is within `range` (straight line) and no `"solid"` tile of `grid` (`grid:kind(tx, ty)`, `grid.tile_size`) stands between their centres. |
+| `behaviours.target_above(px)`, `target_below(px)` | The target's centre is more than `px` higher / lower. |
+| `behaviours.grounded()` | `body.on_ground` is true. |
+| `behaviours.health_below(fraction)` | `agent.fighter` is below `fraction` of the `max_health` stat. |
+| `behaviours.all(...)`, `any(...)`, `negate(c)` | Combine conditions when the definition is built. |
 | `behaviours.distance(agent, axis)` | Between the centres of the agent and its target; `math.huge` without one. |
+| `behaviours.fly_move(agent, world, filter, dt)` | Moves `agent.body` by its wish with `world:move` (a bump world; passed in, nothing is required), keeps `body.px`, `body.py` to interpolate, and sets `body.wall` (-1, 0, 1), `body.ceiling` and `body.floor` from the collisions. |
 
 ```lua
 local B = combat.behaviours
@@ -273,6 +291,125 @@ if not enemy.fighter:frozen() and not enemy.fighter.dead then
 end
 world:step(dt)
 ```
+
+## Brains as data
+
+`combat.brains.build(spec, ctx)` turns a plain table into a `combat.fsm` definition. The
+`spec` is pure data, so an enemy type can keep its brain in a table and a game can build the
+same definition for every enemy of that type:
+
+```lua
+local brains = combat.brains
+local def = brains.build({
+  initial = "patrol",
+  states = {
+    patrol = { "patrol", speed = 22, pause = { 0.3, 0.9 } },
+    chase  = { "chase", speed = 45, stop = 8 },
+    shoot  = { "shoot", attack = "spit", aim = "target", volleys = 3, interval = 0.25,
+               next = "chase" },
+  },
+  transitions = {
+    patrol = { { to = "chase", when = { "target_within", 80, "xy" } } },
+    chase  = { { to = "shoot", when = { "target_in_sight", 140 }, after = 1.0 },
+               { to = "patrol", when = { "target_beyond", 160, "xy" } } },
+  },
+}, { grid = grid, blocked = function(agent) return agent.body.wall ~= 0 end })
+local machine = combat.fsm.new(def, enemy)
+```
+
+A state entry is `{ behaviour_name, opts... }`: the rest of the table is copied (without `[1]`)
+and given to the constructor of that behaviour, exactly like calling `behaviours.patrol(opts)`.
+The name `"idle"` is a state that halts the agent.
+
+A transition is `{ to = name, when = condition, after = seconds }` (`when` or `after`, at least
+one). A condition is one of:
+
+- `{ "name", args... }`, calling the registered condition with those positional arguments
+- `{ "all", c1, c2, ... }`, `{ "any", ... }` or `{ "not", c }`
+- a plain function `function(m, agent) -> boolean` (the escape hatch)
+
+The built-in conditions are the ones in `behaviours`: `target_within`, `target_beyond`,
+`target_in_sight` (range as its argument; the grid comes from `ctx.grid` or a third element),
+`target_above`, `target_below`, `grounded` and `health_below`.
+
+`ctx` is an optional table of values a behaviour or condition may need (`grid`, `blocked`,
+`grounded`, `points`, ...). For a state, the fields of `ctx` are copied under the spec opts and
+**the spec wins**; so `{ "patrol", speed = 22 }` with `ctx.blocked` gets the `blocked` function
+while keeping its own speed. Conditions get `(args, ctx)`, with `args` being the condition spec
+(`args[1]` is its name). `build` never changes `spec` or `ctx`.
+
+A game extends the registry with its own behaviours and conditions:
+
+```lua
+brains.behaviour("spin", function(opts)
+  local state = {}
+  function state.update(_, agent) agent.spin_time = (agent.spin_time or 0) + opts.speed end
+  return state
+end)
+brains.condition("health_under", function(args)
+  local fraction = args[2]
+  return function(_, agent)
+    return agent.fighter.health / agent.fighter.stats:get("max_health") < fraction
+  end
+end)
+```
+
+`brains.behaviour(name, ctor)` takes `ctor(opts) -> state`; `brains.condition(name, ctor)` takes
+`ctor(args, ctx) -> function(m, agent)`. They can replace a built-in name, and the registry is
+global to the module (register a game's names once, before building).
+
+`build` is called once per enemy type (never per enemy and never per frame), and the definition
+it returns is shared by every machine of that type. It allocates only while building; the
+compiled conditions and states allocate nothing per step. Unknown behaviours, unknown
+conditions, an unknown initial state and a wrong field type are errors that name the brain state
+and the field. An unknown target state is named by `combat.fsm` when the machine is made.
+
+## Bosses
+
+A boss uses the same behaviours as any enemy; `combat.boss` adds only what bosses have.
+
+```lua
+local def = combat.boss.build({
+  name = "Big One",
+  phases = {
+    { at = 1.0, brain = { initial = "pick", states = {
+        pick  = { "rotate", options = { { to = "spray", weight = 2 }, { to = "dash" } },
+                  no_repeat = true, pause = 0.6 },
+        spray = { "shoot", attack = "ring", volleys = 3, interval = 0.3, windup = 0.5, next = "pick" },
+        dash  = { "charge", speed = 160, windup = 0.6, next = "pick" },
+    } } },
+    { at = 0.5, brain = { ... }, transition = { time = 1.2, invulnerable = true } },
+  },
+}, { grid = grid })                            -- ctx for combat.brains.build
+local b = combat.boss.new(def, agent, { on_phase = function(b, index) end })
+b:update(dt)                                   -- once per fixed step, instead of a fsm update
+```
+
+| Field / call | Meaning |
+|---|---|
+| `phases[i].at` | Health fraction where the phase starts: 1 for the first, then strictly lower. |
+| `phases[i].brain` | A `combat.brains` spec, built once by `build`. |
+| `phases[i].transition` | `{ time, invulnerable }`: the boss halts `time` seconds before the phase's brain starts; `invulnerable` sets `fighter.invuln` for that time. |
+| `spec.bar` | `{ down = 1.5, up = 0.5 }`: how fast `b.bar` follows the health (units per second). |
+| `b.phase` | Current phase. One hit past several thresholds goes straight to the lowest one (one `on_phase` call). |
+| `b.bar` | Displayed health fraction 0..1, eased towards the real one. The game draws the bar. |
+| `b.telegraph`, `b.telegraph_t` | The state being wound up (`m.phase == "windup"` of `attack`, `shoot` or `charge`) and its progress 0..1 (from the state's `windup`, or the behaviour's default), else `nil` and 0. |
+| `b.transitioning` | True during a phase change. |
+| `b:state()` | The current brain state's name (`nil` during a transition). |
+| `b:enter_phase(i)` | Go to a phase now (scripted phases). |
+| `opts.on_phase(b, i)` | Called when a later phase begins (start of its transition). |
+
+The behaviour `rotate` (in `combat.behaviours`, registered in `combat.brains`, usable by any
+enemy) picks the next attack: it stands still facing the target for `pause` seconds (a number or
+`{ min, max }` from `agent.rng`), then goes to one of `options` (`{ to, weight }`), `order =
+"random"` (weighted draw with `agent.rng`, default) or `"cycle"`; `no_repeat = true` never takes
+the same option twice in a row. `agent.rotate_last` keeps the last index. An option naming an
+unknown state is an error when the brain is built. Each attack state ends with `next = "<the
+rotate state>"`, so a phase loops: pick, tell, attack, recover, pick.
+
+The director allocates nothing per step; the machine of a later phase is made once, when that
+phase first starts. It draws nothing and reads the health from `agent.fighter` (its stats'
+`max_health`).
 
 ## Attacks as data
 

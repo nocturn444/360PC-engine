@@ -5,6 +5,7 @@
 local engine = require("engine")
 local ui = engine.ui
 local profile = require("rooms_profile")
+local tracker = require("rooms_progress")
 local options = require("rooms_options")
 local endings_data = require("rooms_endings")
 local VERSION = require("rooms_version")
@@ -99,14 +100,19 @@ local function bestiary_items()
   return items
 end
 
--- The achievements and unlocked items have no data yet; the pages still list whatever the
--- profile set holds, or "None yet.".
-local function set_items(kind)
-  local d = profile.get()
+-- Achievements and unlocks (rooms_progress.lua): every rule, its name once earned, else its
+-- hint ("???" for a hidden one). In preview mode the Unlocks page starts with a row that
+-- unlocks every content tag, to test locked content on the console.
+local function achievement_items()
+  return tracker.rows(tracker.achievements, profile.get().achievements or {})
+end
+
+local unlocks_list
+local function unlock_items()
+  local rows = tracker.rows(tracker.unlocks, profile.get().unlocks or {})
   local items = {}
-  for id in pairs(d[kind] or {}) do items[#items + 1] = profile.name(id) end
-  table.sort(items)
-  if #items == 0 then items[1] = "None yet." end
+  if preview_mode() then items[1] = { label = "UNLOCK ALL (PREVIEW)", unlock_all = true } end
+  for i = 1, #rows do items[#items + 1] = { label = rows[i] } end
   return items
 end
 
@@ -135,8 +141,25 @@ local function ensure()
   if main then return end
   challenges = sub_page("Challenges", "No challenges yet.")
   bestiary = list_page("Bestiary", bestiary_items)
-  achievements = list_page("Achievements", function() return set_items("achievements") end)
-  items_page = list_page("Unlocked items", function() return set_items("unlocked_items") end)
+  achievements = list_page("Achievements", achievement_items)
+  unlocks_list = ui.list({ id = "list", rows = 5, on_select = function(list, i, item)
+    if item and item.unlock_all then
+      tracker.unlock_all()
+      profile.write()
+      list:setItems(unlock_items())
+    end
+  end })
+  items_page = ui.screen({
+    theme = theme,
+    on_back = back_progress,
+    focus = "back",
+    root = ui.vstack({ background = true, wrap = true, align = "stretch", spacing = 4,
+      ui.label({ id = "title", text = "Unlocks", align = "center" }),
+      unlocks_list,
+      ui.button({ id = "back", label = "Back", on_press = back_progress }),
+    }),
+  })
+  items_page.refresh = function() unlocks_list:setItems(unlock_items()) end
   endings_title = ui.label({ id = "title", text = "Endings", align = "center" })
   endings_list = ui.list({ id = "list", rows = 5, on_select = function(list, i, item)
     if item and item.playable then replay_ending(item.ending) end
@@ -219,7 +242,7 @@ local function ensure()
       ui.button({ id = "bestiary", label = "Bestiary", on_press = function() show(bestiary, "back") end }),
       ui.button({ id = "biomes", label = "Biomes", on_press = function() show(biomes_page, "back") end }),
       ui.button({ id = "achievements", label = "Achievements", on_press = function() show(achievements, "back") end }),
-      ui.button({ id = "items", label = "Unlocked items", on_press = function() show(items_page, "back") end }),
+      ui.button({ id = "items", label = "Unlocks", on_press = function() show(items_page, "back") end }),
       ui.button({ id = "endings", label = "Endings", on_press = function() show(endings, "back") end }),
       ui.button({ id = "runs", label = "Runs", on_press = function() show(runs_page, "back") end }),
       ui.button({ id = "back", label = "Back", on_press = back_main }),

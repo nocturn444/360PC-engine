@@ -16,6 +16,7 @@ local rooms = require("engine.modules.rooms")
 local pixelgrid = require("engine.pixelgrid")
 local data = require("rooms_data")
 local enemies = require("rooms_enemies")
+local enemy_types = require("rooms_enemy_types")
 local biomes = require("rooms_biomes")
 local rooms_art = require("rooms_art")
 local VERSION = "V" .. require("rooms_version") .. " E" .. engine._VERSION
@@ -29,6 +30,9 @@ local looks = require("rooms_look")
 local rooms_spawn = require("rooms_spawn")
 local minimap = require("rooms_minimap")
 local profile = require("rooms_profile")
+local tracker = require("rooms_progress")
+local final_bosses = require("rooms_final_bosses")
+local progress = require("engine.modules.progress")
 local endings = require("rooms_endings")
 local wallet = require("engine.modules.wallet")
 local combat = require("engine.modules.combat")
@@ -143,6 +147,7 @@ local function acquire_mutation(self, entry)
   if not self.stats:acquire(entry.id) then return false end
   content.take(self.pools.mutations, entry)
   self.mutations[#self.mutations + 1] = entry
+  tracker.mutation(self, entry.id)
   self.look = looks.rebuild(self.mutations)
   looks.palette(self.look, self.pixels)
   local body = looks.physical(self.look)
@@ -157,6 +162,7 @@ end
 local function mob_killed(self, agent)
   if not agent or not agent.body then return end
   profile.kill(agent.mob)
+  tracker.kill(self, agent.mob)
   local b = agent.body
   local px, py = b.x + b.w / 2, b.y + b.h / 2
   local ctx = drop_ctx(self, "mob", agent.mob)
@@ -228,6 +234,9 @@ local function clear_room(self)
         self.streams:get("boss:" .. self.floor .. ":" .. self.nav.index), drop_ctx(self, "boss"), 1)
       if entry then acquire_mutation(self, entry) end
     end
+    play.load_room(self)
+  elseif self.sealed then
+    -- any other sealed arena (a trap room): rebuild it so its doors open again
     play.load_room(self)
   end
 end
@@ -312,21 +321,38 @@ function play.load_room(self, x, y)
     self.machine = machines.new(mt.kind or "healer", (mt.tx - 1) * TS + 2, (mt.ty - 1) * TS + 4, ms)
   end
   -- the room's enemies: its template spots keep their index even when cleared (the saved dead
-  -- state removes them on the first step), then the enemies that fell in through a door
-  local spots = {}
-  local template_enemies = template.enemies or {}
-  for i, t in ipairs(template_enemies) do
-    spots[i] = { x = (t.tx - 0.5) * TS, y = t.ty * TS }
-  end
-  local base = #template_enemies
-  for k, a in ipairs(state.arrivals) do
-    spots[base + k] = { x = a.x, y = a.y + ENEMY_H / 2 }   -- the arrival is a centre
-  end
-  local health = self.fight and not self.fight.player.dead and self.fight.player.health or nil
+  -- state removes them on the first step), then the enemies that fell in through a door. A
+  -- template spot's type comes from the biome's weighted pool with a stream made from the room
+  -- seed and the spot index, so the same room has the same enemies every time it is entered.
+  -- Bosses and minibosses stay walkers; an arrival keeps the type it fell with.
   local kind = self.nav.room.type
   local boss = kind == "boss" or kind == "miniboss"
   local b = self.biome
   local m = boss and b.boss or b.mobs
+  local final = kind == "boss" and self.floor >= FLOORS and self.final_boss or nil
+  if final then m = final end
+  local room_seed = SEED * 100000 + self.floor * 1000 + self.nav.index
+  local spots = {}
+  local template_enemies = template.enemies or {}
+  for i, t in ipairs(template_enemies) do
+    spots[i] = { x = (t.tx - 0.5) * TS, y = t.ty * TS,
+      type = boss and "walker" or enemies.pick_type(m.types, room_seed, i) }
+  end
+  if final then                                   -- the final boss alone, at the first spot
+    local t = template_enemies[1]
+    local x = t and (t.tx - 0.5) * TS or CW * TS / 2
+    local y = t and t.ty * TS or (CH - 2) * TS
+    for i = #spots, 1, -1 do spots[i] = nil end
+    spots[1] = { x = x, y = y, type = final.id, spec = final }
+  end
+  local base = #spots
+  for k, a in ipairs(state.arrivals) do
+    local id = a.type or "walker"
+    local spec = enemy_types.types[id]
+    local h = spec and spec.h or ENEMY_H
+    spots[base + k] = { x = a.x, y = a.y + h / 2, type = id }   -- the arrival is a centre
+  end
+  local health = self.fight and not self.fight.player.dead and self.fight.player.health or nil
   -- meeting an enemy (or entering a boss room with its boss) fills the profile's Bestiary.
   if boss then
     if profile.discover("bosses", m.id) then
@@ -338,8 +364,10 @@ function play.load_room(self, x, y)
     end
   end
   self.fight = enemies.new(self.slime, self.grid, spots, { boss = boss, mob = m.id,
-    seed = SEED * 100000 + self.floor * 1000 + self.nav.index, health = health, mode = self.fight and self.fight.mode,
-    enemy_stats = combat.stats.new(biomes.enemy_stats(b, boss)), color = m.color,
+    seed = room_seed, health = health, mode = self.fight and self.fight.mode,
+    enemy_stats = combat.stats.new(final and { max_health = final.health, attack_damage = final.damage,
+      invuln_time = 0.4, knockback_resist = 0.8 } or biomes.enemy_stats(b, boss)), color = m.color,
+    on_phase = function() self.message, self.message_time = (m.name or "BOSS") .. " IS ENRAGED", 1.5 end,
     slime_source = self.stats:combat_source(), slime_mods = self.stats.mods,
     on_slime_death = function() self.dead = true end,
     on_slime_hurt = function(hit)
@@ -429,8 +457,11 @@ end
 -- A new run: the seed's streams, a path through the biomes, nothing taken yet
 function play.new_run(self)
   self.streams = engine.rng.streams(SEED)
+  local unlocked = tracker.unlocked()
+  for tag in pairs(unlocked) do play.biomes:unlock(tag) end   -- unlocked biomes join the path
   self.path = play.biomes:path()
-  self.pools = content.new_pools()
+  self.pools = content.new_pools({ unlocked = unlocked })
+  tracker.new_run(self)
   self.stats = stats_mod.new(content.mutations)
   self.wallet = wallet.new({ virus = 0 })
   self.mutations = {}
@@ -453,6 +484,15 @@ function play.new_floor(self, n)
     rooms_spawn.end_floor(self.spawn, floor_summary(self))
   end
   self.floor = n
+  tracker.new_floor(self, n)
+  -- the last floor's boss is picked now, from what the run did so far and the profile
+  if n == 1 then self.final_boss = nil end
+  if n == FLOORS then
+    local ctx = self.track.ctx
+    ctx.profile = profile.get()
+    self.final_boss = progress.pick(final_bosses.list, ctx, self.streams:get("final_boss"),
+      { tests = final_bosses.tests })
+  end
   self.biome = self.path:enter(n, { kills = self.kills, floor = n }, self.streams:get("biomes"))
   self.new_discoveries = self.new_discoveries or { enemies = {}, bosses = {}, biomes = {} }
   if profile.discover("biomes", self.biome.id) then
@@ -526,7 +566,7 @@ local function enemies_leaving(self)
   for i = 1, #self.fight.enemies do
     local e = self.fight.enemies[i]
     local f = e.fighter
-    if not f.dead then
+    if not f.dead and e.move ~= "fly" then        -- flyers never fall through a pit
       local body = e.body
       local x, y = body.x + body.w / 2, body.y + body.h / 2
       local _, door, side = self.nav:leaving(x, y)
@@ -539,7 +579,7 @@ local function enemies_leaving(self)
           local ts = self.rooms_state[target]
           if not ts then ts = { enemies = {} }; self.rooms_state[target] = ts end
           ts.arrivals = ts.arrivals or {}
-          ts.arrivals[#ts.arrivals + 1] = { x = ax, y = ay, health = health }
+          ts.arrivals[#ts.arrivals + 1] = { x = ax, y = ay, health = health, type = e.type }
         end
       end
     end
@@ -647,6 +687,7 @@ function play:update(dt)
     self.dead, self.deaths = false, self.deaths + 1
     self.floor_damaged = true                       -- a death counts as damage for the floor
     self.result = "loss"
+    tracker.run_end(self, "loss")
     record_result(self, "loss")
     self.game_over_pending = true
     self.fade:start(function()
@@ -664,6 +705,7 @@ function play:update(dt)
   self.fight:step(dt)
   if self.last_health and self.fight.player.health < self.last_health then
     self.floor_damaged = true
+    tracker.hit(self)
   end
   self.last_health = self.fight.player.health
   enemies_leaving(self)
@@ -702,6 +744,7 @@ function play:update(dt)
       if p.kind == "heart" then
         local max = self.stats:get("health")
         local health = self.fight.player.health
+        tracker.heart(self)
         if health < max then
           self.fight.player.health = math.min(max, health + (p.amount or 1))
         else
@@ -761,6 +804,8 @@ function play:update(dt)
       and self.fight:alive() == 0 then
     if self.floor >= FLOORS then
       self.result = "win"
+      tracker.floor_end(self)
+      tracker.run_end(self, "win")
       record_result(self, "win")
       self.game_over_pending = true
       self.fade:start(nil)
@@ -770,6 +815,7 @@ function play:update(dt)
   end
   local st = self.stairs
   if st and cx > st.x - 4 and cx < st.x + 2 * TS + 4 and cy > st.y - 12 then
+    tracker.floor_end(self)
     self.fade:start(function()
       local health = self.fight.player.health
       play.new_floor(self, self.floor % FLOORS + 1)
@@ -949,6 +995,19 @@ function play:draw(alpha)
   end
   if self.message then
     engine.text.draw(self.message, (W - engine.text.width(self.message)) / 2, H - 22)
+  end
+  -- a director-driven boss: its name and health bar, bottom centre
+  local boss_dir = self.fight.director
+  if boss_dir and not boss_dir.agent.fighter.dead then
+    local name = boss_dir.name or "BOSS"
+    local bw = 160
+    local bx, by = math.floor((W - bw) / 2), H - 34
+    engine.text.draw(name, (W - engine.text.width(name)) / 2, by - 8)
+    g.setColor(0.15, 0.05, 0.08, 1)
+    g.rectangle("fill", bx, by, bw, 4)
+    g.setColor(0.90, 0.20, 0.30, 1)
+    g.rectangle("fill", bx, by, math.floor(bw * boss_dir.bar + 0.5), 4)
+    g.setColor(1, 1, 1, 1)
   end
   draw_minimap(self)
   -- FPS and build version, bottom left (the FPS text is rebuilt only when the number changes)

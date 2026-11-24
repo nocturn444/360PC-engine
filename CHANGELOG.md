@@ -9,6 +9,57 @@ All notable changes to 360PC-Engine. The format follows
 ## [Unreleased]
 
 ### Added
+- `examples/rooms`: three placeholder final bosses (`rooms_final_bosses.lua`): The Mutant
+  (default), The Caretaker AI (after a win, with 3+ mutations) and The Last Scientist (no heart
+  picked up this run), picked with `progress.pick` when the last floor starts and fought alone
+  in its boss room through `combat.boss`: two phases each (the second at half health, after an
+  invulnerable pause), attacks chosen with `rotate` from the enemy behaviours, a flashing tell
+  before each attack and a name and health bar at the bottom of the HUD. They are in the
+  bestiary, and `rooms_endings.pick` plays the ending whose `final_boss` matches (AI: The Helpful
+  AI, Scientist: The Cryo Scientist, else The Plush). New test: `tests/pc/rooms_final_boss_test.lua`.
+- `examples/rooms`: achievements and unlockable content (`rooms_progress.lua`, placeholders):
+  run and floor counters fed by kills, hearts, hits and mutations, five achievements (First
+  Victory, Exterminator, Untouchable, Heartless, Bouncy Build) and unlocks that open a locked
+  mutation (Thorns) and a locked biome (Crystal Cave, floors 6-7 instead of the fungal cave)
+  through the existing `unlock` tags of `items` and `procgen.biomes`. Saved in the profile
+  (`achievements`, `unlocks`, lifetime `counters`), shown on the HUD, the run's Stats list and
+  the Progress pages (Achievements, Unlocks; UNLOCK ALL in preview builds); completion counts
+  them. New test: `tests/pc/rooms_progress_test.lua`.
+- `engine/modules/combat`: a boss director, `combat.boss`: phases by health fraction (each a
+  `combat.brains` spec, a phase change halts the boss for a transition and can make it
+  invulnerable, one hit past several thresholds goes to the lowest), the telegraph of the attack
+  being wound up with its progress, and an eased health bar value; and a `rotate` behaviour that
+  picks the next attack by weight or in order, with `no_repeat`. Bosses reuse every enemy
+  behaviour; the director draws nothing and allocates nothing per step.
+- `engine/modules/progress`: a generic progress layer for achievements, unlocks and content
+  chosen by what the player did. Conditions as plain data (`all`, `any`, `none`, `count`, `has`,
+  `build`, `size`, `result`, `test`), run and floor counters (named numbers and named sets of
+  ids), rules checked at an event, a floor end or a run end that write earned ids into a profile
+  set (an unlock's id is the tag content declares with `unlock = id`), and `progress.pick` to
+  choose an entry by conditions, priority and a weighted draw with an `engine.rng` stream. It
+  needs no other module and knows nothing about a game.
+- `examples/rooms`: enemy types as data (`rooms_enemy_types.lua`): walker, hopper, charger,
+  shooter, sniper, sprayer, bat and drone, each with its movement kind, size, health / damage
+  multipliers, attacks, `combat.brains` spec and placeholder look. `rooms_enemies.lua` builds
+  one brain and one stats table per type per room, uses one shared enemy arsenal (32 shots) and
+  moves flyers with `combat.behaviours.fly_move`; contact damage, windup flashes and enemy shot
+  colours are wired in. Each biome has a PROVISIONAL weighted type pool (`mobs.types`) and
+  `rooms_play.lua` picks a type per spot with a stream from the room seed and the spot index, so
+  re-entered rooms keep their enemies and arrivals keep their type. New test:
+  `tests/pc/rooms_enemies_test.lua`.
+- `engine/modules/combat`: modular enemy behaviours. `combat.behaviours` gains `shoot` (straight,
+  pattern with volleys and `rotate`, or aimed at the target), `charge` (windup, fixed dash,
+  recovery or `stun` when blocked), `hop`, `fly` (hover, follow, swoop) and `keep_away`; the
+  conditions `target_in_sight`, `target_above` / `target_below`, `grounded`, `health_below` and
+  `all` / `any` / `negate`; and `fly_move` for a body in a bump world. Every state writes only
+  the agent's wish (`move_x`, `move_y`, `move_speed`, `jump`) and allocates nothing per step.
+- `engine/modules/combat`: brains as data. `combat.brains.build(spec, ctx)` turns a plain table
+  (states as `{ behaviour_name, opts... }`, transitions with `when` / `after`) into a
+  `combat.fsm` definition, with `"idle"`, condition combinators (`all`, `any`, `not`), plain
+  function conditions, and the step 1 behaviours and conditions registered by name. `ctx` fills
+  the opts a behaviour or condition needs while the spec wins; `brains.behaviour` /
+  `brains.condition` let a game register its own. `build` never changes the spec, is called once
+  per definition, and the result allocates nothing per step.
 - `engine.cutscene`: a data-driven cutscene player (wait, fade, show, hide, move, pan, shake,
   typed text and dialogue, sound, music and call steps) validated when it is created, advanced
   with A and skipped by holding B for 1 s. Drawn with `engine.text`, no allocation per step or

@@ -6,6 +6,7 @@
 local engine = require("engine")
 local biomes = require("rooms_biomes")
 local endings = require("rooms_endings")
+local final_bosses = require("rooms_final_bosses")
 
 local M = {}
 
@@ -21,6 +22,9 @@ local DEFAULTS = {
   runs = 0, wins = 0, losses = 0,
   streak = 0, best_win_streak = 0,
   achievements = {}, endings = {}, unlocked_items = {},
+  counters = {},                 -- lifetime totals of the run counters (rooms_progress.lua)
+  unlocks = {},                  -- unlock tags earned (content with `unlock = tag` opens)
+  challenges = {},               -- challenges won (none exist yet)
   options = { music_volume = 1, sfx_volume = 1, fullscreen = false },
 }
 
@@ -51,6 +55,7 @@ local function collect_known()
     if b.boss and b.boss.id then known_bosses[#known_bosses + 1] = b.boss.id end
     known_biomes[#known_biomes + 1] = { id = b.id, name = b.name or M.name(b.id) }
   end
+  for _, f in ipairs(final_bosses.list) do known_bosses[#known_bosses + 1] = f.id end
 end
 
 function M.known_enemies() if not known_enemies then collect_known() end; return known_enemies end
@@ -213,8 +218,9 @@ function M.completion_counts()
     total = total + 1
     if d.endings and d.endings[ending.id] then n = n + 1 end
   end
-  -- achievements and unlocked items have no known data yet: they add 0 and 0
-  return n, total
+  -- achievements and unlocks (rooms_progress.lua, required here to avoid a require loop)
+  local an, at = require("rooms_progress").counts()
+  return n + an, total + at
 end
 
 function M.completion()
