@@ -44,6 +44,12 @@ Build, packaging and validation tools. The whole path from a new game to the con
   (collision, doors, the item, entities, room fields and size), checks them and play-tests a
   room. `love tools/level_editor levels/world.lvl`, or `level_editor.bat` on Windows
   ([../docs/LEVEL_EDITOR.md](../docs/LEVEL_EDITOR.md)).
+- `room_editor_web/`: the data layer of a touch-friendly web room editor for phones, in plain
+  JavaScript with no dependencies or build step: `SaveFmt` reads and writes the level file
+  byte-identically to `engine/save.lua`, and `RoomModel` edits rooms, collision, doors, the
+  item, entities, props and biomes with undo/redo, checks, filters and room import. No UI yet
+  (part 2). `node tests/tools/room_editor_web_test.js`
+  ([room_editor_web/README.md](room_editor_web/README.md)).
 - `ldtk_convert.py`: converts an LDtk project (`.ldtk`, with its `.ldtkl` files when levels are
   saved separately) into the level file `engine/level.lua` reads: rooms with collisions, exits,
   items, entities and tile layers, as sorted data in the text format of `engine/save.lua`.

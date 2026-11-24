@@ -1,0 +1,72 @@
+plugins {
+    id 'com.android.application'
+}
+
+def webDir = rootProject.file("../../tools/room_editor_web")
+def fallbackDir = file("src/main/assets-fallback")
+def generatedAssets = layout.buildDirectory.dir("generated/webassets").get().asFile
+def keystoreFile = rootProject.file("debug.keystore")
+
+android {
+    namespace 'dev.pc360.roomeditor'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId "dev.pc360.roomeditor"
+        minSdk 24
+        targetSdk 35
+        versionCode 1
+        versionName "1.0"
+    }
+
+    signingConfigs {
+        roomEditor {
+            if (keystoreFile.exists()) {
+                storeFile keystoreFile
+                storePassword "android"
+                keyAlias "androiddebugkey"
+                keyPassword "android"
+            }
+        }
+    }
+
+    buildTypes {
+        debug {
+            signingConfig keystoreFile.exists() ? signingConfigs.roomEditor : signingConfigs.debug
+        }
+        release {
+            minifyEnabled false
+            signingConfig keystoreFile.exists() ? signingConfigs.roomEditor : signingConfigs.debug
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    sourceSets {
+        main {
+            assets.srcDir generatedAssets
+        }
+    }
+}
+
+dependencies {
+    implementation 'androidx.webkit:webkit:1.12.1'
+    implementation 'androidx.core:core:1.13.1'
+}
+
+tasks.register("prepareWebAssets", Copy) {
+    into generatedAssets
+    if (webDir.exists()) {
+        from(webDir)
+    }
+    if (!new File(webDir, "index.html").exists()) {
+        from(fallbackDir)
+    }
+}
+
+tasks.named("preBuild").configure {
+    dependsOn "prepareWebAssets"
+}

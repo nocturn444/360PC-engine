@@ -112,7 +112,8 @@ No emojis in text.
 
 ## 5. Running and testing
 
-On PC (from the repository root; needs LuaJIT and Python 3; ffmpeg for audio conversion):
+On PC (from the repository root; needs LuaJIT, Python 3 and Node.js; ffmpeg for audio
+conversion):
 
 ```sh
 love examples/rooms                          # run a game on PC (LÖVE 11.x); run_pc.bat on Windows
@@ -124,6 +125,8 @@ luajit -joff tests/pc/<other>_test.lua       # slime, template, perf_platformer,
 luajit tests/pc/check_libs_test.lua
 luajit tools/check_libs.lua
 luajit tools/gen_api_subset.lua --check      # API_SUBSET.md up to date
+node tests/tools/room_editor_web_test.js     # web room editor data layer, must end with "OK:"
+node tests/tools/room_editor_web_editor_test.js   # also _sync_test.js; _smoke.js and _flow.js need Playwright
 python3 -m unittest discover -s tests/tools
 python3 -m unittest discover -s tests/shaders
 luajit -joff tests/console/rng_check.lua     # also procgen_check, items_check: "0 of N wrong"

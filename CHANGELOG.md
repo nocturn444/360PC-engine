@@ -9,6 +9,9 @@ All notable changes to 360PC-Engine. The format follows
 ## [Unreleased]
 
 ### Added
+- `android/room_editor`: a native Android shell for the room editor web UI, with local project
+  files, Storage Access Framework import/export/share and GitHub pull request upload through a
+  JavaScript bridge ([README](android/room_editor/README.md)).
 - `engine.init` / `engine.run`: optional `autopause = { state, controller, focus }` pushes a
   pause state when the gamepad in use is disconnected or the window loses the focus, with the new
   `controllerlost(joystick)` and `controllerback(joystick)` hooks; a state can opt out with
@@ -54,6 +57,21 @@ All notable changes to 360PC-Engine. The format follows
   `engine.level`. It covers collision, doors and their abilities, the item, entities with
   fields, rooms (add, copy, delete, order, type, tags, weight, size), live checks, undo, and a
   play test with a platformer body. `level_editor.bat` opens it on Windows.
+- Phone room editor: `tools/room_editor_web` UI (library with rooms grouped by biome and type,
+  filters and lazy thumbnails; touch editor with painting, doors, item, entities, props from
+  the catalog, select/move/resize, undo, prev/next within the filter and variants; sync with
+  export, share, import, GitHub open/upload as a pull request; settings) and the Android app
+  `android/room_editor` that shows it full screen, built by `.github/workflows/android_room_editor.yml`.
+  Redesigned look: icons on every tool and action, biome colors on chips, groups and cards,
+  card grid with large thumbnails. A variant of a variant is named with the next number
+  (`Hall_v3`), not a stacked suffix (`Hall_v2_v2`).
+  A gap in a room's border is a door: the editor adds the door when a border tile is opened
+  and removes it when the stretch is walled up again, so a room never has a gap without one.
+- `tools/room_editor_web`: the data layer of a touch-friendly web room editor, in plain
+  JavaScript with no dependencies or build step. `SaveFmt` reads and writes the level file
+  byte-identically to `engine/save.lua`, and `RoomModel` edits rooms, collision, doors, the
+  item, entities, props (not entities) and biomes, with undo/redo, checks, filters, grouping
+  and importing rooms from another file. The UI comes in part 2.
 - `procgen.biomes`: the run's path through biomes of 1 to 3 floors, fixed (first, last, a
   floor) or variable (by weight, unlocked, or depending on the run), read by `procgen.floors`
   (templates, room types, room count, difficulty); `items` entries can be limited to biomes;
