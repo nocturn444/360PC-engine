@@ -42,6 +42,8 @@ jobs:
         (startsWith(github.event.comment.body, '/opencode') || startsWith(github.event.comment.body, '/oc'))))
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    env:
+      OPENCODE_VERSION: "1.19.6"     # the opencode CLI release used (see "Install opencode")
     steps:
       - name: Check secret
         env:
@@ -65,9 +67,35 @@ jobs:
       - name: Install LuaJIT for tests
         run: sudo apt-get update -qq && sudo apt-get install -y -qq luajit
 
+      # The steps of anomalyco/opencode/github (the action pinned at 2c14fc5 on 2026-11-21),
+      # inlined: the action looks up the latest release with an unauthenticated call to the
+      # GitHub API, which the shared runners hit the rate limit of, and then the whole run fails
+      # before the agent starts (2026-11-24). Here the version is pinned instead (no API call),
+      # the binary is cached, and the same `opencode github run` does the work. To update
+      # opencode, change OPENCODE_VERSION.
+      - name: Cache opencode
+        id: opencode-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.opencode/bin
+          key: opencode-bin-${{ runner.os }}-${{ runner.arch }}-${{ env.OPENCODE_VERSION }}
+
+      - name: Install opencode
+        if: steps.opencode-cache.outputs.cache-hit != 'true'
+        run: |
+          for attempt in 1 2 3; do
+            if curl -fsSL https://opencode.ai/install | VERSION="$OPENCODE_VERSION" bash; then break; fi
+            if [ "$attempt" = 3 ]; then echo "::error::opencode install failed"; exit 1; fi
+            sleep $((attempt * 15))
+          done
+          "$HOME/.opencode/bin/opencode" --version
+          "$HOME/.opencode/bin/opencode" --version | grep -q "$OPENCODE_VERSION" || { echo "::error::opencode is not $OPENCODE_VERSION"; exit 1; }
+
+      - name: Add opencode to PATH
+        run: echo "$HOME/.opencode/bin" >> "$GITHUB_PATH"
+
       - name: Run opencode
-        # Pinned to the commit of the action's `latest` tag on 2026-11-21.
-        uses: anomalyco/opencode/github@2c14fc5586fe0b88e5c04732d2e846769cc35671
+        run: opencode github run
         env:
           OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -77,10 +105,12 @@ jobs:
                       "git push*": "deny", "git remote*": "deny", "git checkout main*": "deny",
                       "git switch main*": "deny", "git reset --hard*": "deny",
                       "gh *": "deny", "curl *api.github.com*": "deny"}}
-        with:
-          model: ${{ vars.OPENCODE_MODEL || 'opencode-go/deepseek-v4.1-flash' }}
-          use_github_token: true
-          share: false
-          mentions: /opencode,/oc
-          prompt: >-
+          MODEL: ${{ vars.OPENCODE_MODEL || 'opencode-go/deepseek-v4.1-flash' }}
+          AGENT: ""
+          SHARE: "false"
+          USE_GITHUB_TOKEN: "true"
+          MENTIONS: /opencode,/oc
+          VARIANT: ""
+          OIDC_BASE_URL: ""
+          PROMPT: >-
             ${{ github.event_name == 'workflow_dispatch' && format('Read AGENTS.md in full first and follow its rules. Run the tests it lists before finishing and report the results. Task from the owner: {0}', inputs.prompt) || '' }}
