@@ -483,26 +483,22 @@ check(play.fight.enemies[1].fighter.dead and play.fight.enemies[2].fighter.healt
   "a room remembers its dead enemies and their health")
 play.rooms_state[hall] = nil
 
--- the slime's three attacks: the switch key cycles them, each one hurts an enemy
-local names = {}
-for i = 1, 3 do
-  names[i] = play.fight:current().name
-  F.keys.c = true; love.update(1 / 60); F.keys.c = nil; love.update(1 / 60)
-end
-check(names[1] == "melee" and names[2] == "ranged" and names[3] == "explosive"
-  and play.fight:current().name == "melee", "switch cycles melee, ranged, explosive and back")
+-- the slime's three attacks, each on its own key (C melee, X shoot, V bomb), each hurts an enemy;
+-- a bomb is spent per throw and none is thrown without bombs
+check(play.wallet:get("bomb") == 1, "a run starts with one bomb")
 local reach = { melee = 14, ranged = 40, explosive = 40 }
-for mode = 1, 3 do
+local key_of = { melee = "c", ranged = "x", explosive = "v" }
+for _, name in ipairs({ "melee", "ranged", "explosive" }) do
   play.rooms_state[hall] = nil
   play:load_room(nav:enter(hall))
   local fight = play.fight
-  fight.mode = mode
   frames(30)
-  local name = fight:current().name
   local target
   for _, e in ipairs(fight.enemies) do if not e.fighter.dead then target = e; break end end
   local hp0 = target.fighter.health
   local hurt = false
+  local bombs0 = 5
+  play.wallet:add("bomb", bombs0 - play.wallet:get("bomb"))
   for k = 1, 240 do
     fight.player.invuln = 10                          -- keep the bites out of this check
     local b = target.body
@@ -512,16 +508,23 @@ for mode = 1, 3 do
     end
     F.keys.right = (side < 0 and k % 20 == 2) or nil  -- face the enemy
     F.keys.left = (side > 0 and k % 20 == 2) or nil
-    F.keys.x = (k % 20 == 5) or nil
+    F.keys[key_of[name]] = (k % 20 == 5) or nil
     love.update(1 / 60); love.draw()
     if target.fighter.health < hp0 or target.fighter.dead then hurt = true; break end
   end
-  F.keys.right, F.keys.left, F.keys.x = nil, nil, nil
+  F.keys.right, F.keys.left, F.keys[key_of[name]] = nil, nil, nil
   check(hurt, name .. ": the attack hurts an enemy")
-  if name == "explosive" then check(fight.arsenal.blast_count > 0, "the bomb blew") end
+  if name == "explosive" then
+    check(fight.arsenal.blast_count > 0, "the bomb blew")
+    check(play.wallet:get("bomb") < bombs0, "a thrown bomb is spent")
+  end
 end
+play.wallet:spend("bomb", play.wallet:get("bomb"))
+local thrown = play.fight.attacks.explosive.uses
+F.keys.v = true; love.update(1 / 60); F.keys.v = nil; love.update(1 / 60)
+check(play.fight.attacks.explosive.uses == thrown and play.wallet:get("bomb") == 0,
+  "no bomb is thrown without bombs")
 play:load_room(nav:enter(hall))
-check(play.fight:current().name == "explosive", "the attack chosen is kept from room to room")
 fight = play.fight
 p = fight.player
 
@@ -770,8 +773,8 @@ check(crate, "the crate is a breakable prop")
 crate.fields.virus_chance, crate.fields.virus = 1, 1
 play.slime.facing = 1
 play.slime:move_to(crate.x - 12, crate.y + 6); play.slime:set_velocity(0, 0)
-F.keys.x = true; frames(2); F.keys.x = nil; frames(2)
-check(crate.removed, "the attack breaks the crate")
+F.keys.c = true; frames(2); F.keys.c = nil; frames(2)
+check(crate.removed, "the melee attack breaks the crate")
 local dropped = pickup_of("virus")
 if dropped then play.slime:move_to(dropped.x, dropped.y); play.slime:set_velocity(0, 0); frames(2) end
 check(not dropped or play.wallet:get("virus") > wallet1 + 2, "the crate drops virus")
@@ -947,6 +950,78 @@ check(math.abs(play.spawn.obstacle - 0.05) < 1e-9,
   "damage resets the obstacle chance (" .. play.spawn.obstacle .. ")")
 check(play.floor_damaged == false, "the next floor starts undamaged")
 play:load_room(play.nav:enter(play.map.start))
+
+-- ability mutations: each grants its movement ability or changes the shot
+do
+local C = require("rooms_content")
+local slime, nav = play.slime, play.nav          -- a later floor: this run's own
+local hall = nil
+for i, r in ipairs(play.map.rooms) do if r.type == "normal" and not hall then hall = i end end
+local function mutation(id)
+  for _, e in ipairs(C.mutations) do if e.id == id then return e end end
+end
+play.rooms_state[hall] = nil
+play:load_room(nav:enter(hall))
+check(not play.moves:has("double_jump") and play.free_aim == false, "a new run has no abilities")
+for _, id in ipairs({ "ability_double_jump", "ability_wall_jump", "ability_hook", "ability_dash",
+  "shot_free_aim", "shot_double", "shot_burst" }) do
+  local e = mutation(id)
+  check(e and play.acquire_mutation(play, e), id .. " is acquired")
+end
+for _, id in ipairs({ "double_jump", "wall_jump", "hook", "dash" }) do
+  check(play.moves:has(id), "the run has " .. id)
+end
+local ranged
+for _, c in ipairs(play.attack_list) do if c.name == "ranged" then ranged = c end end
+check(ranged.count == 2 and ranged.burst == 3 and ranged.gap == 4 and play.free_aim,
+  "double shot + burst: 2 shots per volley, 3 volleys, free aim")
+play:load_room(nav:enter(hall))
+for _, e in ipairs(play.fight.enemies) do e.fighter.dead, e.fighter.health = true, 0 end
+frames(20)
+slime:move_to(160, 60); slime:set_velocity(0, 0)
+F.keys.x = true; love.update(1 / 60); F.keys.x = nil
+for _ = 1, 9 do love.update(1 / 60) end
+local shots = 0
+for _, s in ipairs(play.fight.arsenal.projectiles) do if s.alive and s.kind == "shot" then shots = shots + 1 end end
+check(shots == 6, "one trigger fires 6 shots (" .. shots .. ")")
+-- double jump: in the air, jump again
+local ex, ey = nav:enter(hall)
+play:load_room(ex, ey)
+for _, e in ipairs(play.fight.enemies) do e.fighter.dead, e.fighter.health = true, 0 end
+frames(40)
+slime:move_to(ex, ey - 30); slime:set_velocity(0, 120)
+love.update(1 / 60)
+check(not slime:on_ground(), "the slime is in the air")
+F.keys.space = true; love.update(1 / 60); F.keys.space = nil; love.update(1 / 60)
+local _, vy = slime:velocity()
+check(vy < 0 and play.moves:get("double_jump").uses == 0, "a jump in the air uses the double jump")
+-- dash: a double tap of right, with i-frames
+frames(90)
+play.fight.player.invuln = 0
+F.keys.right = true; love.update(1 / 60); F.keys.right = nil; love.update(1 / 60)
+F.keys.right = true; love.update(1 / 60)
+local dash = play.moves:get("dash")
+check(dash.active and play.fight.player.invuln > 0 and play.dash_guard > 0,
+  "a double tap of right dashes, and nothing hurts the slime meanwhile")
+F.keys.right = nil
+frames(30)
+-- the hook: LB / Q fires it
+F.keys.q = true; love.update(1 / 60); F.keys.q = nil
+check(play.moves:get("hook").phase ~= "idle", "Q fires the hook")
+frames(2)
+play:load_room(nav:enter(hall))
+check(play.moves:get("hook").phase == "idle", "a new room drops the hook")
+
+-- the HUD: hearts, the consumables and the stats, with cached texts
+F.reset_calls(); love.draw()
+check(play.hud.cache.bomb.text == tostring(play.wallet:get("bomb"))
+  and play.hud.cache.virus.text == tostring(play.wallet:get("virus"))
+  and play.hud.cache.speed.text == string.format("%.2f", play.stats:get("speed")),
+  "the HUD shows the bombs, the virus and the stats")
+local cached_text = play.hud.cache.bomb.text
+love.draw()
+check(play.hud.cache.bomb.text == cached_text, "an unchanged count keeps its text")
+end
 
 -- the pause menu: Escape pauses (the play state stops updating) and Resume pops it
 local pause = require("rooms_pause")

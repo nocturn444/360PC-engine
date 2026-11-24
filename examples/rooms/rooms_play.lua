@@ -37,6 +37,8 @@ local endings = require("rooms_endings")
 local wallet = require("engine.modules.wallet")
 local combat = require("engine.modules.combat")
 local props = require("engine.modules.props")
+local abilities = require("engine.modules.abilities")
+local hud = require("rooms_hud")
 local prop_types = require("rooms_props").types
 
 local W, H = 320, 180
@@ -53,9 +55,45 @@ local EDGE_SLIDE = { speed = 70, top = 2 }
 -- A statue fires the slime's attacks on the enemy team, with its own fixed damage.
 local STATUE_STATS = combat.stats.new({ max_health = 1, attack_damage = 1, invuln_time = 0 })
 local TURRET_ATTACKS = {}
+local BASE_RANGED
 for i = 1, #attack_configs do
   local c = attack_configs[i]
   if c.name == "ranged" or c.name == "explosive" then TURRET_ATTACKS[c.name] = c end
+  if c.name == "ranged" then BASE_RANGED = c end
+end
+
+-- Bombs are a consumable: the run starts with BOMB_START, the wallet holds at most BOMB_MAX.
+local BOMB_START, BOMB_MAX = 1, 99
+-- Free aim: the right stick counts past this length (squared).
+local AIM_DEADZONE2 = 0.3 * 0.3
+-- A shot mutation's numbers add to the ranged config (from these defaults when the base has no
+-- such field); these fields replace it instead.
+local SHOT_DEFAULT = { count = 1, burst = 1, gap = 0, spread = 0, speed = 0, life = 0 }
+local SHOT_REPLACE = { burst_interval = true, walls = true }
+
+-- The slime's attack configs for this run: the base ones, with the ranged one rebuilt from the
+-- acquired `shot` fragments. Called when a run starts and when a shot mutation is acquired
+-- (never per frame); the next room's fight equips them.
+local function build_attacks(self)
+  local ranged = {}
+  for k, v in pairs(BASE_RANGED) do ranged[k] = v end
+  local free = false
+  for i = 1, #self.mutations do
+    local shot = self.mutations[i].shot
+    if shot then
+      for k, v in pairs(shot) do
+        if k == "aim" then free = v == "free"
+        elseif SHOT_REPLACE[k] then ranged[k] = v
+        else ranged[k] = (ranged[k] or SHOT_DEFAULT[k] or 0) + v end
+      end
+    end
+  end
+  local list = {}
+  for i = 1, #attack_configs do
+    local c = attack_configs[i]
+    list[i] = c.name == "ranged" and ranged or c
+  end
+  self.attack_list, self.free_aim = list, free
 end
 
 -- The run: 10 floors from 11 rooms to 21, the special rooms of rooms_data.types(), a key per floor
@@ -152,11 +190,15 @@ local function acquire_mutation(self, entry)
   looks.palette(self.look, self.pixels)
   local body = looks.physical(self.look)
   if body then self.slime:set_rest_shape(body) end
+  if entry.ability and self.moves then self.moves:grant(entry.ability) end
+  if entry.shot then build_attacks(self) end
   local max = self.stats:get("health")
   if self.fight and self.fight.player.health > max then self.fight.player.health = max end
   self.got = entry
   return true
 end
+
+play.acquire_mutation = acquire_mutation   -- for tests and debug tools
 
 -- A killed enemy can drop a heart or some virus. Each enemy has its own stream and rolls once.
 local function mob_killed(self, agent)
@@ -170,6 +212,8 @@ local function mob_killed(self, agent)
   if heart then spawn_pickup(self, pickups.heart(px, py, heart.heal or 1)) end
   local virus = content.drop(self.pools.virus, self.streams:get("drop:" .. self.floor .. ":" .. self.nav.index .. ":" .. (agent.index or 0) .. ":virus"), ctx, content.chances.mob)
   if virus then spawn_pickup(self, pickups.virus(px, py, virus.amount or 1)) end
+  local bomb = content.drop(self.pools.bombs, self.streams:get("drop:" .. self.floor .. ":" .. self.nav.index .. ":" .. (agent.index or 0) .. ":bomb"), ctx, content.chances.mob)
+  if bomb then spawn_pickup(self, pickups.bomb(px, py, bomb.amount or 1)) end
 end
 
 local function prop_overlaps(prop, x, y, w, h)
@@ -224,6 +268,12 @@ local function clear_room(self)
     if virus then
       local x, y = self.slime:center()
       spawn_pickup(self, pickups.virus(x, y, virus.amount or 1))
+    end
+    local bomb = content.drop(self.pools.bombs,
+      self.streams:get("clear:" .. self.floor .. ":" .. self.nav.index .. ":bomb"), ctx, content.chances.room_clear)
+    if bomb then
+      local x, y = self.slime:center()
+      spawn_pickup(self, pickups.bomb(x + 6, y, bomb.amount or 1))
     end
   end
   local kind = self.nav.room.type
@@ -305,7 +355,10 @@ function play.load_room(self, x, y)
     for _, t in ipairs(template.pickups or {}) do
       local amount = t.amount or 1
       local px, py = (t.tx - 0.5) * TS, (t.ty - 1) * TS + 8
-      local p = t.kind == "heart" and pickups.heart(px, py, amount) or pickups.virus(px, py, amount)
+      local p
+      if t.kind == "heart" then p = pickups.heart(px, py, amount)
+      elseif t.kind == "bomb" then p = pickups.bomb(px, py, amount)
+      else p = pickups.virus(px, py, amount) end
       state.pickups[#state.pickups + 1] = p
     end
     state.pickups_loaded = true
@@ -364,7 +417,7 @@ function play.load_room(self, x, y)
     end
   end
   self.fight = enemies.new(self.slime, self.grid, spots, { boss = boss, mob = m.id,
-    seed = room_seed, health = health, mode = self.fight and self.fight.mode,
+    seed = room_seed, health = health, attacks = self.attack_list,
     enemy_stats = combat.stats.new(final and { max_health = final.health, attack_damage = final.damage,
       invuln_time = 0.4, knockback_resist = 0.8 } or biomes.enemy_stats(b, boss)), color = m.color,
     on_phase = function() self.message, self.message_time = (m.name or "BOSS") .. " IS ENRAGED", 1.5 end,
@@ -421,6 +474,12 @@ function play.load_room(self, x, y)
   end
   self.stairs = nil
   self.vines = vines.build(self, template, TS)
+  -- the movement abilities: the hook needs this room's grid; a new room drops the hook and the dash
+  if self.moves then
+    self.moves.grid = self.grid
+    self.moves:reset()
+  end
+  self.dash_guard, self.was_dashing = 0, false
   if x then
     self.slime:move_to(x, y)
     self.camera:setBounds(self.nav:bounds())
@@ -463,8 +522,10 @@ function play.new_run(self)
   self.pools = content.new_pools({ unlocked = unlocked })
   tracker.new_run(self)
   self.stats = stats_mod.new(content.mutations)
-  self.wallet = wallet.new({ virus = 0 })
+  self.wallet = wallet.new({ virus = 0, bomb = BOMB_START })
   self.mutations = {}
+  build_attacks(self)
+  self.moves = self.slime and abilities.new(self.slime) or nil
   self.look = looks.new()
   if self.pixels then looks.palette(self.look, self.pixels) end
   if self.slime then self.slime:set_rest_shape({ radius = 9, width = 0, height = 0 }) end
@@ -514,12 +575,16 @@ function play:enter()
   self.fade = rooms.transition.new({ kind = "fade", time = 0.3 })
   self.camera = engine.camera.new({ width = W, height = H, lerp = 10, deadzone_w = 24, deadzone_h = 16 })
   self.slime = softbody.new({ radius = 9, points = 18 })
+  self.moves = abilities.new(self.slime)        -- the run's movement abilities (mutations)
+  self.intent = { move_x = 0, move_y = 0, jump = false, jump_held = false, dash = false,
+    hook = false, jump_speed = 0, facing = 1, consumed_jump = false }
   self.pixels = pixelgrid.new(SIZE, SIZE, { palette = {
     { 0.98, 0.90, 0.52 }, { 0.10, 0.30, 0.16 }, { 0.95, 1.00, 0.95 }, { 0.05, 0.08, 0.06 },
     { 0.75, 0.85, 0.60 },
   } })
   looks.palette(self.look, self.pixels)
   self.points = {}
+  self.hud = hud.new()
   self.facing, self.charging = 1, false
   self.dead, self.deaths = false, 0
   self.game_over_pending = false
@@ -539,23 +604,82 @@ function play:input(input)
   if input:pressed("pause") then engine.states:push("pause") end
 end
 
+-- The free aim direction: the right stick on a pad; with keyboard and mouse, the mouse while its
+-- button is down (it also fires). Returns ax, ay, firing (0, 0 when nothing aims).
+local function free_aim(self, input)
+  local device = input:getDevice()
+  if device == "gamepad" then
+    local x, y = input:axis("aim_x"), input:axis("aim_y")
+    if x * x + y * y > AIM_DEADZONE2 then return x, y, false end
+    return 0, 0, false
+  end
+  if engine.screen and input:down("aim_fire") then
+    local gx, gy = engine.screen:getMouse()
+    local wx, wy = self.camera:toWorld(gx, gy)
+    local cx, cy = self.slime:center()
+    return wx - cx, wy - cy, true
+  end
+  return 0, 0, false
+end
+
 local function control(self, dt)
-  local input, slime = engine.controls, self.slime
+  local input, slime, intent, moves = engine.controls, self.slime, self.intent, self.moves
   local move = input:axis("move_x")
   if move ~= 0 then self.facing = move > 0 and 1 or -1 end
   self.fight.box.facing = self.facing            -- the attacks aim where the slime looks
-  if input:pressed("switch") then self.fight:switch() end
-  if input:pressed("attack") then self.fight:attack() end
   local speed, jump = self.stats:get("speed"), self.stats:get("jump")
-  slime:push(move * (slime:on_ground() and MOVE or AIR_MOVE) * speed, 0)
+  local on_ground = slime:on_ground()
   local squash = input:down("down")
   slime.inflate = squash and 0.7 or 1
-  if squash and slime:on_ground() then self.charging = true end
-  if input:pressed("jump") and slime:on_ground() then
+  if squash and on_ground then self.charging = true end
+  local jumped = false
+  if input:pressed("jump") and on_ground then
     slime:impulse(0, -JUMP * jump)
+    jumped = true
   elseif self.charging and not squash then
-    if slime:on_ground() then slime:impulse(0, -CHARGED_JUMP * jump) end
+    if on_ground then slime:impulse(0, -CHARGED_JUMP * jump) end
     self.charging = false
+  end
+  -- the movement abilities (double jump, wall jump, dash, hook): after the ground jump, before
+  -- the slime steps; a wall jump may cancel the push toward the wall
+  local on_vine = self.vine ~= nil
+  intent.move_x, intent.move_y = move, input:axis("move_y")
+  intent.jump = input:pressed("jump") and not jumped and not on_vine
+  intent.jump_held = input:down("jump")
+  intent.dash = false                            -- the dash fires on a double tap (its own data)
+  intent.hook = input:pressed("hook") and not on_vine
+  intent.jump_speed = JUMP * jump
+  intent.facing = self.facing
+  intent.consumed_jump = false
+  if on_vine then                                -- grabbing a vine lets the hook go
+    local hook = moves:get("hook")
+    if hook then hook.phase = "idle" end
+  end
+  moves:step(dt, intent)
+  -- the dash: nothing hurts the slime while it lasts (no blink), then its cooldown runs
+  local dash = moves:get("dash")
+  local dashing = dash ~= nil and dash.active
+  if dashing and not self.was_dashing then
+    local p = self.fight.player
+    if p.invuln < dash.time then p.invuln = dash.time end
+    self.dash_guard = dash.time
+  end
+  self.was_dashing = dashing
+  if self.dash_guard > 0 then self.dash_guard = self.dash_guard - dt end
+  slime:push(intent.move_x * (on_ground and MOVE or AIR_MOVE) * speed, 0)
+  -- attacks: melee (Y), shoot while RT is held (auto-fire whenever ready), bomb (RB) if any left
+  local fight = self.fight
+  if input:pressed("melee") then fight:melee() end
+  local firing = input:down("shoot")
+  local ax, ay = 0, 0
+  if self.free_aim then
+    local mouse_fire
+    ax, ay, mouse_fire = free_aim(self, input)
+    firing = firing or mouse_fire
+  end
+  if firing then fight:shoot(ax, ay) end
+  if input:pressed("bomb") and self.wallet:get("bomb") > 0 and fight:bomb() then
+    self.wallet:spend("bomb", 1)
   end
 end
 
@@ -752,13 +876,17 @@ function play:update(dt)
         end
       elseif p.kind == "virus" then
         self.wallet:add("virus", p.amount or 1)
+      elseif p.kind == "bomb" then
+        local room = BOMB_MAX - self.wallet:get("bomb")
+        local n = p.amount or 1
+        self.wallet:add("bomb", n < room and n or room)
       end
       table.remove(self.pickups, i)
     end
   end
   -- breakable props: with the attack in front, or by falling on them
   local input = engine.controls
-  if input:pressed("attack") then
+  if input:pressed("melee") then
     local bx = self.facing > 0 and cx + 4 or cx - 24
     for i = 1, self.props:count() do
       local p = self.props:at(i)
@@ -860,6 +988,21 @@ local function draw_slime(self, alpha)
     px:set(dx + pupil, ey + 1, 4)
   end
   px:draw(ox, oy)
+end
+
+-- The hook's rope while it flies or holds: a line of 1 px squares from the slime to the hook.
+local function draw_hook(self, g)
+  local hook = self.moves and self.moves:get("hook")
+  if not hook or hook.phase == "idle" then return end
+  local cx, cy = self.slime:center()
+  local dx, dy = hook.hx - cx, hook.hy - cy
+  local steps = math.floor(math.max(math.abs(dx), math.abs(dy)) / 2)
+  g.setColor(0.95, 0.45, 0.55, 1)
+  for i = 0, steps do
+    local t = steps > 0 and i / steps or 0
+    g.rectangle("fill", math.floor(cx + dx * t), math.floor(cy + dy * t), 1, 1)
+  end
+  g.rectangle("fill", math.floor(hook.hx) - 1, math.floor(hook.hy) - 1, 3, 3)
 end
 
 local MINIMAP_CELL = 7
@@ -976,18 +1119,19 @@ function play:draw(alpha)
   end
   self.fight:draw(alpha, self.nav.room.type == "boss" or self.nav.room.type == "miniboss")
   g.setColor(1, 1, 1, 1)
-  -- the slime blinks while nothing can hurt it
+  draw_hook(self, g)
+  -- the slime blinks while nothing can hurt it (not during a dash)
   local p = self.fight.player
-  if not (p:invulnerable() and math.floor(p.invuln * 12) % 2 == 1) then draw_slime(self, alpha) end
+  if not (p:invulnerable() and self.dash_guard <= 0 and math.floor(p.invuln * 12) % 2 == 1) then
+    draw_slime(self, alpha)
+  end
   camera:detach()
   g.setColor(1, 1, 1, 1)
-  local maxhp = self.stats:get("health")
-  local sh, shmax = self.stats:shield()
-  engine.text.draw("HP " .. p.health .. "/" .. maxhp, 4, 4)
-  engine.text.draw("VIRUS " .. self.wallet:get("virus"), 4, 12)
-  engine.text.draw("SH " .. sh .. "/" .. shmax .. " LUCK " .. self.stats:get("luck"), 4, 20)
-  engine.text.draw("FLOOR " .. self.floor .. "/" .. FLOORS .. " " .. self.biome.name, 4, 28)
-  if self.got then engine.text.draw("GOT " .. self.got.name, 4, 36) end
+  hud.draw(self.hud, self, g, W, FLOORS)
+  if self.got then
+    local text = "GOT " .. self.got.name
+    engine.text.draw(text, (W - engine.text.width(text)) / 2, H - 52)
+  end
   if self.machine and self.machine_near then
     local left = machines.uses_left(self.machine)
     local text = left > 0 and ("B HEAL " .. self.machine.def.price .. " VIRUS") or "HEALER USED"

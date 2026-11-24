@@ -14,8 +14,9 @@ local items = require("engine.modules.items")
 local C = require("rooms_content")
 
 -- 1. Schema: the example mutations, all unique, with well-formed fields
-check(type(C.mutations) == "table" and #C.mutations == 4, "four example mutations (one locked)")
-check(type(C.consumables) == "table" and #C.consumables == 2, "two example consumables")
+check(type(C.mutations) == "table" and #C.mutations == 11, "eleven example mutations (4 stat, one locked, 7 ability)")
+check(type(C.consumables) == "table" and #C.consumables == 3, "three example consumables")
+check(#C.bombs == 1 and C.bombs[1].kind == "bomb", "the bomb is a consumable")
 local rarities = { common = true, rare = true, epic = true }
 local jump, legs
 for _, e in ipairs(C.mutations) do
@@ -27,10 +28,13 @@ for _, e in ipairs(C.mutations) do
   check(e.unique == true and e.max == 1, e.id .. ": unique -> max 1")
   check(type(e.tags) == "table" and #e.tags > 0, e.id .. ": tags")
   check(type(e.synergy) == "table" and type(e.anti) == "table", e.id .. ": synergy/anti arrays")
-  check(type(e.stats) == "table" and #e.stats > 0, e.id .. ": stats")
-  local s = e.stats[1]
-  check(type(s) == "table" and type(s[1]) == "string" and type(s[2]) == "string" and type(s[3]) == "number",
-    e.id .. ": stats are { stat, op, value }")
+  check((type(e.stats) == "table" and #e.stats > 0) or type(e.ability) == "table" or type(e.shot) == "table",
+    e.id .. ": stats, an ability or a shot change")
+  if e.stats then
+    local s = e.stats[1]
+    check(type(s) == "table" and type(s[1]) == "string" and type(s[2]) == "string" and type(s[3]) == "number",
+      e.id .. ": stats are { stat, op, value }")
+  end
   check(type(e.look) == "table" and (e.look.body_color or e.look.outline_color or e.look.limbs), e.id .. ": look fragment")
   check(type(e.color) == "table" and #e.color == 3, e.id .. ": colour")
   check(e.example == true, e.id .. ": marked as an example")
@@ -152,6 +156,10 @@ C.take(p, second)
 local third = C.draw_mutation(p, r, ctx)
 check(third ~= nil and third.id ~= first.id and third.id ~= second.id, "the third unique mutation still comes out")
 C.take(p, third)
+for _ = 4, #C.mutations do                       -- every treasure mutation, each once
+  local e = C.draw_mutation(p, r, ctx)
+  if e then C.take(p, e) end
+end
 check(C.draw_mutation(p, r, ctx) == nil, "all uniques taken: nothing comes out")
 
 local stackable = { id = "stack", weight = 1, max = 2 }

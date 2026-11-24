@@ -39,12 +39,13 @@ for i = 1, #mutation_defs.entries do
 end
 
 -- All consumables, and the two pools split by kind
-M.consumables, M.hearts, M.virus = {}, {}, {}
+M.consumables, M.hearts, M.virus, M.bombs = {}, {}, {}, {}
 for i = 1, #consumable_defs.entries do
   local e = consumable_defs.entries[i]
   M.consumables[i] = e
   if e.kind == "heart" then M.hearts[#M.hearts + 1] = e
-  elseif e.kind == "virus" then M.virus[#M.virus + 1] = e end
+  elseif e.kind == "virus" then M.virus[#M.virus + 1] = e
+  elseif e.kind == "bomb" then M.bombs[#M.bombs + 1] = e end
 end
 
 -- Optional keys (not the per-floor `key` ability), kept apart from the consumables
@@ -174,6 +175,7 @@ function M.new_pools(opts)
     mutations = items.pool.new(M.mutations, { unlocked = unlocked }),
     hearts = items.pool.new(M.hearts),
     virus = items.pool.new(M.virus),
+    bombs = items.pool.new(M.bombs),
     bonus_keys = items.pool.new(M.bonus_keys),
   }
 end

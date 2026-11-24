@@ -27,8 +27,16 @@ A mutation is plain data:
 }
 ```
 
-A consumable is the same kind of entry plus `kind = "heart"` (`heal = 1`) or `kind = "virus"`
-(`amount = 1`). There is one normal heart for now; more types can be added without touching the
+Instead of (or besides) `stats`, a mutation can carry:
+
+- `ability = { kind = "air_jump" | "wall_jump" | "dash" | "hook", id = "...", ...fields }`: an
+  `engine.modules.abilities` definition granted to the run's set when it is acquired.
+- `shot = { count = 1, gap = 4 }`, `shot = { burst = 2 }`, `shot = { aim = "free" }`: numbers add
+  to the slime's ranged config (`burst_interval` and `walls` replace it), `aim = "free"` lets the
+  right stick or the mouse aim. See [ABILITIES.md](ABILITIES.md).
+
+A consumable is the same kind of entry plus `kind = "heart"` (`heal = 1`), `kind = "virus"`
+(`amount = 1`) or `kind = "bomb"` (`amount = 1`). There is one normal heart for now; more types can be added without touching the
 pool code.
 
 The `items` module already filters `rooms`, `biomes`, `requires` and `max`; it also rejects an

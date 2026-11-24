@@ -69,8 +69,8 @@ play.fight.player.invuln = 10
 play.facing, play.fight.box.facing = 1, 1
 play.slime:move_to(crate.x - 12, crate.y + 6); play.slime:set_velocity(0, 0)
 local wallet0 = play.wallet:get("virus")
-F.keys.x = true; frames(2); F.keys.x = nil; frames(2)
-check(crate.removed, "the attack breaks the crate")
+F.keys.c = true; frames(2); F.keys.c = nil; frames(2)
+check(crate.removed, "the melee attack breaks the crate")
 local drawn_after = false
 for i = 1, #play.prop_solid do
   local r = play.prop_solid[i]
@@ -103,7 +103,7 @@ crate2.fields.virus_chance, crate2.fields.virus = 1, 2
 play.fight.player.invuln = 10
 play.facing, play.fight.box.facing = 1, 1
 play.slime:move_to(crate2.x - 12, crate2.y + 6); play.slime:set_velocity(0, 0)
-F.keys.x = true; frames(2); F.keys.x = nil; frames(2)
+F.keys.c = true; frames(2); F.keys.c = nil; frames(2)
 local dropped2 = virus_pickup()
 check(crate2.removed and dropped2 and dropped2.amount == dropped.amount,
   "a new run with the same seed breaks its crate the same way")

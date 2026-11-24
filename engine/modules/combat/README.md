@@ -446,7 +446,7 @@ end
 | `arsenal:equip(fighter, config)` | Returns an attack. The config is checked and copied (`attacks.define`). |
 | `attack:trigger(ax, ay)` | Starts it if `attack:ready()` (idle, cooldown over, fighter alive). `ax, ay`: a direction for shots and thrown bombs instead of the facing one. Returns true if it started. |
 | `attack:cancel()` | Puts it away; the cooldown keeps running. |
-| `attack.phase`, `attack.cool`, `attack.uses`, `attack.name` | `"idle"`, `"windup"` or `"active"`; seconds of cooldown left; triggers that fired; the config's `name` (default: its kind). |
+| `attack.phase`, `attack.cool`, `attack.uses`, `attack.burst_left`, `attack.name` | `"idle"`, `"windup"` or `"active"`; seconds of cooldown left; triggers that fired; volleys still to fire of a burst; the config's `name` (default: its kind). |
 | `arsenal:step(dt)` | Once per fixed step, after the bodies moved and before `world:step`. Nothing of a frozen fighter (hitstop) runs. |
 | `arsenal.projectiles`, `arsenal.blasts` | Pools to draw from: read `p.alive`, `p.kind` (`"shot"` or `"bomb"`), `p.w`, `p.h`, `p.life`; `b.alive`, `b.x`, `b.y`, `b.radius`, `b.t`, `b.time`, `b.hits`. |
 | `attacks.position(p, alpha)` | A projectile's top left corner between the last two steps, rounded to the pixel grid. |
@@ -463,8 +463,14 @@ hold when a soft body changes size.
 | Kind | Fields (default) |
 |---|---|
 | `melee` | `boxes` (`{ { ox, oy, w, h }, ... }`, at least one; `ox, oy` is the box's top left corner) and `active` (0.1 s). One hitbox walks through the boxes in equal slices of `active`: one box is a stab, three around the front are an arc, one big box around the body is an area. It hits each fighter once per trigger. |
-| `ranged` | `count` (1) shots in a fan `spread` degrees wide (0), at `angle` degrees above the facing (0), `speed` (200 px/s), `gravity` (0 px/s²), `life` (1 s), `w`, `h` (4), from `ox, oy` (their centre), `pierce` (1 fighter), `walls` (`"stop"` or `"pass"`). A shot is a fighter of its own with the owner's team, stats and modifiers, so `power`, `on_hit` events and team rules read as the owner's. |
+| `ranged` | `count` (1) shots per volley in a fan `spread` degrees wide (0), `gap` px apart across the aim line (0; with `count > 1`, `gap > 0` and `spread == 0` the shots fly parallel, centred on the aim; `gap` and `spread` combine), at `angle` degrees above the facing (0), `speed` (200 px/s), `gravity` (0 px/s²), `life` (1 s), `w`, `h` (4), from `ox, oy` (their centre), `pierce` (1 fighter), `walls` (`"stop"` or `"pass"`), `burst` (1: volleys per trigger), `burst_interval` (0.06 s between two volleys). A shot is a fighter of its own with the owner's team, stats and modifiers, so `power`, `on_hit` events and team rules read as the owner's. |
 | `explosive` | A bomb (`w`, `h`, 4; from `ox, oy`) that blows `fuse` s (0.5) after it is placed or thrown: every fighter whose hurtbox is within `radius` (24 px) is struck once, the damage and the knockback lessened by `falloff` (0.5: half at the edge; damage is rounded, at least 1), pushed away from the centre with `lift` (0) added upwards. `self` (false): it may hurt its owner. `blast_time` (0.2 s): how long the blast stays in `arsenal.blasts`. `throw` (none: it stays where it was placed): `speed` (150), `angle` (30), `gravity` (500), `bounce` (0.4, speed kept off a wall, floor or ceiling), `friction` (0.8, horizontal speed kept on a floor bounce), `contact` (false: true blows it on touching a fighter it may hit). |
+
+A burst fires `burst` volleys of `count` shots, `burst_interval` seconds apart. Every volley
+keeps the aim the trigger had (`aim_x, aim_y`, or the facing at the trigger) and reads the
+fighter's position again, so it follows a moving fighter. The cooldown starts at the trigger as
+usual (a burst longer than the cooldown is allowed); the next trigger or `attack:cancel()` stops
+the remaining volleys. `max_projectiles` still caps everything, as for single shots.
 
 Times run in fixed steps like the rest of the module: a windup of `n / 60` fires `n` steps
 after the trigger's step, `active = n / 60` is `n` world steps, and a fuse or a shot's life
