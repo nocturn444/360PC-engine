@@ -9,7 +9,6 @@ All notable changes to 360PC-Engine. The format follows
 ## [Unreleased]
 
 ### Added
-<<<<<<< HEAD
 - `engine/modules/progress`: a generic progress layer for achievements, unlocks and content
   chosen by what the player did. Conditions as plain data (`all`, `any`, `none`, `count`, `has`,
   `build`, `size`, `result`, `test`), run and floor counters (named numbers and named sets of
@@ -17,7 +16,6 @@ All notable changes to 360PC-Engine. The format follows
   set (an unlock's id is the tag content declares with `unlock = id`), and `progress.pick` to
   choose an entry by conditions, priority and a weighted draw with an `engine.rng` stream. It
   needs no other module and knows nothing about a game.
-=======
 - `examples/rooms`: enemy types as data (`rooms_enemy_types.lua`): walker, hopper, charger,
   shooter, sniper, sprayer, bat and drone, each with its movement kind, size, health / damage
   multipliers, attacks, `combat.brains` spec and placeholder look. `rooms_enemies.lua` builds
@@ -40,7 +38,6 @@ All notable changes to 360PC-Engine. The format follows
   the opts a behaviour or condition needs while the spec wins; `brains.behaviour` /
   `brains.condition` let a game register its own. `build` never changes the spec, is called once
   per definition, and the result allocates nothing per step.
->>>>>>> origin/claude/project-thread-2yza81
 - `examples/rooms`: biome art from `art/` (`rooms_art.lua`): a fixed sky, two parallax layers,
   autotiled solid walls in one SpriteBatch per room, additive fireflies in each biome's glow
   colour, and a walking sprite for enemies (bosses at 2x). A biome without art keeps the flat
