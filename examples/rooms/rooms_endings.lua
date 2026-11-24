@@ -34,17 +34,17 @@ end
 
 -- Partial endings: the run ends, but the story is not resolved.
 M.list = {
-  -- The plush shaped like the woman.
+  -- A plush shaped like a female of the Blob's kind.
   { id = "plush", kind = "partial", name = "THE PLUSH",
-    script = placeholder("plush", "THE PLUSH", "A PLUSH SHAPED LIKE HER WAITS.",
+    script = placeholder("plush", "THE PLUSH", "A PLUSH SHAPED LIKE A FEMALE OF YOUR KIND.",
       { 0.18, 0.10, 0.16 }, { 0.95, 0.62, 0.72 }, { 0.98, 0.90, 0.52 }) },
   -- The clone machine melting after the massacre.
   { id = "clone_machine", kind = "partial", name = "THE CLONE MACHINE",
     script = placeholder("clone_machine", "THE CLONE MACHINE", "THE CLONE MACHINE IS MELTING.",
       { 0.06, 0.14, 0.18 }, { 0.35, 0.75, 0.68 }, { 0.85, 0.95, 0.70 }) },
-  -- Lab evidence of a living female test subject.
+  -- Lab evidence that a female of the Blob's kind is alive (unlocks longer runs).
   { id = "lab_evidence", kind = "partial", name = "LAB EVIDENCE",
-    script = placeholder("lab_evidence", "LAB EVIDENCE", "THE LAB PROVES SHE WAS ALIVE.",
+    script = placeholder("lab_evidence", "LAB EVIDENCE", "A FEMALE OF YOUR KIND IS ALIVE SOMEWHERE.",
       { 0.10, 0.12, 0.16 }, { 0.65, 0.72, 0.82 }, { 0.30, 0.90, 0.55 }) },
   -- The cryo scientist found asleep.
   { id = "cryo_scientist", kind = "partial", name = "THE CRYO SCIENTIST",
