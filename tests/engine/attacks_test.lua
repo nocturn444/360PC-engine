@@ -51,7 +51,8 @@ end
 ---------------------------------------------------------------------------
 local d = A.define({ kind = "ranged" })
 T.check(d.cooldown == 0.3 and d.windup == 0 and d.speed == 200 and d.count == 1 and d.pierce == 1
-  and d.walls == "stop" and d.damage == nil, "ranged: defaults filled in")
+  and d.walls == "stop" and d.damage == nil and d.gap == 0 and d.burst == 1
+  and d.burst_interval == 0.06, "ranged: defaults filled in")
 d = A.define({ kind = "explosive", throw = { speed = 90 } })
 T.check(d.radius == 24 and d.fuse == 0.5 and d.throw.speed == 90 and d.throw.gravity == 500
   and d.throw.contact == false, "explosive: defaults, and the throw's")
@@ -62,6 +63,9 @@ errors({ kind = "ranged", radius = 3 }, "ranged has no field radius", "a field o
 errors({ kind = "ranged", speed = "fast" }, "speed is a number", "a wrong type is an error")
 errors({ kind = "melee" }, "at least one box", "melee needs boxes")
 errors({ kind = "ranged", walls = "bounce" }, "walls is", "walls is stop or pass")
+errors({ kind = "ranged", gap = -1 }, "gap >= 0", "gap is not negative")
+errors({ kind = "ranged", burst = 0 }, "burst is at least 1", "burst is at least one volley")
+errors({ kind = "ranged", burst_interval = -1 }, "burst_interval >= 0", "burst_interval is not negative")
 errors({ kind = "explosive", throw = { spin = 1 } }, "throw has no field spin", "an unknown throw field is an error")
 T.check(#A.kinds == 3, "three kinds")
 
@@ -188,6 +192,52 @@ T.check(list[1].vx < 0 and list[1].vy > vy0, "facing left, an arc that falls")
 hero.body.facing = 1
 ars:clear()
 
+-- Parallel shots: gap px apart across the aim line, centred on it
+local parallel = ars:equip(hero, { kind = "ranged", count = 3, gap = 8, speed = 0, life = 2, cooldown = 0 })
+parallel:trigger()
+steps(ars, 1)
+T.check(ars:count() == 3, "three parallel shots")
+T.check(list[1].x == list[2].x and list[2].x == list[3].x, "same x along a level aim")
+T.near(list[2].y - list[1].y, -8, "one gap apart", 1e-6)
+T.near(list[3].y - list[2].y, -8, "centred on the aim line", 1e-6)
+T.check(list[1].vx == list[2].vx and list[2].vx == list[3].vx
+  and list[1].vy == list[2].vy and list[2].vy == list[3].vy, "and they fly parallel")
+ars:clear()
+
+-- A burst: volleys burst_interval apart, each keeping the aim of the trigger
+local burst = ars:equip(hero, { kind = "ranged", burst = 3, burst_interval = 3 / 60, count = 1,
+  speed = 100, life = 5, cooldown = 0 })
+burst:trigger(0, -1)
+local counts = {}
+for i = 1, 8 do
+  steps(ars, 1)
+  counts[i] = ars:count()
+end
+T.check(counts[1] == 1 and counts[2] == 1 and counts[3] == 1 and counts[4] == 2
+  and counts[7] == 3, "three volleys, 3/60 s apart (" .. table.concat(counts, ",") .. ")")
+hero.body.facing = -1
+steps(ars, 4)
+local all_up = true
+for _, q in ipairs(ars.projectiles) do
+  if q.alive and (q.vy >= 0 or math.abs(q.vx) > 1e-9) then all_up = false end
+end
+T.check(all_up, "a burst keeps the aim it was triggered with")
+hero.body.facing = 1
+ars:clear()
+
+-- The next trigger and cancel stop the remaining volleys
+local b2 = ars:equip(hero, { kind = "ranged", burst = 4, burst_interval = 10 / 60, count = 1,
+  speed = 0, life = 5, cooldown = 0 })
+b2:trigger()
+steps(ars, 1)
+T.check(b2.burst_left == 3 and ars:count() == 1, "a burst is queued")
+b2:trigger()
+T.check(b2.burst_left == 0 and b2.phase == "windup", "the next trigger cancels the rest")
+b2:cancel()
+steps(ars, 20)
+T.check(ars:count() == 1, "cancel stops the remaining volleys")
+ars:clear()
+
 ---------------------------------------------------------------------------
 -- Explosive
 ---------------------------------------------------------------------------
@@ -281,6 +331,27 @@ r1(300)
 local grown = collectgarbage("count") - before
 collectgarbage("restart")
 T.check(grown == 0, "warm: triggers and steps allocate nothing (" .. grown .. " KB)")
+
+-- A burst with parallel shots allocates nothing either
+local bw = C.world.new()
+local bars = A.new(bw, {})
+local bhero = fighter(bw, 20, "player")
+local brange = bars:equip(bhero, { kind = "ranged", count = 2, gap = 4, burst = 5,
+  burst_interval = 2 / 60, speed = 100, life = 5, cooldown = 0 })
+local function bursts(k)
+  for i = 1, k do
+    if i % 10 == 1 then brange:trigger() end
+    bars:step(dt)
+    bw:step(dt)
+  end
+end
+bursts(300)
+collectgarbage(); collectgarbage("stop")
+before = collectgarbage("count")
+bursts(300)
+grown = collectgarbage("count") - before
+collectgarbage("restart")
+T.check(grown == 0, "a running burst allocates nothing (" .. grown .. " KB)")
 
 local px, py = A.position({ x = 10.6, y = 3.2, px = 9.6, py = 3.2 }, 0.5)
 T.check(px == 10 and py == 3, "position: between steps, on the pixel grid")

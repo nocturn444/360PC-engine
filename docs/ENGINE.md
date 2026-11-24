@@ -896,7 +896,8 @@ Optional, loaded by the game that wants them; nothing above requires one.
   [engine/modules/platformer/README.md](../engine/modules/platformer/README.md).
 - `engine/modules/combat`: hitboxes and hurtboxes, damage through stats and modifier events,
   invulnerability frames, knockback, hitstop, a state machine with enemy behaviours, brains built
-  from data, and attacks as data. It needs no other module. Reference:
+  from data, and attacks as data (melee, ranged fans, parallel shots, bursts and explosives). It
+  needs no other module. Reference:
   [engine/modules/combat/README.md](../engine/modules/combat/README.md).
 - `engine/modules/procgen`: maps of hand-made rooms joined by their exits, zones locked by
   ability tags (keys always before their locks), validation by breadth-first search, minimap
@@ -913,8 +914,14 @@ Optional, loaded by the game that wants them; nothing above requires one.
   [engine/modules/props/README.md](../engine/modules/props/README.md), schema in [PROPS.md](PROPS.md).
 - `engine/modules/softbody`: a soft body (points on a ring, springs and pressure) that falls,
   rolls and squashes against a tile grid, with an outline ready for `engine.pixelgrid` and a
-  `set_rest_shape` setter for bodies whose rest shape changes. It needs no other module.
+  `set_rest_shape` setter for bodies whose rest shape changes, and `wall_side()` for wall jumps.
+  It needs no other module.
   Reference: [engine/modules/softbody/README.md](../engine/modules/softbody/README.md).
+- `engine/modules/abilities`: movement abilities as data (air jump, wall jump, dash on a button
+  or a double tap, and a grappling hook) for any body through a small adapter, with an
+  extendable kind registry, stacks and plain state for a run save. A soft body fits directly.
+  It needs no other module and a step allocates nothing. Reference:
+  [engine/modules/abilities/README.md](../engine/modules/abilities/README.md).
 - `engine/modules/rooms`: plays a procgen map one room at a time: the current room, leaving by
   an exit, where its door leads and where the body arrives, locked doors, explored rooms for the
   minimap and the run's save, and fade or slide transitions. Reference:
@@ -940,6 +947,19 @@ function play:update(dt)
     if engine.controls:pressed("attack") then slash:activate(6 / 60) end
   end
   fight:step(dt)                                  -- overlaps, damage, i-frames, knockback
+end
+```
+
+```lua
+local abilities = require("engine.modules.abilities")
+local set = abilities.new(slime, { grid = grid })            -- slime: the body adapter (a softbody)
+set:grant({ kind = "air_jump", id = "double_jump" })
+set:grant({ kind = "dash", id = "dash", trigger = "double_tap" })
+local intent = { move_x = 0, move_y = 0, jump = false, jump_speed = 260, facing = 1 }
+function play:update(dt)                                    -- the fixed step, before body:step
+  intent.move_x, intent.jump = engine.controls:axis("move_x"), engine.controls:pressed("jump")
+  set:step(dt, intent)                                      -- air jump, wall jump, dash, hook
+  body:step(dt, grid)
 end
 ```
 

@@ -22,13 +22,19 @@ engine.run({
       up = { keys = { "up", "w" }, buttons = { "dpup" }, axes = { "lefty-" } },
       down = { keys = { "down", "s" }, buttons = { "dpdown" } },
       jump = { keys = { "space", "up", "w" }, buttons = { "a" } },
-      attack = { keys = { "x", "j" }, buttons = { "x" } },
-      switch = { keys = { "c", "k", "tab" }, buttons = { "y" } },
+      shoot = { keys = { "x", "j" }, axes = { "triggerright+" } },
+      melee = { keys = { "c", "k" }, buttons = { "y" } },
+      bomb = { keys = { "v", "l" }, buttons = { "rightshoulder" } },
+      hook = { keys = { "q" }, buttons = { "leftshoulder" } },
+      aim_fire = { mouse = { 1 } },              -- PC only: the free aim shot toward the mouse
       interact = { keys = { "e", "f" }, buttons = { "b" } },
       pause = { keys = { "escape", "p" }, buttons = { "start" } },  -- on the console, hold Back 3 s to quit
     },
     axes = {
       move_x = { negative = "left", positive = "right", stick = "leftx" },
+      move_y = { negative = "up", positive = "down", stick = "lefty" },
+      aim_x = { stick = "rightx" },              -- the free aim shot (a mutation)
+      aim_y = { stick = "righty" },
     },
   },
   states = { play = require("rooms_play"), pause = require("rooms_pause") },

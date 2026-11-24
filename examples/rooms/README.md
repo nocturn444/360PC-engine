@@ -149,8 +149,19 @@ and after `5 + 2.5 * capacity` seconds without a hit it refills. The HUD shows `
   edges of a wide platform, which is not hangable.
 - The slime's attacks (`rooms_attacks.lua`, example `combat.attacks` configs): a melee arc in
   front of it, a ranged shot, and a bomb thrown low that bounces, blows on touching an enemy
-  or after its fuse, and pushes everything in its radius away. One mode at a time, switched
-  with the switch button; the mode is kept from room to room.
+  or after its fuse, and pushes everything in its radius away. Each has its own button: melee,
+  shoot (held: fires whenever ready) and bomb. Bombs are a consumable (wallet currency `bomb`,
+  1 at the start of a run, at most 99), dropped by enemies, cleared rooms and crates and sold
+  in shops; none is thrown at 0. Only the melee attack breaks crates.
+- Ability mutations (`rooms_mutations.lua`, placeholder names): double jump, wall jump,
+  grappling hook (fires up-forward, straight up with up held; up/down reel, left/right pump,
+  jump or hook again lets go), dash (double tap left or right; invulnerable while it lasts, then
+  a cooldown), free aim (right stick or mouse), double shot (2 parallel shots) and burst (3
+  volleys per shot). Movement ones are `engine.modules.abilities` definitions granted to the
+  run's set; shot ones add to the ranged config (`build_attacks` in `rooms_play.lua`).
+- The HUD (`rooms_hud.lua`), Isaac-style: hearts and shield pips, then virus, bombs and the
+  floor key, then speed, jump, damage and luck, each with a small icon; floor and biome at the
+  top centre. Texts are cached and rebuilt only when their number changes.
 - Vines (`rooms_vines.lua`): a `vine` prop is grabbed by pressing up or down when the slime's
   centre is on it; up/down climb at the prop's `speed` with gravity cancelled; left/right pump
   a damped pendulum (when `swing` is on) limited to a maximum angle; jump lets go with the
@@ -164,8 +175,12 @@ and after `5 + 2.5 * capacity` seconds without a hit it refills. The HUD shows `
 | Jump | Space, Up, W | A |
 | Grab / climb a vine | Up / Down, W / S | D-pad up / down, left stick up / down |
 | Squash (let go on the ground: a higher jump) | Down, S | d-pad down |
-| Attack | X, J | X |
-| Switch attack (melee, ranged, explosive) | C, K, Tab | Y |
+| Shoot (hold to keep firing) | X, J | RT |
+| Melee | C, K | Y |
+| Bomb | V, L | RB |
+| Dash (mutation) | double tap Left / Right | double tap left stick or d-pad |
+| Hook (mutation) | Q | LB |
+| Free aim shot (mutation) | mouse, left button | right stick + RT |
 | Interact (machine) | E, F | B |
 | Pause (Resume, Restart run, Quit game) | Escape, P | Start |
 | Quit | -- | Hold Back 3 s (console) |

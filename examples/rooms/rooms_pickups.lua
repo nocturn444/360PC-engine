@@ -1,6 +1,6 @@
 -- Pickups of the rooms example: a small piece of data on the floor that gives its amount when
--- the slime touches it. `heart` heals, `virus` is the run's currency, and `bonus_key` is an
--- optional key (both are currencies of engine.modules.wallet). This file is data only: no love,
+-- the slime touches it. `heart` heals, `virus` is the run's currency, `bomb` a consumable and
+-- `bonus_key` an optional key (currencies of engine.modules.wallet). This file is data only: no love,
 -- no drawing. The room draws and collects them, and decides what an amount means.
 local type, floor, abs = type, math.floor, math.abs
 
@@ -25,6 +25,9 @@ function M.heart(x, y, amount) return make("heart", x, y, amount) end
 -- M.virus(x, y, amount) -> { kind = "virus", x, y, amount }, amount defaults to 1.
 function M.virus(x, y, amount) return make("virus", x, y, amount) end
 
+-- M.bomb(x, y, amount) -> { kind = "bomb", x, y, amount }, amount defaults to 1.
+function M.bomb(x, y, amount) return make("bomb", x, y, amount) end
+
 -- M.bonus_key(x, y, amount) -> { kind = "bonus_key", x, y, amount }, amount defaults to 1.
 -- An optional key (first use: the super treasure room), not the per-floor `key` ability.
 function M.bonus_key(x, y, amount) return make("bonus_key", x, y, amount) end
@@ -38,12 +41,13 @@ local COLORS = {
   heart = { 0.95, 0.30, 0.40 },
   virus = { 0.55, 0.90, 0.40 },
   bonus_key = { 0.65, 0.95, 0.95 },
+  bomb = { 0.35, 0.35, 0.40 },
 }
 
 -- M.color(pickup) -> a shared { r, g, b }. Do not change it.
 function M.color(pickup) return COLORS[pickup.kind] or COLORS.heart end
 
-local LABELS = { heart = "HEART", virus = "VIRUS", bonus_key = "KEY+" }
+local LABELS = { heart = "HEART", virus = "VIRUS", bonus_key = "KEY+", bomb = "BOMB" }
 
 -- M.label(pickup) -> a short name for a HUD or a floating text.
 function M.label(pickup) return LABELS[pickup.kind] or "PICKUP" end

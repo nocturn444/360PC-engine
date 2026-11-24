@@ -68,6 +68,7 @@ shape. The points themselves are left where they are, so the change is a squash,
 | `softbody.box(body)` | A rectangle that follows the body for modules that think in boxes: `x, y, w, h, facing`. `box:sync()` after each step; `box:knock(hit)` turns a combat hit's knockback into the body's velocity (call it from the fighter's `on_hurt`). `examples/rooms` makes the slime a combat fighter with it. |
 | `body:move_to(x, y)` | Moves the centre there, keeping the velocity (a door, a respawn). |
 | `body:on_ground()`, `:on_wall()`, `:on_ceiling()` | Whether a point touched that kind of surface in the last step. `floor_count`, `wall_count`, `ceiling_count` give how many. |
+| `body:wall_side()` | Which side the wall is on: `-1` (a wall on the left touches the body), `1` (on the right) or `0` (none, or both at once). `wall_left` and `wall_right` count the contacts on each side. |
 | `body:center()` | The mean of the points. |
 | `body:velocity()` | Mean velocity over the last step, pixels / s. |
 | `body:bounds()` | `x0, y0, x1, y1` around the points. |

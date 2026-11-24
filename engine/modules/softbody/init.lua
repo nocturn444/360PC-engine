@@ -68,9 +68,11 @@ function M.new(opts)
   self.x, self.y, self.ox, self.oy, self.lx, self.ly = {}, {}, {}, {}, {}, {}
   self.mx, self.my = {}, {}        -- the springs' moves within a pass
   self.contact = {}        -- per point: false, "floor", "wall" or "ceiling" (last step)
+  self.wall_dir = {}       -- per point: -1 (wall on its left), 1 (on its right) or 0
   self.rest, self.rest_x, self.rest_y = {}, {}, {}   -- per spring length; per point offset from the centre
   self.ax, self.ay, self.ivx, self.ivy = 0, 0, 0, 0
   self.floor_count, self.wall_count, self.ceiling_count = 0, 0, 0
+  self.wall_left, self.wall_right = 0, 0
   self.dt = 1 / 60
   local cx, cy = opts.x or 0, opts.y or 0
   for i = 1, n do
@@ -80,6 +82,7 @@ function M.new(opts)
     self.x[i], self.y[i], self.ox[i], self.oy[i], self.lx[i], self.ly[i] = x, y, x, y, x, y
     self.rest_x[i], self.rest_y[i] = dx, dy
     self.contact[i] = false
+    self.wall_dir[i] = 0
   end
   local total = 0
   for i = 1, n do
@@ -193,6 +196,14 @@ function Body:on_ground() return self.floor_count > 0 end
 function Body:on_wall() return self.wall_count > 0 end
 function Body:on_ceiling() return self.ceiling_count > 0 end
 
+-- Which side the wall is on: -1 (a wall on the left touches the body), 1 (on the right), 0
+-- (none, or both sides at once). Counted in the last step.
+function Body:wall_side()
+  if self.wall_left > 0 and self.wall_right == 0 then return -1 end
+  if self.wall_right > 0 and self.wall_left == 0 then return 1 end
+  return 0
+end
+
 -- An acceleration (pixels / s^2) added to gravity for the next step only
 function Body:push(ax, ay)
   self.ax, self.ay = self.ax + ax, self.ay + (ay or 0)
@@ -294,7 +305,7 @@ local function collide(self, i, grid, gx, gy)
     -- only from above: the point was over the top face at the start of the step
     if self.ly[i] <= top + EPS and y > top then
       self.y[i] = top - EPS
-      self.contact[i] = "floor"
+      self.contact[i], self.wall_dir[i] = "floor", 0
     end
     return
   end
@@ -317,10 +328,12 @@ local function collide(self, i, grid, gx, gy)
     d = left + ts - x
     if d < best and open(grid, tx + 1, ty) then side = "right" end
   end
-  if side == "top" then self.y[i] = top - EPS; self.contact[i] = "floor"
-  elseif side == "bottom" then self.y[i] = top + ts; self.contact[i] = "ceiling"
-  elseif side == "left" then self.x[i] = left - EPS; self.contact[i] = "wall"
-  elseif side == "right" then self.x[i] = left + ts; self.contact[i] = "wall"
+  if side == "top" then self.y[i] = top - EPS; self.contact[i], self.wall_dir[i] = "floor", 0
+  elseif side == "bottom" then self.y[i] = top + ts; self.contact[i], self.wall_dir[i] = "ceiling", 0
+  elseif side == "left" then              -- the tile is to the right of the point
+    self.x[i] = left - EPS; self.contact[i], self.wall_dir[i] = "wall", 1
+  elseif side == "right" then             -- the tile is to the left of the point
+    self.x[i] = left + ts; self.contact[i], self.wall_dir[i] = "wall", -1
   else                                    -- buried: back to where it started the step
     self.x[i], self.y[i] = self.lx[i], self.ly[i]
   end
@@ -332,6 +345,7 @@ function Body:step(dt, grid, gx, gy)
   gx, gy = gx or 0, gy or 0
   self.dt = dt
   local x, y, ox, oy, lx, ly, contact = self.x, self.y, self.ox, self.oy, self.lx, self.ly, self.contact
+  local wall_dir = self.wall_dir
   local n, keep = self.n, self.damping
   local ax, ay = self.ax * dt * dt, (self.ay + self.gravity) * dt * dt
   local ix, iy = self.ivx * dt, self.ivy * dt
@@ -347,7 +361,7 @@ function Body:step(dt, grid, gx, gy)
     lx[i], ly[i] = x[i], y[i]
     ox[i], oy[i] = x[i], y[i]
     x[i], y[i] = x[i] + vx + ax, y[i] + vy + ay
-    contact[i] = false
+    contact[i], wall_dir[i] = false, 0
   end
   for _ = 1, self.iterations do
     springs(self)
@@ -357,7 +371,7 @@ function Body:step(dt, grid, gx, gy)
   end
   -- contacts: no velocity into the surface, and friction along it
   local f = 1 - self.friction
-  local floors, walls, ceilings = 0, 0, 0
+  local floors, walls, ceilings, left_walls, right_walls = 0, 0, 0, 0, 0
   for i = 1, n do
     local c = contact[i]
     if c == "floor" or c == "ceiling" then
@@ -368,9 +382,11 @@ function Body:step(dt, grid, gx, gy)
       ox[i] = x[i]
       oy[i] = y[i] - (y[i] - oy[i]) * f
       walls = walls + 1
+      if wall_dir[i] < 0 then left_walls = left_walls + 1 else right_walls = right_walls + 1 end
     end
   end
   self.floor_count, self.wall_count, self.ceiling_count = floors, walls, ceilings
+  self.wall_left, self.wall_right = left_walls, right_walls
 end
 
 -- Sets the mean velocity (pixels / s) and keeps how the points move relative to each other

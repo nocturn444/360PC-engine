@@ -15,6 +15,11 @@
 --   look      visual fragment for the game to draw
 --   body      optional physical rest shape ({ width = 24 } or { radius = 11 })
 --   color     RGB
+--   ability   optional movement ability, an engine.modules.abilities definition
+--             ({ kind = "air_jump" | "wall_jump" | "dash" | "hook", id = ..., fields })
+--   shot      optional change to the slime's ranged attack: numbers add to the base config
+--             (count, gap, burst, ...), aim = "free" lets the right stick or the mouse aim
+-- The ability and shot mutations below have placeholder names: the owner names them later.
 local M = {}
 
 M.entries = {
@@ -84,6 +89,144 @@ M.entries = {
     },
     body = { width = 24, height = 20 },
     color = { 0.95, 0.75, 0.35 },
+    example = true,
+  },
+  {
+    id = "ability_double_jump",
+    name = "TWIN HOP",
+    weight = 3,
+    rarity = "rare",
+    sources = { "treasure", "boss", "shop" },
+    unique = true,
+    tags = { "mobility" },
+    synergy = { "mobility" },
+    anti = {},
+    ability = { kind = "air_jump", id = "double_jump" },
+    look = {
+      limbs = {
+        { anchor = 0.30, side = 1, length = 3, width = 2, color = 5, kind = "leg" },
+        { anchor = 0.70, side = -1, length = 3, width = 2, color = 5, kind = "leg" },
+      },
+    },
+    color = { 0.70, 0.95, 0.55 },
+    example = true,
+  },
+  {
+    id = "ability_wall_jump",
+    name = "STICKY SOLES",
+    weight = 3,
+    rarity = "rare",
+    sources = { "treasure", "boss", "shop" },
+    unique = true,
+    tags = { "mobility" },
+    synergy = { "mobility" },
+    anti = {},
+    ability = { kind = "wall_jump", id = "wall_jump" },
+    look = {
+      limbs = {
+        { anchor = 0.05, side = 1, length = 3, width = 2, color = 5, kind = "shell" },
+        { anchor = 0.95, side = -1, length = 3, width = 2, color = 5, kind = "shell" },
+      },
+    },
+    color = { 0.55, 0.75, 0.35 },
+    example = true,
+  },
+  {
+    id = "ability_hook",
+    name = "TONGUE HOOK",
+    weight = 3,
+    rarity = "rare",
+    sources = { "treasure", "boss", "shop" },
+    unique = true,
+    tags = { "mobility" },
+    synergy = { "mobility" },
+    anti = {},
+    ability = { kind = "hook", id = "hook" },
+    look = {
+      limbs = {
+        { anchor = 0.50, side = 1, length = 4, width = 1, color = 5, kind = "antenna" },
+      },
+    },
+    color = { 0.95, 0.45, 0.55 },
+    example = true,
+  },
+  {
+    id = "ability_dash",
+    name = "BURST SAC",
+    weight = 3,
+    rarity = "rare",
+    sources = { "treasure", "boss", "shop" },
+    unique = true,
+    tags = { "mobility" },
+    synergy = { "mobility" },
+    anti = {},
+    ability = { kind = "dash", id = "dash", trigger = "double_tap" },
+    look = {
+      limbs = {
+        { anchor = 0.85, side = -1, length = 4, width = 2, color = 5, kind = "shell" },
+      },
+    },
+    color = { 0.95, 0.65, 0.30 },
+    example = true,
+  },
+  {
+    id = "shot_free_aim",
+    name = "WANDERING EYE",
+    weight = 3,
+    rarity = "rare",
+    sources = { "treasure", "boss", "shop" },
+    unique = true,
+    tags = { "shot" },
+    synergy = { "shot" },
+    anti = {},
+    shot = { aim = "free" },
+    look = {
+      limbs = {
+        { anchor = 0.50, side = 1, length = 4, width = 1, color = 5, kind = "antenna" },
+      },
+    },
+    color = { 0.85, 0.85, 1.00 },
+    example = true,
+  },
+  {
+    id = "shot_double",
+    name = "SPLIT GLAND",
+    weight = 3,
+    rarity = "rare",
+    sources = { "treasure", "boss", "shop" },
+    unique = true,
+    tags = { "shot" },
+    synergy = { "shot" },
+    anti = {},
+    shot = { count = 1, gap = 4 },
+    look = {
+      limbs = {
+        { anchor = 0.15, side = 1, length = 3, width = 2, color = 5, kind = "antenna" },
+        { anchor = 0.85, side = -1, length = 3, width = 2, color = 5, kind = "antenna" },
+      },
+    },
+    color = { 0.60, 0.80, 1.00 },
+    example = true,
+  },
+  {
+    id = "shot_burst",
+    name = "RAPID SPORES",
+    weight = 3,
+    rarity = "rare",
+    sources = { "treasure", "boss", "shop" },
+    unique = true,
+    tags = { "shot" },
+    synergy = { "shot" },
+    anti = {},
+    shot = { burst = 2, burst_interval = 0.06 },
+    look = {
+      limbs = {
+        { anchor = 0.40, side = 1, length = 3, width = 1, color = 5, kind = "antenna" },
+        { anchor = 0.50, side = 1, length = 4, width = 1, color = 5, kind = "antenna" },
+        { anchor = 0.60, side = 1, length = 3, width = 1, color = 5, kind = "antenna" },
+      },
+    },
+    color = { 0.75, 0.95, 0.85 },
     example = true,
   },
 }

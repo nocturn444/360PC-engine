@@ -6,8 +6,10 @@
 -- soft body seen by combat through softbody.box. The slime hurts an enemy by landing on it (a
 -- hitbox under the body while it falls) and bounces off; an enemy's bite or contact hurts the
 -- slime and knocks it back. The slime also has three attacks (rooms_attacks.lua,
--- combat.attacks configs): melee, ranged and explosive, one at a time; Fight:attack() triggers
--- the current one. Everything here is rebuilt when a room is entered; the play state then
+-- combat.attacks configs): melee, ranged and explosive (the bomb), each on its own button:
+-- Fight:melee(), Fight:shoot(ax, ay) and Fight:bomb(); opts.attacks replaces the configs (the
+-- run's ranged attack changes with its shot mutations).
+-- Everything here is rebuilt when a room is entered; the play state then
 -- restores the room's enemies (the dead stay dead and a hurt one keeps its health).
 local platformer = require("engine.modules.platformer")
 local combat = require("engine.modules.combat")
@@ -94,8 +96,8 @@ end
 
 -- M.new(slime, grid, spots, opts): spots = { { x, y } ... } (the bottom centre of each enemy, room
 -- pixels); opts.boss (stronger enemies), opts.seed (their patrol pauses), opts.health (the
--- slime's health carried over from the last room), opts.mode (the slime's attack, an index of
--- rooms_attacks), opts.on_slime_death, opts.on_killed; the biome's: opts.enemy_stats,
+-- slime's health carried over from the last room), opts.attacks (the slime's attack configs,
+-- default rooms_attacks), opts.on_slime_death, opts.on_killed; the biome's: opts.enemy_stats,
 -- opts.slime_stats (a combat.stats table or a stat source), opts.slime_source/opts.slime_mods
 -- (the run's stats), opts.mob (the mob id of this room) and opts.color (the enemies' colour)
 function M.new(slime, grid, spots, opts)
@@ -122,8 +124,12 @@ function M.new(slime, grid, spots, opts)
   self.arsenal = combat.attacks.new(self.fight, { grid = grid, max_projectiles = 24 })
   self.enemy_arsenal = combat.attacks.new(self.fight, { grid = grid, max_projectiles = 32 })
   self.attacks = {}
-  for i = 1, #attack_configs do self.attacks[i] = self.arsenal:equip(self.player, attack_configs[i]) end
-  self.mode = opts.mode or 1
+  local configs = opts.attacks or attack_configs
+  for i = 1, #configs do
+    local c = configs[i]
+    self.attacks[i] = self.arsenal:equip(self.player, c)
+    self.attacks[c.name] = self.attacks[i]
+  end
   self.on_killed = opts.on_killed
   self.fight.on_hit = function(hit)
     if hit.killed and hit.target ~= me.player and hit.hitbox ~= me.stomp then
@@ -211,14 +217,12 @@ function Fight:sync()
   end
 end
 
--- The current attack, and the next one (wraps around)
-function Fight:attack() return self.attacks[self.mode]:trigger() end
-function Fight:current() return self.attacks[self.mode] end
-function Fight:switch()
-  self.attacks[self.mode]:cancel()
-  self.mode = self.mode % #self.attacks + 1
-  return self.attacks[self.mode]
-end
+-- The slime's three attacks, each on its own button. Each returns true if it started.
+-- shoot(ax, ay): toward that direction, or the facing when nil or (0, 0).
+function Fight:melee() return self.attacks.melee:trigger() end
+function Fight:shoot(ax, ay) return self.attacks.ranged:trigger(ax, ay) end
+function Fight:bomb() return self.attacks.explosive:trigger() end
+function Fight:can_bomb() return self.attacks.explosive:ready() end
 
 -- One fixed step, after the slime stepped. Returns the hits that landed.
 function Fight:step(dt)
@@ -318,7 +322,7 @@ end
 -- (blinking faster as the fuse runs out) and each blast as a disc of 2 px rows.
 function Fight:draw_attacks(alpha)
   local g = love.graphics
-  local melee = self.attacks[1].hitbox
+  local melee = self.attacks.melee.hitbox
   if melee and melee.active then
     local bx, by, bw, bh = melee:rect()
     g.setColor(0.95, 1.00, 0.95, 0.7)

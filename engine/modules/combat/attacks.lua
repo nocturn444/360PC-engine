@@ -53,8 +53,11 @@ local FIELDS = {
     active = { "number", 0.1 },     -- s the hitbox is out
   },
   ranged = {
-    count = { "number", 1 },        -- shots per trigger
+    count = { "number", 1 },        -- shots per volley
     spread = { "number", 0 },       -- degrees between the first and the last shot of a fan
+    gap = { "number", 0 },          -- px between parallel shots, across the aim line
+    burst = { "number", 1 },        -- volleys per trigger
+    burst_interval = { "number", 0.06 }, -- s between two volleys of a burst
     angle = { "number", 0 },        -- degrees above the facing direction (negative: down)
     speed = { "number", 200 },      -- px/s
     gravity = { "number", 0 },      -- px/s^2, down
@@ -123,6 +126,9 @@ function M.define(config)
     c.boxes = copy
   elseif kind == "ranged" then
     if c.count < 1 then error("combat.attacks: ranged count is at least 1", 2) end
+    if c.gap < 0 then error("combat.attacks: ranged gap >= 0", 2) end
+    if c.burst < 1 then error("combat.attacks: ranged burst is at least 1", 2) end
+    if c.burst_interval < 0 then error("combat.attacks: ranged burst_interval >= 0", 2) end
     if c.walls ~= "stop" and c.walls ~= "pass" then error("combat.attacks: walls is \"stop\" or \"pass\"", 2) end
   elseif kind == "explosive" and c.throw then
     local t = {}
@@ -183,6 +189,9 @@ function Arsenal:equip(fighter, config)
     timer = 0,                -- s left in the windup; s spent in "active"
     cool = 0,                 -- s until it can be triggered again
     aim_x = nil, aim_y = nil, -- the direction of this trigger, if it was given one
+    aim_facing = 1,           -- the facing of this trigger, kept through its volleys
+    burst_left = 0,           -- volleys left in the burst (ranged)
+    burst_timer = 0,          -- s until the next volley (ranged)
     uses = 0,                 -- triggers that fired
   }, Attack)
   if c.kind == "melee" then
@@ -205,6 +214,8 @@ function Arsenal:unequip(attack)
   attack.phase = "removed"
 end
 
+local facing_of
+
 -- True if trigger would start it now.
 function Attack:ready()
   return self.phase == "idle" and self.cool <= EPS and not self.fighter.dead
@@ -217,12 +228,16 @@ function Attack:trigger(ax, ay)
   self.phase, self.timer, self.cool = "windup", self.config.windup, self.config.cooldown
   if ax and ay and (ax ~= 0 or ay ~= 0) then self.aim_x, self.aim_y = ax, ay
   else self.aim_x, self.aim_y = nil, nil end
+  self.aim_facing = facing_of(self.fighter)
+  self.burst_left, self.burst_timer = 0, 0     -- a new trigger cancels the rest of an old burst
   return true
 end
 
--- Stops it where it is (a melee hitbox is put away). The cooldown keeps running.
+-- Stops it where it is (a melee hitbox is put away, the remaining volleys of a burst stop).
+-- The cooldown keeps running.
 function Attack:cancel()
   if self.hitbox then self.hitbox:deactivate() end
+  self.burst_left, self.burst_timer = 0, 0
   if self.phase ~= "removed" then self.phase = "idle" end
 end
 
@@ -268,7 +283,7 @@ local function free_slot(self)
 end
 
 -- The facing of a fighter's body as 1 or -1
-local function facing_of(f)
+function facing_of(f)
   return (f.body.facing or 1) < 0 and -1 or 1
 end
 
@@ -280,12 +295,13 @@ end
 -- The angle (radians, up is positive) a shot of this trigger starts at, before its fan offset.
 local function base_angle(a, angle_deg)
   if a.aim_x then return atan2(-a.aim_y, a.aim_x) end
-  if facing_of(a.fighter) > 0 then return angle_deg * RAD end
+  if a.aim_facing > 0 then return angle_deg * RAD end
   return pi - angle_deg * RAD
 end
 
--- A new projectile at the fighter's offset (ox, oy, mirrored) with that speed and angle.
-local function launch(self, a, ox, oy, w, h, speed, angle)
+-- A new projectile at the fighter's offset (ox, oy, mirrored), plus a world displacement
+-- (dx, dy, for parallel shots), with that speed and angle.
+local function launch(self, a, ox, oy, w, h, speed, angle, dx, dy)
   local p = free_slot(self)
   if not p then return nil end
   local f = a.fighter
@@ -293,7 +309,7 @@ local function launch(self, a, ox, oy, w, h, speed, angle)
   local cx, cy = centre(f.body)
   p.alive, p.fresh, p.attack, p.source = true, true, a, f
   p.w, p.h = w, h
-  p.x, p.y = cx + ox * fx - w * 0.5, cy + oy - h * 0.5
+  p.x, p.y = cx + ox * fx - w * 0.5 + (dx or 0), cy + oy - h * 0.5 + (dy or 0)
   p.px, p.py = p.x, p.y
   p.vx, p.vy = cos(angle) * speed, -sin(angle) * speed
   return p
@@ -314,10 +330,16 @@ local function fire_ranged(self, a)
   local c = a.config
   local angle = base_angle(a, c.angle)
   local n = c.count
+  local perp_x, perp_y = -sin(angle), -cos(angle)   -- across the aim line
   for k = 1, n do
     local off = 0
     if n > 1 then off = ((k - 1) / (n - 1) - 0.5) * c.spread * RAD end
-    local p = launch(self, a, c.ox, c.oy, c.w, c.h, c.speed, angle + off)
+    local dx, dy = 0, 0
+    if n > 1 and c.gap ~= 0 then
+      local gap = (k - (n + 1) * 0.5) * c.gap
+      dx, dy = perp_x * gap, perp_y * gap
+    end
+    local p = launch(self, a, c.ox, c.oy, c.w, c.h, c.speed, angle + off, dx, dy)
     if not p then return end
     p.kind, p.gravity, p.life, p.walls = "shot", c.gravity, c.life, c.walls
     local f, owner = shot_fighter(self, p), a.fighter
@@ -547,13 +569,28 @@ function Arsenal:step(dt)
             a.hitbox:activate()
           else
             a.phase = "idle"
-            if kind == "ranged" then fire_ranged(self, a) else fire_explosive(self, a) end
+            if kind == "ranged" then
+              fire_ranged(self, a)
+              local burst = a.config.burst
+              if burst > 1 then
+                a.burst_left, a.burst_timer = burst - 1, a.config.burst_interval
+              end
+            else
+              fire_explosive(self, a)
+            end
           end
         else
           a.timer = a.timer - dt
         end
       elseif a.phase == "active" then
         melee_update(a, dt)
+      elseif a.burst_left > 0 then
+        a.burst_timer = a.burst_timer - dt
+        if a.burst_timer <= EPS then
+          fire_ranged(self, a)
+          a.burst_left = a.burst_left - 1
+          a.burst_timer = a.config.burst_interval
+        end
       end
     end
   end
