@@ -131,7 +131,7 @@ Built-in kinds (tunable numbers are defaults; the game data can override each):
 |---|---|---|
 | `air_jump` | `count = 1` (per stack), `power = 1.0` | Jump pressed in the air: vertical velocity set to `-jump_speed * power` (not added). Uses refill on landing, on a wall jump and when the hook releases. priority 30 |
 | `wall_jump` | `kick_x = 180`, `power = 1.0`, `slide_speed = 60`, `lock = 0.15` | In the air touching a wall (`wall_side() ~= 0`): jump sets velocity `(-side * kick_x, -jump_speed * power)`; for `lock` s after, `move_x` toward the wall is ignored (so the kick is not cancelled). While pushing into the wall and falling, vertical speed is capped at `slide_speed` (0 disables). priority 10 |
-| `dash` | `speed = 330`, `time = 0.14`, `cooldown = 0.45`, `air_uses = 1` (per stack), `dirs = 8` | `intent.dash`: direction from `move_x, move_y` (snapped to 8 or 4 dirs; none held: facing, which the game passes as `intent.facing`). For `time` s the velocity is held at `dir * speed` every step (gravity cancelled). Ends early on hitting a wall in its direction. `air_uses` refills on landing. Exposes `active` (bool) and `dir_x`, `dir_y` so the game can draw a trail or give i-frames. priority n/a |
+| `dash` | `speed = 330`, `time = 0.14`, `cooldown = 0.45`, `air_uses = 1` (per stack), `dirs = 8`, `trigger = "button"` or `"double_tap"`, `tap_window = 0.25`, `tap_threshold = 0.5` | With `trigger = "double_tap"` the set itself detects two taps of `move_x` in the same direction within `tap_window` s (a tap = `|move_x|` crossing `tap_threshold` from below; analog stick and keys alike; number fields only) and dashes horizontally that way; otherwise `intent.dash`: direction from `move_x, move_y` (snapped to 8 or 4 dirs; none held: facing, which the game passes as `intent.facing`). For `time` s the velocity is held at `dir * speed` every step (gravity cancelled). Ends early on hitting a wall in its direction. `air_uses` refills on landing. Exposes `active` (bool) and `dir_x`, `dir_y` so the game can draw a trail or give i-frames. priority n/a |
 | `hook` | `range = 112`, `speed = 420` (hook flight px/s), `angle = 55` (degrees above horizontal, toward facing; `move_y < 0` held: straight up), `reel = 60` (px/s with up/down), `min_length = 16`, `pump = 260` (px/s^2 with left/right while swinging), `release_boost = 1.0` | `intent.hook` fires the hook: a point that flies until it hits `solid` (attach), or passes `range` (miss, comes back). While attached, a rope constraint each step: if the body centre is farther than `length` from the anchor, remove the outward part of the velocity and move it back onto the circle (through `set_velocity`/`impulse`, never by moving points directly); gravity makes the swing. `move_y` reels in/out, `move_x` pumps. Releases on `intent.hook` again, on jump (keeps the swing velocity, times `release_boost`, plus a small upward kick `-jump_speed * 0.5`, `consumed_jump`), or on `set:reset()`. Exposes `phase` (`"idle"`, `"flying"`, `"attached"`), `hx`, `hy` (hook point), `length`, for the game to draw the rope. priority 5 |
 
 Raycasting for the hook: step along the segment in 2 px increments with `solid(x, y)`; no tables.
@@ -156,7 +156,7 @@ row in `engine/modules/README.md`, section in `docs/ENGINE.md`, `CHANGELOG.md` u
 | `melee` | Y | c, k |
 | `interact` | B | e, f |
 | `bomb` | RB | v, l |
-| `dash` | LT (`triggerleft+`) (pending: LT or X) | lshift |
+| `dash` | double tap left or right (stick or d-pad) | double tap left or right key |
 | `hook` | LB | q |
 | axes `aim_x`, `aim_y` | right stick (`rightx`, `righty`) | mouse position relative to the slime |
 | `aim_fire` (PC) | n/a | mouse button 1 |
@@ -237,7 +237,8 @@ Update `examples/rooms/README.md`, `examples/rooms/docs/CONTENT.md` (new mutatio
 
 ## Owner decisions (2026-11-24)
 
-1. Pad mapping above: shoot on RT, bomb on RB. Dash button still open (LT proposed, or X).
+1. Pad mapping above: shoot on RT, bomb on RB. The dash has no button: it fires on a double tap
+   of left or right (stick or d-pad on the pad, the direction keys on PC).
 2. The dash makes the slime invulnerable while `active`, and has a cooldown: the game sets the
    player fighter's i-frames for the dash `time` (no blink) when it starts.
 3. A run starts with 1 bomb.
