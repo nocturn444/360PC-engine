@@ -85,10 +85,13 @@ function Counters:count(set)
   return n
 end
 
--- counters:reset(): a new run (or floor): clears the same tables instead of making new ones.
+-- counters:reset(): a new run (or floor): clears the same tables instead of making new ones
+-- (the sets stay, empty, so marking after a reset allocates nothing either).
 function Counters:reset()
   for key in next, self.numbers do self.numbers[key] = nil end
-  for set in next, self.sets do self.sets[set] = nil end
+  for _, ids in next, self.sets do
+    for id in next, ids do ids[id] = nil end
+  end
   return self
 end
 
