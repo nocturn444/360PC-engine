@@ -1,8 +1,9 @@
 -- examples/rooms: boots on the console's boot (tests/pc/boot_pc.lua) and runs on the engine
 -- tests' fake love: the slime starts in the start room, walks out through a door behind a fade,
 -- arrives inside the next room, a locked door holds until the key is picked up, the minimap
--- marks what was explored, an enemy that falls through a pit turns up in the room below, and
--- the room is drawn.
+-- marks what was explored, an enemy that falls through a pit turns up in the room below, the
+-- room is drawn, the title / game over menus and the profile's Progress and Options pages work,
+-- and a death, a victory and a pause Main Menu record (or do not record) the run.
 -- Usage, from the repository root: luajit -joff tests/pc/rooms_example_test.lua   (must end with "OK:")
 package.path = "./?.lua;./?/init.lua;./tests/engine/?.lua;./examples/rooms/?.lua;" .. package.path
 local checks = 0
@@ -18,7 +19,9 @@ end
 -- 1. Files and config
 for _, name in ipairs({ "game.lua", "conf.lua", "main.lua", "rooms_play.lua", "rooms_data.lua", "rooms_biomes.lua",
   "rooms_art.lua", "rooms_stats.lua", "rooms_content.lua", "rooms_mutations.lua", "rooms_consumables.lua", "rooms_look.lua",
-  "rooms_pickups.lua", "rooms_props.lua", "rooms_machines.lua", "rooms_pause.lua", "README.md" }) do
+  "rooms_pickups.lua", "rooms_props.lua", "rooms_machines.lua", "rooms_pause.lua",
+  "rooms_title.lua", "rooms_gameover.lua", "rooms_profile.lua", "rooms_options.lua",
+  "README.md" }) do
   check(read("examples/rooms/" .. name), "examples/rooms/" .. name .. " exists")
 end
 local Config = dofile("runtime/lua/config.lua")
@@ -169,11 +172,112 @@ local F = require("fake_love")
 F.install({ width = 1280, height = 720 })
 assert(loadfile("examples/rooms/main.lua"))()
 love.load()
+love.update(1 / 60)                          -- a warm frame so the ui_* actions get defined
 local engine = require("engine")
-local play = engine.states:top()
-check(play == require("rooms_play"), "the state is entered")
-local nav, map, slime = play.nav, play.map, play.slime
+local title = require("rooms_title")
+local gameover = require("rooms_gameover")
 local function frames(n) for _ = 1, n do love.update(1 / 60); love.draw() end end
+-- tap() releases the key for a frame so the next press is a new one.
+local function tap(key) F.keys[key] = true; love.update(1 / 60); F.keys[key] = nil; love.update(1 / 60) end
+-- Every menu page must fit the 320 x 180 screen and draw with the built-in pixel font.
+local function menu_fits(state, what)
+  local page = state:page()
+  check(page and page.root.w <= 320 and page.root.h <= 180, what .. " fits the screen")
+  local inside = true
+  for _, w in ipairs(page.widgets) do
+    if w.x < 0 or w.y < 0 or w.x + w.w > 320 or w.y + w.h > 180 then inside = false end
+  end
+  check(inside and #page.widgets >= 1, what .. ": its buttons stay inside the 320 x 180 screen")
+  F.reset_calls(); state:draw(0)
+  check(#F.find("printf") == 0 and #F.find("setFont") == 0,
+    what .. " draws its text with engine.text rectangles, not love.graphics")
+end
+
+-- the title menu: the first state; Start Run enters the play state
+check(engine.states:top() == title, "the game starts on the title menu")
+check(title.autopause == false and gameover.autopause == false,
+  "the title and game over menus never auto-pause")
+local page = title:page()
+check(page and page.focused == page:get("start"), "the title opens on Start Run")
+menu_fits(title, "the title menu")
+tap("down"); tap("return")                        -- Challenges
+page = title:page()
+check(page:get("title").text == "Challenges" and page:get("message").text == "No challenges yet.",
+  "Challenges says there are no challenges yet")
+menu_fits(title, "the Challenges page")
+tap("return")                                     -- Back
+check((title:page()).focused == title:page():get("start"), "Challenges Back returns to the title")
+local profile = require("rooms_profile")
+tap("down"); tap("down"); tap("return")           -- Progress
+page = title:page()
+check(page:get("title").text == "Progress", "Progress opens the profile pages")
+check(page:get("completion").text:match("^Completion: %d+%%$"),
+  "Progress shows the completion percentage (" .. page:get("completion").text .. ")")
+menu_fits(title, "the Progress page")
+local function open_progress_page(id, title_text)
+  local p = title:page()
+  p:focus(p:get(id)); tap("return")
+  local sub = title:page()
+  check(sub:get("title").text == title_text, title_text .. " opens from Progress")
+  check(sub.focused == sub:get("back"), title_text .. " opens on Back")
+  menu_fits(title, "the " .. title_text .. " page")
+end
+open_progress_page("bestiary", "Bestiary")
+local rows = title:page():get("list").items
+check(#rows == #profile.known_enemies() + #profile.known_bosses(),
+  "the Bestiary has one row per enemy and boss type")
+check(rows[1] == "???", "an undiscovered enemy is ???")
+tap("return")
+check((title:page()).focused == title:page():get("back"), "Bestiary Back returns to Progress")
+open_progress_page("biomes", "Biomes")
+page = title:page()
+check(page:get("count").text == "Discovered: 0/" .. #profile.known_biomes(),
+  "Biomes shows the discovered count (" .. page:get("count").text .. ")")
+check(page:get("list").items[1] == "???", "an undiscovered biome is ???")
+tap("return")
+open_progress_page("achievements", "Achievements")
+check(title:page():get("list").items[1] == "None yet.", "Achievements says None yet.")
+tap("return")
+open_progress_page("items", "Unlocked items")
+check(title:page():get("list").items[1] == "None yet.", "Unlocked items says None yet.")
+tap("return")
+open_progress_page("endings", "Endings")
+check(title:page():get("list").items[1] == "None yet.", "Endings says None yet.")
+tap("return")
+open_progress_page("runs", "Runs")
+page = title:page()
+check(page:get("runs").text == "Runs: 0" and page:get("wins").text == "Wins: 0"
+  and page:get("losses").text == "Losses: 0" and page:get("streak").text == "No streak"
+  and page:get("best").text == "Best win streak: 0", "Runs shows the empty record")
+tap("return")
+tap("return")                                     -- Back to the title
+check((title:page()).focused == title:page():get("start"), "Progress Back returns to the title")
+tap("down"); tap("down"); tap("down"); tap("return") -- Options
+page = title:page()
+check(page:get("title").text == "Options", "Options opens the volumes and the fullscreen toggle")
+check(page:get("music") and page:get("sfx") and page:get("fullscreen"),
+  "Options has music, SFX and fullscreen")
+check(page.focused == page:get("music"), "Options opens on Music volume")
+menu_fits(title, "the Options page")
+page:get("music"):setValue(0.3)
+check(math.abs(profile.audio:getVolume("music") - 0.3) < 1e-9,
+  "the music slider changes the audio volume at once")
+page:get("music"):setValue(0.4)
+page:focus(page:get("back")); tap("return")       -- Back saves and returns
+check((title:page()).focused == title:page():get("start"), "Options Back returns to the title")
+check(math.abs(profile.get().options.music_volume - 0.4) < 1e-9,
+  "leaving Options saves the volume")
+tap("down"); tap("down"); tap("down"); tap("down"); tap("return") -- Exit
+page = title:page()
+check(page:get("no") and page.focused == page:get("no"),
+  "Exit asks before quitting, with No focused")
+menu_fits(title, "the quit confirmation")
+tap("return")                                     -- No
+check((title:page()).focused == title:page():get("start"), "No goes back to the title menu")
+tap("return")                                     -- Start Run
+local play = engine.states:top()
+check(play == require("rooms_play"), "Start Run enters the play state")
+local nav, map, slime = play.nav, play.map, play.slime
 check(nav.index == map.start, "it starts in the start room")
 frames(60)
 check(slime:on_ground(), "the slime lands in the start room")
@@ -330,12 +434,83 @@ check(play.fight:current().name == "explosive", "the attack chosen is kept from 
 fight = play.fight
 p = fight.player
 
--- dying: back to the start room at full health
+-- dying ends the run: after the fade, the game over menu over the frozen room
+local death_room = nav.index
 p.health = 1; p.invuln = 0
 play.dead = true
 frames(30)
-check(nav.index == map.start and play.deaths == 1, "dying sends it back to the start room")
-check(play.fight.player.health == play.fight.player.stats:get("max_health"), "with full health")
+check(engine.states:top() == gameover and play.deaths == 1 and nav.index == death_room,
+  "dying ends the run and opens the game over menu over the same room")
+check(play.fight.player.dead, "the dead run stays frozen under the menu")
+check(profile.get().runs == 1 and profile.get().losses == 1 and profile.get().streak == -1,
+  "the death is recorded in the profile as a loss with a loss streak")
+local deaths_source = play.last_damage_source
+check(deaths_source and profile.get().deaths_by[deaths_source] == 1,
+  "the last damage source counts as the death by (" .. tostring(deaths_source) .. ")")
+page = gameover:page()
+check(page and page.focused == page:get("restart"), "the game over menu opens on Restart Run")
+menu_fits(gameover, "the game over menu")
+-- Stats: the floor, the kills, the run time in m:ss and the virus of the run that ended
+local stats_floor, stats_kills = play.floor, play.kills
+local stats_time, stats_virus = play.run_time, play.wallet:get("virus")
+tap("down"); tap("down"); tap("return")           -- Stats
+page = gameover:page()
+check(page:get("floor").text == "Floor: " .. stats_floor
+  and page:get("kills").text == "Kills: " .. stats_kills, "the stats page shows the floor and the kills")
+local secs = math.max(0, math.floor(stats_time))
+check(page:get("time").text == string.format("Time: %d:%02d", math.floor(secs / 60), secs % 60),
+  "the stats page shows the run time in m:ss (" .. page:get("time").text .. ")")
+check(page:get("virus").text == "Virus: " .. stats_virus, "the stats page shows the virus collected")
+check(page:get("streak").text == "Loss streak: 1", "the stats page shows the loss streak")
+local new_rows = page:get("new").items
+check(#new_rows > 0 and new_rows[1] ~= "Nothing new",
+  "the stats page lists what the run discovered (" .. #new_rows .. " rows)")
+menu_fits(gameover, "the stats page")
+tap("return")                                     -- Back
+check((gameover:page()).focused == gameover:page():get("restart"), "Stats Back returns to the game over menu")
+-- Main Menu clears the stack: the dead play state is gone and the title is on top
+tap("down"); tap("return")                        -- Main Menu
+check(engine.states:top() == title and engine.states:depth() == 1 and engine.states:get("play") == play,
+  "Main Menu returns to the title with the play state out of the stack")
+check(profile.get().runs == 1 and profile.get().losses == 1,
+  "Main Menu from the game over menu records no other run")
+check((title:page()).focused == title:page():get("start"), "the title opens on Start Run again")
+menu_fits(title, "the title menu after Main Menu")
+tap("return")                                     -- Start Run, a fresh run at floor 1
+check(engine.states:top() == play and play.floor == 1, "Start Run starts at floor 1 again")
+-- a second death, then Restart Run pops the menu and restarts the play state
+play.fight.player.health = 1; play.fight.player.invuln = 0
+play.dead = true
+frames(30)
+check(engine.states:top() == gameover and play.deaths == 1, "the new run's death opens it again")
+tap("return")                                     -- Restart Run
+check(engine.states:top() == play and play.floor == 1, "Restart Run starts at floor 1")
+map, nav, slime = play.map, play.nav, play.slime
+
+-- the last floor's boss is the final fight: clearing it wins the run, with no stairs
+for n = 2, 10 do play.new_floor(play, n) end
+play:load_room(play.nav:enter(play.map.start))
+play:load_room(play.nav:enter(play.map.boss))
+for _, e in ipairs(play.fight.enemies) do e.fighter.dead = true; e.fighter.health = 0 end
+frames(2)
+check(play.result == "win" and not play.stairs,
+  "the last floor's boss wins the run, with no stairs")
+frames(30)
+check(engine.states:top() == gameover, "the victory opens the end-of-run menu")
+page = gameover:page()
+check(page:get("title").text == "Victory", "the end-of-run menu is titled Victory")
+check(profile.get().wins == 1 and profile.get().streak >= 1 and profile.get().best_win_streak >= 1,
+  "the victory is recorded in the profile with a win streak")
+menu_fits(gameover, "the victory menu")
+tap("down"); tap("down"); tap("return")           -- Stats of the victory
+page = gameover:page()
+check(page:get("streak").text:match("^Win streak: %d+$"),
+  "the victory's stats page shows the win streak (" .. page:get("streak").text .. ")")
+tap("return")                                     -- Back
+tap("return")                                     -- Restart Run
+check(engine.states:top() == play and play.floor == 1,
+  "Restart Run after a victory starts a new run")
+map, nav, slime = play.map, play.nav, play.slime
 
 -- the floor is in its biome, the enemies are the biome's
 check(play.biome and play.map.biome == play.biome.id and play.music == play.biome.music, "the floor has its biome and music")
@@ -682,28 +857,57 @@ play:load_room(play.nav:enter(play.map.start))
 check(play.floor == 3, "a floor to leave behind")
 F.keys.p = true; love.update(1 / 60); F.keys.p = nil
 check(engine.states:top() == pause, "P pauses too")
-F.keys.down = true; love.update(1 / 60); F.keys.down = nil
-F.keys["return"] = true; love.update(1 / 60); F.keys["return"] = nil
-check(play.floor == 3 and engine.states:top() == pause, "Restart run asks first")
-F.keys.left = true; love.update(1 / 60); F.keys.left = nil
-F.keys["return"] = true; love.update(1 / 60); F.keys["return"] = nil
+local pp = pause:page()
+check(pp:get("options") and pp.focused == pp:get("resume"),
+  "the pause menu has Options and opens on Resume")
+pp:focus(pp:get("restart")); tap("return")
+local confirm = pause:page()
+check(play.floor == 3 and engine.states:top() == pause and confirm.focused == confirm:get("no"),
+  "Restart run asks first, with No focused")
+confirm:focus(confirm:get("yes")); tap("return")
 check(engine.states:top() == play and play.floor == 1, "Yes restarts the run at floor 1")
 
--- reopening starts on Resume, not on the last button used; Quit game confirms (No focused),
--- then quits. tap() releases the key for a frame so the next press is a new one.
-local function tap(key) F.keys[key] = true; love.update(1 / 60); F.keys[key] = nil; love.update(1 / 60) end
+-- Pause Options: between Resume and Restart run; its sliders change the engine.audio volume
+-- and Back writes them to the profile.
 tap("escape")
-check(engine.states:top() == pause, "Escape pauses again")
-tap("return")
-check(engine.states:top() == play, "the menu reopens with Resume focused")
-tap("escape"); tap("down"); tap("down"); tap("return")
-check(not F.quit and engine.states:top() == pause, "Quit game asks first")
-tap("return")
-check(not F.quit and engine.states:top() == pause, "No (focused by default) goes back to the menu")
-tap("return")
-check(engine.states:top() == play, "and the menu is back on Resume")
-tap("escape"); tap("down"); tap("down"); tap("return"); tap("left"); tap("return")
-check(F.quit == true, "Yes on Quit game leaves the game")
+pp = pause:page()
+pp:focus(pp:get("options")); tap("return")
+local op = pause:page()
+check(op:get("title").text == "Options" and op:get("music") and op.focused == op:get("music"),
+  "pause Options opens the volumes page")
+menu_fits(pause, "the pause Options page")
+op:get("sfx"):setValue(0.2)
+check(math.abs(profile.audio:getVolume("sfx") - 0.2) < 1e-9,
+  "the pause SFX slider changes the audio volume at once")
+op:focus(op:get("back")); tap("return")
+check(engine.states:top() == pause and (pause:page()).focused == (pause:page()):get("resume"),
+  "Options Back returns to the pause menu")
+check(math.abs(profile.get().options.sfx_volume - 0.2) < 1e-9,
+  "leaving pause Options saves the volume")
+tap("return")                                     -- Resume
+check(engine.states:top() == play, "Resume after Options")
+
+-- Main Menu asks (No focused); No returns to the pause menu, Yes returns to the title without
+-- recording a loss.
+tap("escape")
+pp = pause:page()
+pp:focus(pp:get("menu")); tap("return")
+confirm = pause:page()
+check(confirm.focused == confirm:get("no"), "Main Menu asks first, with No focused")
+menu_fits(pause, "the Main Menu confirmation")
+tap("return")                                     -- No
+check(engine.states:top() == pause, "No goes back to the pause menu")
+local runs0, losses0 = profile.get().runs, profile.get().losses
+pp = pause:page()
+pp:focus(pp:get("menu")); tap("return")
+confirm = pause:page()
+confirm:focus(confirm:get("yes")); tap("return")
+check(engine.states:top() == title and engine.states:depth() == 1,
+  "Yes on Main Menu returns to the title with the stack cleared")
+check(profile.get().runs == runs0 and profile.get().losses == losses0,
+  "leaving from the pause menu records no run")
+tap("return")                                     -- Start Run, for the draw checks below
+check(engine.states:top() == play and play.floor == 1, "Start Run after the pause Main Menu")
 
 -- the room is drawn, the minimap through rooms_minimap
 local minimap_mod = require("rooms_minimap")
