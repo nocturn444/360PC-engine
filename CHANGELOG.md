@@ -9,6 +9,14 @@ All notable changes to 360PC-Engine. The format follows
 ## [Unreleased]
 
 ### Added
+- `examples/rooms`: achievements and unlockable content (`rooms_progress.lua`, placeholders):
+  run and floor counters fed by kills, hearts, hits and mutations, five achievements (First
+  Victory, Exterminator, Untouchable, Heartless, Bouncy Build) and unlocks that open a locked
+  mutation (Thorns) and a locked biome (Crystal Cave, floors 6-7 instead of the fungal cave)
+  through the existing `unlock` tags of `items` and `procgen.biomes`. Saved in the profile
+  (`achievements`, `unlocks`, lifetime `counters`), shown on the HUD, the run's Stats list and
+  the Progress pages (Achievements, Unlocks; UNLOCK ALL in preview builds); completion counts
+  them. New test: `tests/pc/rooms_progress_test.lua`.
 - `engine/modules/combat`: a boss director, `combat.boss`: phases by health fraction (each a
   `combat.brains` spec, a phase change halts the boss for a transition and can make it
   invulnerable, one hit past several thresholds goes to the lowest), the telegraph of the attack

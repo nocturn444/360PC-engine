@@ -166,10 +166,12 @@ end
 -- M.take(pool, entry): the slime got it (counts against max for uniques)
 function M.take(pool, entry) return pool:take(entry) end
 
--- The pools of a run: mutations, consumables split by kind, and the optional keys
-function M.new_pools()
+-- The pools of a run: mutations, consumables split by kind, and the optional keys. opts.unlocked:
+-- the profile's unlock tags ({ tag = true }); entries with `unlock = tag` stay out until then.
+function M.new_pools(opts)
+  local unlocked = opts and opts.unlocked
   return {
-    mutations = items.pool.new(M.mutations),
+    mutations = items.pool.new(M.mutations, { unlocked = unlocked }),
     hearts = items.pool.new(M.hearts),
     virus = items.pool.new(M.virus),
     bonus_keys = items.pool.new(M.bonus_keys),

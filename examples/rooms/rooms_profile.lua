@@ -21,6 +21,9 @@ local DEFAULTS = {
   runs = 0, wins = 0, losses = 0,
   streak = 0, best_win_streak = 0,
   achievements = {}, endings = {}, unlocked_items = {},
+  counters = {},                 -- lifetime totals of the run counters (rooms_progress.lua)
+  unlocks = {},                  -- unlock tags earned (content with `unlock = tag` opens)
+  challenges = {},               -- challenges won (none exist yet)
   options = { music_volume = 1, sfx_volume = 1, fullscreen = false },
 }
 
@@ -213,8 +216,9 @@ function M.completion_counts()
     total = total + 1
     if d.endings and d.endings[ending.id] then n = n + 1 end
   end
-  -- achievements and unlocked items have no known data yet: they add 0 and 0
-  return n, total
+  -- achievements and unlocks (rooms_progress.lua, required here to avoid a require loop)
+  local an, at = require("rooms_progress").counts()
+  return n + an, total + at
 end
 
 function M.completion()

@@ -1,5 +1,7 @@
 # Final boss and unlocks (plan)
 
+Status: steps 1, 2 and 3 done; step 4 in progress.
+
 The owner asked for two things:
 
 1. A **final boss** (placeholder) whose choice depends on the run or on earlier progress.

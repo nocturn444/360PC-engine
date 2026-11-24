@@ -86,6 +86,28 @@ M.entries = {
     color = { 0.95, 0.75, 0.35 },
     example = true,
   },
+  {
+    id = "example_thorns",
+    name = "THORNS",
+    weight = 3,
+    rarity = "rare",
+    sources = { "treasure", "boss", "shop" },
+    unique = true,
+    unlock = "unlock_thorns",       -- locked until rooms_progress earns this tag (placeholder)
+    tags = { "damage" },
+    synergy = { "damage" },
+    anti = { "glass" },
+    stats = { { "damage", "add", 1 } },
+    look = {
+      outline_color = { 0.70, 0.30, 0.35 },
+      limbs = {
+        { anchor = 0.25, side = 1, length = 3, width = 1, color = 5, kind = "spike" },
+        { anchor = 0.75, side = -1, length = 3, width = 1, color = 5, kind = "spike" },
+      },
+    },
+    color = { 0.85, 0.35, 0.40 },
+    example = true,
+  },
 }
 
 return M

@@ -52,6 +52,10 @@ local function new_this_run(play)
     for _, name in ipairs(found.bosses or {}) do lines[#lines + 1] = "BOSS " .. name end
     for _, name in ipairs(found.biomes or {}) do lines[#lines + 1] = "BIOME " .. name end
   end
+  local earned = play and play.track and play.track.earned
+  if earned then
+    for _, line in ipairs(earned) do lines[#lines + 1] = line end
+  end
   if #lines == 0 then lines[1] = "Nothing new" end
   return lines
 end

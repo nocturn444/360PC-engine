@@ -14,7 +14,7 @@ local items = require("engine.modules.items")
 local C = require("rooms_content")
 
 -- 1. Schema: the example mutations, all unique, with well-formed fields
-check(type(C.mutations) == "table" and #C.mutations == 3, "three example mutations")
+check(type(C.mutations) == "table" and #C.mutations == 4, "four example mutations (one locked)")
 check(type(C.consumables) == "table" and #C.consumables == 2, "two example consumables")
 local rarities = { common = true, rare = true, epic = true }
 local jump, legs

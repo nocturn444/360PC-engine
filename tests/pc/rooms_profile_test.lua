@@ -49,7 +49,7 @@ check(profile.is_discovered("biomes", biome.id) and not profile.is_discovered("e
   "the discovered sets are separate")
 local n, total = profile.completion_counts()
 check(n == 1 and total == #profile.known_enemies() + #profile.known_bosses()
-  + #profile.known_biomes() + #endings.list,
+  + #profile.known_biomes() + #endings.list + 5 + 2,           -- 5 achievements, 2 visible unlocks
   "completion counts the discovered and the known things, endings included (" .. n .. "/" .. total .. ")")
 check(profile.completion() == math.floor(100 / total), "completion is the percentage")
 
@@ -84,6 +84,9 @@ for _, id in ipairs(profile.known_enemies()) do profile.discover("enemies", id) 
 for _, id in ipairs(profile.known_bosses()) do profile.discover("bosses", id) end
 for _, b in ipairs(profile.known_biomes()) do profile.discover("biomes", b.id) end
 for _, e in ipairs(endings.list) do profile.see_ending(e.id) end
+local tracker = require("rooms_progress")
+for _, r in ipairs(tracker.achievements) do profile.get().achievements[r.id] = true end
+for _, r in ipairs(tracker.unlocks) do if not r.hidden then profile.get().unlocks[r.id] = true end end
 check(profile.completion() == 100, "discovering and seeing everything is 100%")
 
 -- 6. The Options page: sliders change engine.audio live, Back writes the profile
