@@ -1018,7 +1018,7 @@ function play:draw(alpha)
   hud.draw(self.hud, self, g, W, FLOORS)
   if self.got then
     local text = "GOT " .. self.got.name
-    engine.text.draw(text, (W - engine.text.width(text)) / 2, H - 32)
+    engine.text.draw(text, (W - engine.text.width(text)) / 2, H - 52)
   end
   if self.machine and self.machine_near then
     local left = machines.uses_left(self.machine)
