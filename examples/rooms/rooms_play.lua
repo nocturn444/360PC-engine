@@ -725,6 +725,7 @@ local function draw_slime(self, alpha)
   looks.shape(out, self.look)
   px:polygon(out, 1)
   px:outline(2)
+  looks.shade(px)
   looks.draw_limbs(px, self.look, out)
   local x0, y0, x1 = slime:bounds()
   local ex = math.floor((x0 + x1) / 2 - ox) + 1 + self.facing * 2
