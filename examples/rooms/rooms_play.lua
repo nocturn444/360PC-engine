@@ -16,6 +16,7 @@ local rooms = require("engine.modules.rooms")
 local pixelgrid = require("engine.pixelgrid")
 local data = require("rooms_data")
 local enemies = require("rooms_enemies")
+local enemy_types = require("rooms_enemy_types")
 local biomes = require("rooms_biomes")
 local rooms_art = require("rooms_art")
 local VERSION = "V" .. require("rooms_version") .. " E" .. engine._VERSION
@@ -308,23 +309,31 @@ function play.load_room(self, x, y)
     self.machine = machines.new(mt.kind or "healer", (mt.tx - 1) * TS + 2, (mt.ty - 1) * TS + 4, ms)
   end
   -- the room's enemies: its template spots keep their index even when cleared (the saved dead
-  -- state removes them on the first step), then the enemies that fell in through a door
-  local spots = {}
-  local template_enemies = template.enemies or {}
-  for i, t in ipairs(template_enemies) do
-    spots[i] = { x = (t.tx - 0.5) * TS, y = t.ty * TS }
-  end
-  local base = #template_enemies
-  for k, a in ipairs(state.arrivals) do
-    spots[base + k] = { x = a.x, y = a.y + ENEMY_H / 2 }   -- the arrival is a centre
-  end
-  local health = self.fight and not self.fight.player.dead and self.fight.player.health or nil
+  -- state removes them on the first step), then the enemies that fell in through a door. A
+  -- template spot's type comes from the biome's weighted pool with a stream made from the room
+  -- seed and the spot index, so the same room has the same enemies every time it is entered.
+  -- Bosses and minibosses stay walkers; an arrival keeps the type it fell with.
   local kind = self.nav.room.type
   local boss = kind == "boss" or kind == "miniboss"
   local b = self.biome
   local m = boss and b.boss or b.mobs
+  local room_seed = SEED * 100000 + self.floor * 1000 + self.nav.index
+  local spots = {}
+  local template_enemies = template.enemies or {}
+  for i, t in ipairs(template_enemies) do
+    spots[i] = { x = (t.tx - 0.5) * TS, y = t.ty * TS,
+      type = boss and "walker" or enemies.pick_type(m.types, room_seed, i) }
+  end
+  local base = #template_enemies
+  for k, a in ipairs(state.arrivals) do
+    local id = a.type or "walker"
+    local spec = enemy_types.types[id]
+    local h = spec and spec.h or ENEMY_H
+    spots[base + k] = { x = a.x, y = a.y + h / 2, type = id }   -- the arrival is a centre
+  end
+  local health = self.fight and not self.fight.player.dead and self.fight.player.health or nil
   self.fight = enemies.new(self.slime, self.grid, spots, { boss = boss, mob = m.id,
-    seed = SEED * 100000 + self.floor * 1000 + self.nav.index, health = health, mode = self.fight and self.fight.mode,
+    seed = room_seed, health = health, mode = self.fight and self.fight.mode,
     enemy_stats = combat.stats.new(biomes.enemy_stats(b, boss)), color = m.color,
     slime_source = self.stats:combat_source(), slime_mods = self.stats.mods,
     on_slime_death = function() self.dead = true end,
@@ -494,7 +503,7 @@ local function enemies_leaving(self)
   for i = 1, #self.fight.enemies do
     local e = self.fight.enemies[i]
     local f = e.fighter
-    if not f.dead then
+    if not f.dead and e.move ~= "fly" then        -- flyers never fall through a pit
       local body = e.body
       local x, y = body.x + body.w / 2, body.y + body.h / 2
       local _, door, side = self.nav:leaving(x, y)
@@ -507,7 +516,7 @@ local function enemies_leaving(self)
           local ts = self.rooms_state[target]
           if not ts then ts = { enemies = {} }; self.rooms_state[target] = ts end
           ts.arrivals = ts.arrivals or {}
-          ts.arrivals[#ts.arrivals + 1] = { x = ax, y = ay, health = health }
+          ts.arrivals[#ts.arrivals + 1] = { x = ax, y = ay, health = health, type = e.type }
         end
       end
     end

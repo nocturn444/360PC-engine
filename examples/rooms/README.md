@@ -17,8 +17,9 @@ by room with `engine/modules/rooms`, by the soft-body slime of [examples/slime](
   for now they are only layouts.
 - The floors go through biomes (`rooms_biomes.lua`, `procgen.biomes`), always in the same
   order: forest (floors 1-2), deep jungle (3-4), grotto (5), fungal cave (6-7), catacombs (8),
-  labs (9) and catastrophe (10). Each biome has a difficulty, its own enemies (health, bite, colour), wall
-  colours, a music track name and a few rooms more or fewer. The HUD shows its name, and the bottom left corner shows the FPS and the build version (`rooms_version.lua`). Each biome's
+  labs (9) and catastrophe (10). Each biome has a difficulty, its own enemies (health, bite,
+  colour and a weighted pool of enemy types), wall colours, a music track name and a few rooms
+  more or fewer. The HUD shows its name, and the bottom left corner shows the FPS and the build version (`rooms_version.lua`). Each biome's
   mob has an id (`rooms_biomes.lua`), so the content pools can vary by mob.
 - A boss or miniboss room shuts its doors while its enemies are alive: the slime has to win the
   fight (or fall) before it can leave. The first clear gives one mutation, and the boss opens a
@@ -48,8 +49,10 @@ art/
 SpriteBatch per room from the solid tiles; the variant is picked from the open sides (mask 1
 up, 2 right, 4 down, 8 left; outside the room counts as solid). One-way ledges stay the flat
 rectangles. A biome without art keeps the older flat wall drawing. Every room gets fireflies in
-its biome's `glow` colour (`rooms_biomes.lua`), and enemies use `mob_walk.png` (bosses and
-minibosses at 2x).
+its biome's `glow` colour (`rooms_biomes.lua`). Walkers use `mob_walk.png`; the other enemy types
+get a simple placeholder silhouette of rectangles in the mob's colour (`rooms_art.draw_enemy`,
+`shape`), so no new image files are needed until the owner draws the real sprites. Bosses and
+minibosses are walkers at 2x.
 
 `tools/art/gen_placeholders.py` (PC only, needs Pillow) regenerates the placeholder PNGs. Each
 file is a stand-in: hand-drawn art replaces it by keeping the same file name and size, and the
@@ -110,13 +113,31 @@ and after `5 + 2.5 * capacity` seconds without a hit it refills. The HUD shows `
   is black, and the slime arrives inside the next room by the door it came through.
 - The door into the second zone is locked (gold) until the slime touches the key in the vault
   room; the room is then rebuilt with the door open.
-- Enemies (`rooms_enemies.lua`): platformer controller bodies in a bump world made from the
-  room's grid, each run by a patrol / chase / attack state machine (`combat.behaviours`), in one
-  combat world with the slime, which combat sees through `softbody.box`. Landing on an enemy
-  while falling fast hurts it and bounces the slime off; a bite hurts the slime and knocks it
-  back, and it blinks while it cannot be hurt. At 0 HP it goes back to the start room, healed. A
-  room remembers its enemies: the dead stay dead and a hurt enemy keeps its health when the slime
-  comes back. The state lasts for the floor.
+- Enemies (`rooms_enemies.lua`): fighters of one combat world with the slime, which combat sees
+  through `softbody.box`. A type (`rooms_enemy_types.lua`) says whether its body walks (a
+  platformer controller with gravity) or flies (a plain body moved with
+  `combat.behaviours.fly_move`), its size, its health / damage multipliers over the biome's
+  stats, its attacks and its brain (`combat.brains` data). Each type's brain and stats are built
+  once per room; one enemy arsenal (`combat.attacks`, at most 32 shots) steps every type's
+  attacks. Landing on an enemy while falling fast hurts it and bounces the slime off; a bite or
+  contact hurts the slime and knocks it back, and it blinks while it cannot be hurt. A windup
+  (shoot, charge, swoop) flashes the enemy light so its tell is seen. At 0 HP it goes back to the
+  start room, healed. A room remembers its enemies: the dead stay dead and a hurt enemy keeps its
+  health when the slime comes back. The state lasts for the floor.
+- The eight enemy types (all numbers are first guesses for the owner): `walker` (today's patrol /
+  chase / bite), `hopper` (jumps towards the slime, contact damage), `charger` (winds up and
+  dashes on its row, stunned by a wall), `shooter` (keeps away, fires straight ahead), `sniper`
+  (keeps away, aims at the slime), `sprayer` (ring of shots in three rotating volleys), `bat`
+  (flyer: hovers, follows and swoops with a tell) and `drone` (flyer that follows and fires aimed
+  shots). Each biome lists a PROVISIONAL weighted pool in `rooms_biomes.lua` (`mobs.types`); the
+  owner will set the real one. To add a type: add an entry to `rooms_enemy_types.lua`, list it in
+  its `M.order`, give it a weight in a biome's pool and, only for a new kind of movement, a new
+  behaviour in `engine/modules/combat/behaviours.lua`.
+- `rooms_play.lua` picks a type for each template spot with an `engine.rng` stream made from the
+  room seed and the spot index: the same room has the same enemies when it is entered again, and
+  the same seed gives the same types on PC and on the console. An enemy that falls through a door
+  keeps its type in `state.arrivals[k].type`; flyers never fall through a pit. Bosses and
+  minibosses stay walkers.
 - An enemy that falls out of the room through a door moves to the room on the other side and
   turns up there the next time it is loaded, keeping its health. Past an edge with no door, or an
   exit that leads nowhere, it dies. Neither counts as a kill or drops anything.
@@ -166,6 +187,7 @@ room in the wrong place), the camera never shows outside the room, the extra lim
 the pixel grid, and the frame stays at 30 FPS in the two-by-two room with its three enemies.
 
 Tests: `luajit -joff tests/pc/rooms_example_test.lua`,
+`luajit -joff tests/pc/rooms_enemies_test.lua`,
 `luajit -joff tests/pc/rooms_props_test.lua`,
 `luajit -joff tests/pc/rooms_stats_test.lua`,
 `luajit -joff tests/pc/rooms_content_test.lua`,
