@@ -229,22 +229,39 @@ add `transitions` to it. What one enemy needs is read from its agent (the machin
 | `agent.body` | `x`, `y`, `w`, `h`, `facing`. Default: the agent itself. |
 | `agent.target` | A body-like table, or nil. |
 | `agent.patrol_points` | `{ { x =, y = }, ... }` for patrol. |
-| `agent.hitboxes` | `{ name = hitbox }` for attack. |
+| `agent.hitboxes` | `{ name = hitbox }` for attack and charge. |
+| `agent.attacks` | `{ name = combat.attacks Attack }` for shoot. |
+| `agent.jump` | `true` for one step to press jump (hop). |
+| `agent.jump_velocity` | Optional per-agent jump strength (hop writes it on enter). |
+| `agent.anchor` | `{ x =, y = }` home point for a flyer (default: the body centre on enter). |
 | `agent.rng` | An `engine.rng` stream: the only source of randomness. |
 
 A state moves nothing. It writes what the agent wants: `agent.move_x`, `agent.move_y` (a
 direction, each -1..1) and `agent.move_speed` (px/s), and turns `body.facing`. The game
-applies it: `behaviours.move(agent, dt)` moves the body directly (no physics), and
+applies it: `behaviours.move(agent, dt)` moves the body directly (no physics),
+`behaviours.fly_move(agent, world, filter, dt)` moves it in a bump world, and
 `behaviours.input(agent)` is an input to give to a platformer controller made with
-`actions = { move_x = "move_x" }` (`agent.jump = true` presses jump).
+`actions = { move_x = "move_x" }` (`agent.jump = true` presses jump; `pressed("jump")` is true
+only on that step).
 
 | | |
 |---|---|
 | `behaviours.patrol(opts)` | Walks from point to point and back. `points` (for every agent; default `agent.patrol_points`), `speed` (30), `axis` (`"x"`: only x matters; or `"xy"`), `reach` (1 px), `loop`, `pause` (seconds at each point: a number, or `{ min, max }` drawn from `agent.rng`), `blocked(agent)` (true at a wall or a ledge: it goes for the next point; one turn per block). |
 | `behaviours.chase(opts)` | Goes for `agent.target`. `speed` (60), `axis`, `stop` (distance between centres at which it stands still, facing the target). |
 | `behaviours.attack(opts)` | Stands still through `windup`, `active`, `recovery` (seconds; `m.phase` has the name), with `agent.hitboxes[opts.hitbox]` on during `active`, then goes to `next`. `face = false`: do not turn to the target first. Leaving the state early turns the hitbox off. |
+| `behaviours.shoot(opts)` | Stands still and fires `volleys` (1) volleys of `agent.attacks[opts.attack]` `interval` (0.2) seconds apart, then goes to `next`. `aim`: `"facing"` (default: the config's own angle), `"target"` (at the target's centre each volley) or `"angle"` (`opts.angle` degrees above the facing); `rotate` (0) degrees more after each volley (a spiral). `windup` (0.3) and `recovery` (0.4) are the tell and the pause; `m.phase` is `"windup"`, `"firing"` or `"recovery"`. `face = false`: do not turn to the target first. A ranged config with `count = 8, spread = 315` is a ring; with `volleys = 6, rotate = 15` a spiral. The attack's own `cooldown` must not be longer than `interval` when there is more than one volley (an error at enter says so). |
+| `behaviours.charge(opts)` | Winds up (`windup`, 0.4 s), dashes at the direction fixed at the end of the windup for at most `time` (0.6 s) or `distance` px at `speed` (140 px/s), then recovers (`recovery`, 0.3 s; `stun`, 0.8 s, if `blocked(agent)` stopped it), then goes to `next`. `hitbox` (optional): a name in `agent.hitboxes`, on only during the dash. `axis`: `"x"` (default) or `"xy"`. `m.phase`: `"windup"`, `"dash"`, `"recovery"`. |
+| `behaviours.hop(opts)` | On the ground waits `wait` s (a number, or `{ min, max }` from `agent.rng`; default 0), sets `agent.jump = true` for one step, and moves `speed` (60) px/s towards the target (`toward = "target"`, default) or forwards (`"facing"`) until it lands. `grounded(agent)` (default `body.on_ground`) says where the ground is; `jump_velocity` is written to `agent.jump_velocity` on enter. Endless: leave it with transitions. |
+| `behaviours.fly(opts)` | Moves a body without gravity (always `"xy"`). `mode = "hover"`: bobs around `agent.anchor` on a circle of `radius` (8) with `period` (2). `"follow"`: goes for the target, keeps `keep` (60) px away, backs off closer than `keep - band` (12) and bobs vertically by `bob` (4) px while holding. `"swoop"`: flies at the target's position taken on enter for at most `time` (1 s), then goes to `next`. `speed` (40); only `sin`/`cos` of numbers, so it is deterministic. |
+| `behaviours.keep_away(opts)` | Kites the target: walks away closer than `min` (48), towards it farther than `max` (96), stands still (facing it) in between. `speed` (40), `axis` (`"x"` default, or `"xy"`). |
 | `behaviours.target_within(range, axis)`, `target_beyond(range, axis)` | Conditions for `when`. No target counts as beyond. |
+| `behaviours.target_in_sight(grid, range)` | The target is within `range` (straight line) and no `"solid"` tile of `grid` (`grid:kind(tx, ty)`, `grid.tile_size`) stands between their centres. |
+| `behaviours.target_above(px)`, `target_below(px)` | The target's centre is more than `px` higher / lower. |
+| `behaviours.grounded()` | `body.on_ground` is true. |
+| `behaviours.health_below(fraction)` | `agent.fighter` is below `fraction` of the `max_health` stat. |
+| `behaviours.all(...)`, `any(...)`, `negate(c)` | Combine conditions when the definition is built. |
 | `behaviours.distance(agent, axis)` | Between the centres of the agent and its target; `math.huge` without one. |
+| `behaviours.fly_move(agent, world, filter, dt)` | Moves `agent.body` by its wish with `world:move` (a bump world; passed in, nothing is required), keeps `body.px`, `body.py` to interpolate, and sets `body.wall` (-1, 0, 1), `body.ceiling` and `body.floor` from the collisions. |
 
 ```lua
 local B = combat.behaviours
