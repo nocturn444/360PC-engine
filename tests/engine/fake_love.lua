@@ -27,7 +27,19 @@ function F.install(opts)
   love.timer = { getTime = function() return 0 end, getDelta = function() return 1 / 60 end,
     getFPS = function() return 60 end }
   love.event = { quit = function() F.quit = true end }
-  love.filesystem = { read = function() return nil end, write = function() return true end }
+  -- An in-memory save folder (no .bak logic: engine.save does that itself).
+  F.files, F.identity = {}, opts.identity or "test_game"
+  love.filesystem = {
+    read = function(name) return F.files[name] end,
+    write = function(name, data) F.files[name] = tostring(data); return true end,
+    remove = function(name)
+      if F.files[name] == nil then return false end
+      F.files[name] = nil
+      return true
+    end,
+    getIdentity = function() return F.identity end,
+    setIdentity = function(name) F.identity = tostring(name) end,
+  }
 
   -- graphics
   local g = {}

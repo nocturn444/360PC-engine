@@ -51,12 +51,14 @@ Fight.__index = Fight
 -- M.new(slime, grid, spots, opts): spots = { { x, y } ... } (the bottom centre of each enemy, room
 -- pixels); opts.boss (stronger enemies), opts.seed (their patrol pauses), opts.health (the
 -- slime's health carried over from the last room), opts.mode (the slime's attack, an index of
--- rooms_attacks), opts.on_slime_death, opts.on_killed; the biome's: opts.enemy_stats,
--- opts.slime_stats (a combat.stats table or a stat source), opts.slime_source/opts.slime_mods
--- (the run's stats), opts.mob (the mob id of this room) and opts.color (the enemies' colour)
+-- rooms_attacks), opts.on_slime_death, opts.on_slime_hurt(hit), opts.on_killed; the biome's:
+-- opts.enemy_stats, opts.slime_stats (a combat.stats table or a stat source),
+-- opts.slime_source/opts.slime_mods (the run's stats), opts.mob (the mob id of this room) and
+-- opts.color (the enemies' colour)
 function M.new(slime, grid, spots, opts)
   opts = opts or {}
-  local self = setmetatable({ slime = slime, enemies = {}, stomps = 0, kills = 0, color = opts.color }, Fight)
+  local self = setmetatable({ slime = slime, enemies = {}, stomps = 0, kills = 0, color = opts.color,
+    on_slime_hurt = opts.on_slime_hurt }, Fight)
   self.world = platformer.collision.newWorld(grid)
   self.fight = combat.world.new()
   self.box = softbody.box(slime)
@@ -91,6 +93,7 @@ function M.new(slime, grid, spots, opts)
     if hit.killed and hit.target ~= me.player and me.on_killed then
       me.on_killed(hit.target.owner, hit)
     end
+    if hit.target == me.player and me.on_slime_hurt then me.on_slime_hurt(hit) end
   end
   local stream = rng.new(opts.seed or 1)
   for i = 1, #spots do
