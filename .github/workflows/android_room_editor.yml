@@ -39,13 +39,23 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      # Pull request builds keep their own Gradle cache too, so they do not download every
+      # dependency from Maven Central each time (it answers 429 Too Many Requests under load).
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.10.2"
+          cache-read-only: false
 
-      # The runner image ships the Android SDK ($ANDROID_HOME).
+      # The runner image ships the Android SDK ($ANDROID_HOME). Maven Central sometimes answers
+      # 429 to shared runners: try again after a pause before failing.
       - name: Build the APK
-        run: gradle -p android/room_editor --no-daemon assembleRelease
+        run: |
+          for wait in 60 180 0; do
+            gradle -p android/room_editor --no-daemon assembleRelease && exit 0
+            [ "$wait" = 0 ] && exit 1
+            echo "Build failed, retrying in ${wait}s"
+            sleep "$wait"
+          done
 
       - name: Upload the APK
         uses: actions/upload-artifact@v4
