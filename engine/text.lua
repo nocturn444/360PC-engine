@@ -120,6 +120,7 @@ end
 -- Word wrap like love.graphics Font:getWrap: lines and their widest width, split at spaces and
 -- newlines (a word longer than the limit stays on its own line). Allocates: it is for layout.
 local function wrap(s, limit, scale)
+  limit, scale = limit or 1e6, scale or 1
   local lines, widest = {}, 0
   for para in (tostring(s) .. "\n"):gmatch("(.-)\n") do
     local line, lw = "", 0
@@ -142,6 +143,7 @@ local function wrap(s, limit, scale)
   lines.w = widest
   return lines
 end
+M.wrap = wrap
 
 local FONTS = {}
 

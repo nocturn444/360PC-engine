@@ -29,6 +29,8 @@ local machines = require("rooms_machines")
 local looks = require("rooms_look")
 local rooms_spawn = require("rooms_spawn")
 local minimap = require("rooms_minimap")
+local profile = require("rooms_profile")
+local endings = require("rooms_endings")
 local wallet = require("engine.modules.wallet")
 local combat = require("engine.modules.combat")
 local props = require("engine.modules.props")
@@ -155,6 +157,7 @@ end
 -- A killed enemy can drop a heart or some virus. Each enemy has its own stream and rolls once.
 local function mob_killed(self, agent)
   if not agent or not agent.body then return end
+  profile.kill(agent.mob)
   local b = agent.body
   local px, py = b.x + b.w / 2, b.y + b.h / 2
   local ctx = drop_ctx(self, "mob", agent.mob)
@@ -227,12 +230,16 @@ local function clear_room(self)
       if entry then acquire_mutation(self, entry) end
     end
     play.load_room(self)
+  elseif self.sealed then
+    -- any other sealed arena (a trap room): rebuild it so its doors open again
+    play.load_room(self)
   end
 end
 
 -- Builds the current room's grid and what is drawn from it; with x, y, puts the slime there
 function play.load_room(self, x, y)
   local index = self.nav.index
+  self.new_discoveries = self.new_discoveries or { enemies = {}, bosses = {}, biomes = {} }
   local state = self.rooms_state[index]
   if not state then state = { enemies = {} }; self.rooms_state[index] = state end
   if not state.enemies then state.enemies = {} end
@@ -332,11 +339,27 @@ function play.load_room(self, x, y)
     spots[base + k] = { x = a.x, y = a.y + h / 2, type = id }   -- the arrival is a centre
   end
   local health = self.fight and not self.fight.player.dead and self.fight.player.health or nil
+  -- meeting an enemy (or entering a boss room with its boss) fills the profile's Bestiary.
+  if boss then
+    if profile.discover("bosses", m.id) then
+      self.new_discoveries.bosses[#self.new_discoveries.bosses + 1] = profile.name(m.id)
+    end
+  elseif #template_enemies > 0 then
+    if profile.discover("enemies", m.id) then
+      self.new_discoveries.enemies[#self.new_discoveries.enemies + 1] = profile.name(m.id)
+    end
+  end
   self.fight = enemies.new(self.slime, self.grid, spots, { boss = boss, mob = m.id,
     seed = room_seed, health = health, mode = self.fight and self.fight.mode,
     enemy_stats = combat.stats.new(biomes.enemy_stats(b, boss)), color = m.color,
     slime_source = self.stats:combat_source(), slime_mods = self.stats.mods,
     on_slime_death = function() self.dead = true end,
+    on_slime_hurt = function(hit)
+      -- the last thing that hurt the slime, for deaths_by; a hazard sets it just before striking
+      local owner = hit.attacker and hit.attacker.owner
+      if owner and owner.mob then self.last_damage_source = owner.mob
+      elseif hit.attacker then self.last_damage_source = m.id end
+    end,
     on_killed = function(agent) mob_killed(self, agent) end })
   -- statues: a fighter on the enemy team with the attack its fields pick, no hurtbox (so they
   -- cannot be damaged), and their own timer in the prop state
@@ -427,6 +450,9 @@ function play.new_run(self)
   if self.pixels then looks.palette(self.look, self.pixels) end
   if self.slime then self.slime:set_rest_shape({ radius = 9, width = 0, height = 0 }) end
   self.kills, self.got = 0, nil
+  self.result, self.result_recorded = nil, false
+  self.last_damage_source = nil
+  self.new_discoveries = { enemies = {}, bosses = {}, biomes = {} }
   self.spawn = rooms_spawn.new_state()
   self.rooms_state = {}
 end
@@ -440,6 +466,11 @@ function play.new_floor(self, n)
   end
   self.floor = n
   self.biome = self.path:enter(n, { kills = self.kills, floor = n }, self.streams:get("biomes"))
+  self.new_discoveries = self.new_discoveries or { enemies = {}, bosses = {}, biomes = {} }
+  if profile.discover("biomes", self.biome.id) then
+    self.new_discoveries.biomes[#self.new_discoveries.biomes + 1] =
+      self.biome.name or profile.name(self.biome.id)
+  end
   self.music = self.biome.music      -- a game with tracks: audio:music(self.music, { fade = 1 })
   self.map = assert(plan:generate(n, self.streams:get("floor" .. n), self.biome,
     { spawn = self.spawn, luck = self.stats:get("luck") }))
@@ -463,6 +494,10 @@ function play:enter()
   self.points = {}
   self.facing, self.charging = 1, false
   self.dead, self.deaths = false, 0
+  self.game_over_pending = false
+  self.run_time = 0
+  profile.get()
+  self.audio = profile.audio
   local x, y = self.nav:enter(self.map.start)
   play.load_room(self, x, y)
 end
@@ -562,6 +597,7 @@ local function hurt_by_spikes(self)
     if not p.removed and x0 < p.x + p.w and x1 > p.x and y0 < p.y + p.h and y1 > p.y then
       local cx = self.slime:center()
       local dir = cx < p.x + p.w / 2 and -1 or 1
+      self.last_damage_source = "spikes"
       self.fight.fight:strike(nil, player, { damage = p.fields.damage, knockback = 160,
         kx = dir, ky = -0.5 })
       return
@@ -587,18 +623,50 @@ function play.update_props(self, dt)
   end
 end
 
+-- Ends the run in the profile exactly once. A loss also counts who landed the last hit.
+local function record_result(self, result)
+  if self.result_recorded then return end
+  self.result_recorded = true
+  if result == "loss" then
+    local source = self.last_damage_source
+    if not source and self.biome then source = self.biome.mobs.id end
+    profile.death_by(source)
+  end
+  profile.finish_run(result)
+end
+
 function play:update(dt)
   self.fade:update(dt)
   if self.fade:busy() then return end            -- the room is frozen while the screen fades
-  if self.dead then                               -- back to the start room, healed, behind a fade
+  if self.game_over_pending then                 -- the fade is over: the run ends here
+    self.game_over_pending = false
+    if self.result == "win" then
+      local ending = endings.pick(self)
+      local id = ending.id
+      -- The cutscene goes over the play state (the menu needs its stats), and its finish
+      -- replaces it with the end-of-run menu, so play stays under gameover as after a death.
+      engine.states:push("cutscene", ending.script, function(skipped)
+        profile.see_ending(id)
+        engine.states:pop()
+        engine.states:push("gameover")
+      end)
+    else
+      engine.states:push("gameover")
+    end
+    return
+  end
+  if self.dead then                               -- dying ends the run, behind a fade
     self.dead, self.deaths = false, self.deaths + 1
     self.floor_damaged = true                       -- a death counts as damage for the floor
+    self.result = "loss"
+    record_result(self, "loss")
+    self.game_over_pending = true
     self.fade:start(function()
-      self.fight.player.dead = true                -- so the next room starts at full health
-      play.load_room(self, self.nav:enter(self.map.start))
+      self.fight.player.dead = true                -- the run's slime stays dead under the menu
     end)
     return
   end
+  self.run_time = self.run_time + dt
   control(self, dt)
   vines.update(self, dt, engine.controls, JUMP * self.stats:get("jump"))
   self.slime:step(dt, self.grid)
@@ -699,9 +767,18 @@ function play:update(dt)
     self.message_time = self.message_time - dt
     if self.message_time <= 0 then self.message, self.message_time = nil, nil end
   end
-  -- the boss room, once cleared, opens a stairway down to the next floor (after the last: floor 1)
-  if self.nav.room.type == "boss" and not self.stairs and self.fight:alive() == 0 then
-    self.stairs = { x = 9 * TS, y = 10 * TS }
+  -- the boss room, once cleared, opens a stairway down to the next floor; the last floor's boss
+  -- ends the run as a victory instead (no stairs, the menu comes after the fade)
+  if self.nav.room.type == "boss" and not self.stairs and not self.game_over_pending
+      and self.fight:alive() == 0 then
+    if self.floor >= FLOORS then
+      self.result = "win"
+      record_result(self, "win")
+      self.game_over_pending = true
+      self.fade:start(nil)
+    else
+      self.stairs = { x = 9 * TS, y = 10 * TS }
+    end
   end
   local st = self.stairs
   if st and cx > st.x - 4 and cx < st.x + 2 * TS + 4 and cy > st.y - 12 then

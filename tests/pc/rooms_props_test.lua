@@ -29,6 +29,7 @@ F.install({ width = 1280, height = 720 })
 assert(loadfile("examples/rooms/main.lua"))()
 love.load()
 local engine = require("engine")
+engine.states:switch("play")                -- the game starts on the title menu now
 local play = engine.states:top()
 local function frames(n) for _ = 1, n do love.update(1 / 60); love.draw() end end
 local function find_hall()

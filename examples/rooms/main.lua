@@ -10,6 +10,8 @@ if love.filesystem.setRequirePath then      -- official LÖVE on PC only
   package.path = source .. "/../../?.lua;" .. source .. "/../../?/init.lua;" .. package.path
 end
 local engine = require("engine")
+-- The permanent profile (discoveries, record, options), loaded once at startup.
+require("rooms_profile").open()
 
 engine.run({
   rate = 60,
@@ -31,7 +33,13 @@ engine.run({
       move_x = { negative = "left", positive = "right", stick = "leftx" },
     },
   },
-  states = { play = require("rooms_play"), pause = require("rooms_pause") },
-  start = "play",
+  states = {
+    title = require("rooms_title"),
+    play = require("rooms_play"),
+    pause = require("rooms_pause"),
+    gameover = require("rooms_gameover"),
+    cutscene = require("rooms_cutscene"),
+  },
+  start = "title",
   autopause = { state = "pause" },
 })

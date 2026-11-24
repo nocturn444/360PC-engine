@@ -1,13 +1,13 @@
-# Cutscenes and endings (plan)
+# Cutscenes and endings
 
 The owner wants cutscenes for the game's endings. What they will look like is **not decided
 yet**, so this builds a generic, data-driven player in the engine and plays placeholder ending
 scripts in the prototype. Changing an ending later means editing data, not code.
 
-Two steps, each a commit on this branch:
+Both steps are done on this branch:
 
-1. **Engine:** `engine/cutscene.lua` (generic, knows nothing about a game), tests, docs.
-2. **Game:** `examples/rooms/rooms_endings.lua` (ending list + placeholder scripts),
+1. **Engine (done):** `engine/cutscene.lua` (generic, knows nothing about a game), tests, docs.
+2. **Game (done):** `examples/rooms/rooms_endings.lua` (ending list + placeholder scripts),
    `rooms_cutscene.lua` (the state that plays one), hooked into the victory of PR #88 and the
    profile's `endings` set; Progress > Endings can replay the ones already seen.
 
@@ -121,34 +121,51 @@ defines them. Each entry:
 { id = "plush", kind = "partial", name = "The Plush", script = { ... } }
 ```
 
-Initial list (all placeholders): partial `plush`, `clone_machine`, `lab_evidence`,
+The list, in order (all placeholders): partial `plush`, `clone_machine`, `lab_evidence`,
 `cryo_scientist`, `helpful_ai`, `ai_vs_scientist`; true `true_natural`, `true_ai`,
-`true_human`; secret `secret` (one placeholder). Plus `M.pick(run)`: which ending a victory
-plays. The rules are not defined yet, so for now it always returns `plush` (the first partial
+`true_human`; secret `secret`. `M.get(id)` finds one. `M.pick(run)` chooses which ending a
+victory plays: the rules are not defined yet, so it always returns `plush` (the first partial
 ending); the function exists so the rules have one place to go.
+
+Each script has 12 steps and uses one helper (`placeholder`): a background, two coloured
+rectangles, a fade in, one move and one pan, a short hint line and "THIS IS A PLACEHOLDER
+ENDING.", the final `ENDING: <NAME>` and `PLACEHOLDER` text, and a fade out. The single line
+taken from the world-building drafts is the hint in each scene (the plush, the melting clone
+machine, the lab evidence, the cryo scientist, the helpful AI, the AI against the scientist,
+nature / AI / humanity, the secret under the lab); everything else is generic so the owner can
+replace it.
 
 ### `rooms_cutscene.lua`
 
 A state that plays a script: `enter(previous, script, on_finish)`. Opaque (draws its own
 background), `autopause = false`, so a dead battery during an ending does not open the pause
-menu over it. It ticks the game's `engine.audio`. When the cutscene ends it calls `on_finish`.
+menu over it. It forwards input, update and draw to the `engine.cutscene` it builds with the
+game's `engine.audio` (`profile.audio`, or nil when there is none) and ticks that audio. When
+the cutscene ends it calls `on_finish(skipped)` once. It is registered as `cutscene` in
+`main.lua`.
 
 ### Hooks
 
-- Victory (PR #88): when the final boss dies, after the existing short delay, switch to the
-  cutscene state with `rooms_endings.pick(play)`; when it finishes, record the ending in the
-  profile (`endings[id] = true`, saved) and push the end-of-run menu titled "Victory" as PR #88
-  does now. The ending counts as seen even if skipped.
-- Progress > Endings: lists every ending; seen ones show their name and can be selected to
-  replay (Back returns to the list); unseen ones show "???". Completion % already counts
-  endings.
-- Debug builds (`debug = true` in game.lua, `engine.debug` flag): the Endings page lists all
-  endings as playable, so the owner can preview them on the console without winning a run.
+- Victory (PR #88): when the final boss dies, after the existing short delay, `rooms_play`
+  pushes the cutscene with `rooms_endings.pick(play)`. When it finishes (played or skipped)
+  the callback records the ending with `profile.see_ending(id)` (which writes the save only
+  the first time), pops the cutscene and pushes the end-of-run menu titled "Victory". The play
+  state stays under the menu exactly as after a death, so Stats and Restart Run still work.
+- Progress > Endings: one row per ending in `rooms_endings.list` order; seen ones show their
+  name and can be selected to replay (the cutscene pops back to the page when it ends); unseen
+  ones show "???". Completion % counts the endings (see below).
+- Preview mode: every ending is listed by name and playable, and the page title says
+  "Endings (PREVIEW)". It is on when `engine.debug.flag()` is true or when the build version
+  (`rooms_version.lua`) contains "-test", so the owner can preview them on the console without
+  winning a run.
+- Profile completion: `completion_counts()` adds the endings from `rooms_endings.list`.
 
 ### Tests
 
-In `tests/pc/rooms_example_test.lua`: victory plays the picked ending, then the Victory menu;
-the ending is saved in the profile even when skipped; Progress > Endings shows "???" for unseen
-and replays a seen one; every ending script validates (`engine.cutscene.new` on each); each
-script runs to the end with simulated presses in under its expected time; draws fit 320 x 180
-with no printf/setFont.
+In `tests/pc/rooms_example_test.lua`: victory plays the picked ending, then the Victory menu
+with the play state under it; the ending is saved in the profile even when skipped (hold Back
+1 s); Progress > Endings shows "???" for unseen and the name for seen ones, replays a seen one
+and returns to the page; preview mode lists every ending by name and plays an unseen one; every
+ending script validates (`engine.cutscene.new` on each); each script runs to the end with
+simulated presses within 120 s; draws fit 320 x 180 with no printf / print / setFont.
+`tests/pc/rooms_profile_test.lua` covers `see_ending` and the endings in the completion.

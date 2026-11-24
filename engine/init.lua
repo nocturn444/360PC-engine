@@ -41,6 +41,11 @@ setmetatable(engine, { __index = function(t, k)
     rawset(t, "tune", tune)
     return tune
   end
+  if k == "cutscene" then     -- engine.cutscene: loaded on first use
+    local cutscene = require(prefix .. "cutscene")
+    rawset(t, "cutscene", cutscene)
+    return cutscene
+  end
   if k == "debug" then        -- engine.debug: loaded on first use (development builds)
     local dbg = require(prefix .. "debug")
     rawset(t, "debug", dbg)
