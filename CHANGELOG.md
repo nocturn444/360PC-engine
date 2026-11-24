@@ -9,6 +9,10 @@ All notable changes to 360PC-Engine. The format follows
 ## [Unreleased]
 
 ### Added
+- `examples/rooms`: biome art from `art/` (`rooms_art.lua`): a fixed sky, two parallax layers,
+  autotiled solid walls in one SpriteBatch per room, additive fireflies in each biome's glow
+  colour, and a walking sprite for enemies (bosses at 2x). A biome without art keeps the flat
+  rectangles.
 - `examples/rooms`: the HUD shows the FPS and the build version (`rooms_version.lua` plus the
   engine version) in the bottom left corner.
 

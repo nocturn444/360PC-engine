@@ -12,6 +12,7 @@ local combat = require("engine.modules.combat")
 local softbody = require("engine.modules.softbody")
 local rng = require("engine.rng")
 local attack_configs = require("rooms_attacks")
+local rooms_art = require("rooms_art")
 
 local B = combat.behaviours
 local W, H = 12, 10                         -- an enemy's box
@@ -177,10 +178,7 @@ function Fight:draw(alpha, boss)
       elseif self.color then g.setColor(self.color[1], self.color[2], self.color[3], 1)
       elseif boss then g.setColor(0.85, 0.30, 0.55, 1)
       else g.setColor(0.85, 0.55, 0.25, 1) end
-      g.rectangle("fill", x, y + 2, W, H - 2)
-      g.rectangle("fill", x + 2, y, W - 4, 2)
-      g.setColor(0.1, 0.05, 0.05, 1)
-      g.rectangle("fill", x + ((b.facing or 1) > 0 and W - 4 or 2), y + 3, 2, 2)
+      rooms_art.draw_enemy(x, y, W, H, b.facing, boss)
       local bite = e.hitboxes.bite
       if bite.active then
         local bx, by, bw, bh = bite:rect()
