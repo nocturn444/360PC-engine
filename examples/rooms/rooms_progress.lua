@@ -97,8 +97,9 @@ local function add(play, key, n)
   c[key] = (c[key] or 0) + n
 end
 
--- Tests both rule lists at a moment; anything new goes to the run's list, the HUD message and
--- the save (written at once).
+-- Tests both rule lists at a moment; anything new goes to the run's list and the save (written
+-- at once). Achievements show on the HUD at once; unlocks only on the end-of-run screen (their
+-- content opens from the next run on anyway).
 local function check(play, moment)
   local t = play.track
   local d = sets(profile.get())
@@ -114,7 +115,6 @@ local function check(play, moment)
   local u = unlocks:check(moment, t.ctx, d.unlocks)
   for i = 1, #u do
     t.earned[#t.earned + 1] = "UNLOCKED: " .. u[i].name
-    play.message, play.message_time = "UNLOCKED: " .. u[i].name, 2.0
     got = true
   end
   if got then profile.write() end

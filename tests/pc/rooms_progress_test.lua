@@ -91,6 +91,10 @@ do
   tracker.new_run(play); tracker.new_floor(play, 1)
   for _ = 1, 20 do tracker.kill(play, "forest_mob") end
   check(unlocked("unlock_crystal_cave"), "50 forest kills over two runs unlock the crystal cave")
+  check(play.message ~= "UNLOCKED: CRYSTAL CAVE", "an unlock shows no HUD message during the run")
+  local listed = false
+  for _, line in ipairs(play.track.earned) do if line == "UNLOCKED: CRYSTAL CAVE" then listed = true end end
+  check(listed, "the unlock is listed for the end-of-run screen")
   for _ = 1, 150 do tracker.kill(play, "grotto_mob") end
   check(earned("exterminator"), "200 kills in total earn EXTERMINATOR")
   check(play.track.run:get("kills") == 170, "the run counter counts only this run")
