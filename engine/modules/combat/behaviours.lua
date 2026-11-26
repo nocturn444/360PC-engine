@@ -17,7 +17,9 @@
 --   agent.hitboxes        { name = hitbox } (attack, charge)
 --   agent.attacks         { name = combat.attacks Attack } (shoot)
 --   agent.jump            true for one step to press jump (hop)
---   agent.jump_velocity   optional per-agent jump strength (hop writes it)
+--   agent.jump_velocity   optional per-agent jump strength (hop and leap write it)
+--   agent.jump_hold       true while a leap rises: jump stays held (no jump cut)
+--   agent.move_accel      optional acceleration wish, px/s^2 (leap: hold the arc's speed)
 --   agent.anchor          { x =, y = } home point for flyers (default: the body centre on enter)
 --   agent.charge_dir      x direction of a dash (charge); agent.charge_dir_y for axis "xy"
 --   agent.volley, agent.next_volley   shots fired and when the next one is due (shoot)
@@ -567,6 +569,191 @@ function M.hop(opts)
   return state
 end
 
+-- A long, aimed jump with a tell: crouches on the ground for `windup` seconds (m.phase
+-- "windup", the game can draw the charge), then jumps in one arc that lands on the target or on
+-- another platform, then recovers. opts:
+--   windup          seconds on the ground before the jump (default 1.2)
+--   recovery        seconds after landing (default 0.4)
+--   aim             "target" (default: where the target stands at take-off) or "platform"
+--                   (a standable tile of ctx/opts.grid in reach, drawn with agent.rng; with no
+--                   grid or no platform in reach it aims at the target)
+--   gravity         px/s^2 of the body (default 900, the platformer default)
+--   arc             extra pixels above the higher of the two ends (default 24); a far
+--                   landing jumps higher so the capped horizontal speed still reaches it
+--   max_jump        cap of the take-off speed upwards, px/s (default 420)
+--   speed           cap of the horizontal speed, px/s (default 180)
+--   reach           { min, max } horizontal pixels for "platform" (default { 32, 160 })
+--   rise, drop      max pixels up / down for "platform" (default 72 / 96)
+--   time            max seconds in the air before giving up (default 2.5)
+--   grounded        function(agent) -> true on the ground (default: body.on_ground)
+--   next            the state to go to when it is over
+-- Writes agent.jump (one step), agent.jump_hold (true while rising: no jump cut),
+-- agent.jump_velocity, agent.move_x / move_speed, and agent.move_accel (a very high
+-- acceleration while airborne so the controller holds the arc's speed; nil otherwise).
+-- m.phase: "windup", "air", "recovery". Allocates nothing (the platform draw is a reservoir
+-- sample over the grid, once per jump).
+function M.leap(opts)
+  opts = opts or {}
+  local windup, recovery = opts.windup or 1.2, opts.recovery or 0.4
+  local aim = opts.aim or "target"
+  if aim ~= "target" and aim ~= "platform" then
+    error("behaviours.leap: aim is \"target\" or \"platform\"", 2)
+  end
+  local g = opts.gravity or 900
+  local arc = opts.arc or 24
+  local max_jump, max_speed = opts.max_jump or 420, opts.speed or 180
+  local reach = opts.reach or { 32, 160 }
+  local reach_min, reach_max = reach[1] or 32, reach[2] or 160
+  local max_rise, max_drop = opts.rise or 72, opts.drop or 96
+  local max_air = opts.time or 2.5
+  local grid = opts.grid
+  local grounded = opts.grounded or function(agent) return body_of(agent).on_ground == true end
+  local next_state = opts.next
+  local ACCEL = 1e6
+  local state = {}
+
+  local function standable(tx, ty, rows)
+    local k = grid:kind(tx, ty)
+    if k ~= "solid" and k ~= "one_way" then return false end
+    for r = 1, rows do
+      if grid:kind(tx, ty - r) == "solid" then return false end
+      if ty - r < 1 then return false end
+    end
+    return true
+  end
+
+  -- A landing point (bottom centre, room pixels) on another platform, or nil.
+  local function pick_platform(agent, b)
+    if not grid then return nil end
+    local rng = agent.rng
+    if not rng then return nil end
+    local size = grid.tile_size
+    local rows = floor(((b.h or size) - 1) / size) + 1
+    local x0, foot = cx(b), b.y + (b.h or 0)
+    local home_ty = floor((foot + 1) / size) + 1
+    local tx_lo = floor((x0 - reach_max) / size) + 1
+    local tx_hi = floor((x0 + reach_max) / size) + 1
+    if tx_lo < 1 then tx_lo = 1 end
+    if tx_hi > grid.width then tx_hi = grid.width end
+    local ty_lo = floor((foot - max_rise) / size) + 1
+    local ty_hi = floor((foot + max_drop) / size) + 1
+    if ty_lo < 2 then ty_lo = 2 end
+    if ty_hi > grid.height then ty_hi = grid.height end
+    local seen, px, py = 0, nil, nil
+    for tx = tx_lo, tx_hi do
+      local lx = (tx - 0.5) * size
+      local dx = lx - x0
+      if dx < 0 then dx = -dx end
+      if dx >= reach_min then
+        for ty = ty_lo, ty_hi do
+          -- another platform: a different height, or the same row across a gap
+          if ty ~= home_ty or grid:kind(tx - (lx > x0 and 1 or -1), ty) == nil then
+            if standable(tx, ty, rows) then
+              seen = seen + 1
+              if rng:float() * seen < 1 then px, py = lx, (ty - 1) * size end
+            end
+          end
+        end
+      end
+    end
+    return px, py
+  end
+
+  local function launch(m, agent)
+    local b = body_of(agent)
+    local x0, foot = cx(b), b.y + (b.h or 0)
+    local lx, ly
+    if aim == "platform" then lx, ly = pick_platform(agent, b) end
+    if not lx then
+      local t = agent.target
+      if t then
+        lx, ly = cx(t), t.y + (t.h or 0)
+      else
+        lx, ly = x0 + ((b.facing or 1) < 0 and -reach_min or reach_min), foot
+      end
+    end
+    local dx, rise = lx - x0, foot - ly
+    local apex = (rise > 0 and rise or 0) + arc
+    local vy = sqrt(2 * g * apex)
+    if vy > max_jump then vy = max_jump; apex = vy * vy / (2 * g) end
+    local fall = apex - rise
+    if fall < 0 then fall = 0 end
+    local t_air = vy / g + sqrt(2 * fall / g)
+    local adx = dx < 0 and -dx or dx
+    if adx > max_speed * t_air and vy < max_jump then
+      -- too far for this arc at the capped speed: jump higher, to stay in the air longer
+      local need = adx / max_speed
+      local vy2 = (rise + 0.5 * g * need * need) / need
+      if vy2 > max_jump then vy2 = max_jump end
+      if vy2 > vy then
+        vy = vy2
+        fall = vy * vy / (2 * g) - rise
+        if fall < 0 then fall = 0 end
+        t_air = vy / g + sqrt(2 * fall / g)
+      end
+    end
+    local vx = t_air > EPS and dx / t_air or 0
+    local mx = vx > 0 and 1 or (vx < 0 and -1 or 0)
+    if vx < 0 then vx = -vx end
+    if vx > max_speed then vx = max_speed end
+    if mx ~= 0 then b.facing = mx end
+    agent.jump_velocity = vy
+    agent.jump, agent.jump_hold = true, true
+    agent.move_x, agent.move_y, agent.move_speed = mx, 0, vx
+    agent.move_accel = ACCEL
+    m.phase, m.t_air, m.airborne = "air", m.time, false
+    m.land_x, m.land_y = lx, ly
+  end
+
+  local function land(m, agent)
+    agent.jump, agent.jump_hold, agent.move_accel = false, false, nil
+    halt(agent)
+    m.phase, m.t_rec = "recovery", m.time
+  end
+
+  function state.enter(m, agent)
+    halt(agent)
+    agent.jump, agent.jump_hold, agent.move_accel = false, false, nil
+    m.phase, m.airborne = "windup", false
+    local t = agent.target
+    if t then
+      local b = body_of(agent)
+      local dx = cx(t) - cx(b)
+      if dx > 0 then b.facing = 1 elseif dx < 0 then b.facing = -1 end
+    end
+  end
+
+  function state.update(m, agent)
+    if m.phase == "windup" then
+      halt(agent)
+      -- the charge only counts on the ground (a fall restarts nothing, it just waits)
+      if m.time >= windup - EPS and grounded(agent) then launch(m, agent) end
+      return
+    end
+    if m.phase == "air" then
+      agent.jump = false
+      local on = grounded(agent)
+      if not on then m.airborne = true end
+      -- jump stays held while rising (no jump cut), let go once the body falls
+      local vy = body_of(agent).vy
+      if m.airborne and (vy == nil or vy >= 0) then agent.jump_hold = false end
+      if (m.airborne and on) or m.time - m.t_air >= max_air - EPS
+          or (not m.airborne and m.time - m.t_air >= 0.25) then
+        land(m, agent)
+      end
+      return
+    end
+    halt(agent)
+    if m.time - m.t_rec >= recovery - EPS then return next_state end
+  end
+
+  function state.exit(_, agent)
+    agent.jump, agent.jump_hold, agent.move_accel = false, false, nil
+    halt(agent)
+  end
+  return state
+end
+
 -- Movement for bodies without gravity (always along "xy"). opts:
 --   mode    "hover" (default), "follow" or "swoop"
 --   speed   px/s (default 40)
@@ -832,11 +1019,14 @@ end
 
 -- For a platformer controller: an input that holds what the agent wants, to give to
 -- body:step(input, dt) of a controller made with actions = { move_x = "move_x" } (its speed is
--- then the controller's max_speed, not move_speed). agent.jump = true presses jump that step.
+-- then the controller's max_speed, not move_speed). agent.jump = true presses jump that step;
+-- agent.jump_hold = true keeps it held (a leap's full arc).
 local Input = {}
 Input.__index = Input
 function Input:axis() return self.agent.move_x or 0 end
-function Input:down(name) return name == "jump" and self.agent.jump == true end
+function Input:down(name)
+  return name == "jump" and (self.agent.jump == true or self.agent.jump_hold == true)
+end
 function Input:pressed(name) return name == "jump" and self.agent.jump == true end
 function M.input(agent) return setmetatable({ agent = agent }, Input) end
 

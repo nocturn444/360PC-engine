@@ -4,7 +4,7 @@
 --
 -- Fields:
 --   id, name, weight, kind ("heart" | "virus" | "bomb" | "bonus_key")
---   sources   where it can drop: "mob", "room_clear", "obstacle", "machine"
+--   sources   where it can drop: "mob", "room_clear", "obstacle", "machine", "shop"
 --   heal      hearts: health restored
 --   amount    virus: stacks (or damage) the game applies; bomb: bombs given
 --   color     RGB, for the game to draw
@@ -16,7 +16,7 @@ M.entries = {
     name = "HEART",
     weight = 10,
     kind = "heart",
-    sources = { "mob", "room_clear", "obstacle" },
+    sources = { "mob", "room_clear", "obstacle", "shop" },
     heal = 1,
     tags = { "heal" },
     color = { 0.95, 0.30, 0.40 },
@@ -38,7 +38,7 @@ M.entries = {
     name = "BOMB",
     weight = 10,
     kind = "bomb",
-    sources = { "mob", "room_clear", "obstacle" },
+    sources = { "mob", "room_clear", "obstacle", "shop" },
     amount = 1,
     tags = { "bomb" },
     color = { 0.35, 0.35, 0.40 },

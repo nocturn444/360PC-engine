@@ -116,7 +116,8 @@ end
 -- picks the look: nil or "walker" is the shared mob sprite; the other types get a simple
 -- placeholder silhouette of rectangles in the caller's colour (the owner will draw the real
 -- sprites later; no new image files are needed).
-function M.draw_enemy(x, y, w, h, facing, boss, shape)
+-- `crouch` (0..1, optional) squashes the hopper while it charges a leap.
+function M.draw_enemy(x, y, w, h, facing, boss, shape, crouch)
   local g = love.graphics
   local scale = boss and 2 or 1
   if not shape or shape == "walker" then
@@ -134,6 +135,14 @@ function M.draw_enemy(x, y, w, h, facing, boss, shape)
   local bottom = math.floor(y + h + 0.5)
   local top = bottom - hh
   if shape == "hopper" then
+    if crouch and crouch > 0 then
+      local squash = math.floor(crouch * 4 + 0.5)
+      local widen = math.floor(crouch * 2 + 0.5)
+      if crouch > 0.75 then left = left + (math.floor(love.timer.getTime() * 30) % 2) end
+      left, ww = left - widen, ww + 2 * widen
+      top = top + squash
+      hh = hh - squash
+    end
     g.rectangle("fill", left + 2, top + 2, ww - 4, hh - 2)
     g.rectangle("fill", left, bottom - 2, 3, 2)
     g.rectangle("fill", left + ww - 3, bottom - 2, 3, 2)

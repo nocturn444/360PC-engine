@@ -711,6 +711,79 @@ check(shmax == 2 and sh == 2, "the carapace fills two shield points")
 play:load_room(nav:enter(tr))
 check(not play.treasure, "and it is gone when the slime comes back")
 
+-- the shop: three offers for virus, the same stock when the slime comes back, bought with B
+local sh = find("shop")
+check(sh, "the floor has a shop")
+play.rooms_state[sh] = nil
+play:load_room(nav:enter(sh))
+check(play.offers and #play.offers == 3, "the shop shows three offers (" .. tostring(play.offers and #play.offers) .. ")")
+local stock_ids = {}
+for i, o in ipairs(play.offers) do
+  stock_ids[i] = o.entry.id
+  check(o.price > 0 and not o.sold, "offer " .. i .. " has a price: " .. o.entry.id)
+end
+check(stock_ids[1] ~= stock_ids[2] and stock_ids[2] ~= stock_ids[3] and stock_ids[1] ~= stock_ids[3],
+  "three different offers")
+play:load_room(nav:enter(sh))
+check(play.offers[1].entry.id == stock_ids[1] and play.offers[3].entry.id == stock_ids[3],
+  "the same stock when the slime comes back")
+local offer = play.offers[1]
+local bought = offer.entry
+play.wallet:add("virus", offer.price)
+local virus0 = play.wallet:get("virus")
+play.fight.player.health = 1
+play.buy_offer(play, offer)
+check(play.offers[1].sold, "the offer is sold")
+check(play.wallet:get("virus") == virus0 - offer.price, "and paid for")
+if not bought.kind then
+  check(play.mutations[#play.mutations] == bought, "a bought mutation joins the run")
+end
+play.wallet:spend("virus", play.wallet:get("virus"))
+local second = play.offers[2]
+play.buy_offer(play, second)
+check(not second.sold and play.message == "NOT ENOUGH", "no virus, no sale")
+-- standing next to an offer shows it; B buys it
+play.wallet:add("virus", play.offers[3].price)
+play.fight.player.health = 1
+slime:move_to(play.offers[3].x + 4, play.offers[3].y - 6); slime:set_velocity(0, 0)
+frames(2)
+check(play.offer_near == play.offers[3], "the offer next to the slime is highlighted")
+tap("e")
+check(play.offers[3].sold, "B buys the offer next to the slime")
+
+-- the casino: the slots cost virus and pay a prize; the lottery works once and can take a
+-- mutation away
+local casino = require("rooms_casino")
+local slots = casino.new("slots", 0, 0, {})
+play.wallet:add("virus", casino.tuning.slot_price)
+play.use_casino(play, slots)
+check(slots.state.spins == 1 and play.wallet:get("virus") >= 0 and play.message ~= nil,
+  "a slot spin costs virus and shows its prize (" .. tostring(play.message) .. ")")
+play.wallet:spend("virus", play.wallet:get("virus"))
+play.use_casino(play, slots)
+check(slots.state.spins == 1 and play.message == "NOT ENOUGH", "no virus, no spin")
+local lotto = casino.new("lottery", 0, 0, {})
+play.use_casino(play, lotto)
+check(casino.used_up(lotto), "the lottery is spent after one go (" .. tostring(play.message) .. ")")
+play.use_casino(play, lotto)
+check(play.message == "USED UP", "and says so")
+local owned = play.mutations[#play.mutations]
+check(owned, "the run has a mutation to lose")
+local stacks0, count0 = play.stats:stacks(owned.id), #play.mutations
+check(play.lose_mutation(play, owned), "a mutation can be lost")
+check(play.stats:stacks(owned.id) == stacks0 - 1 and #play.mutations == count0 - 1,
+  "losing it takes its stack and its place in the run")
+local templates_casino = 0
+for _, t in ipairs(data.templates()) do
+  if t.type == "casino" then
+    check(t.casino and #t.casino == 2, t.id .. ": a casino has its two machines")
+    templates_casino = templates_casino + 1
+  elseif t.type == "shop" then
+    check(t.offers and #t.offers == 3, t.id .. ": a shop has three offer spots")
+  end
+end
+check(templates_casino >= 4, "every casino variant has machines")
+
 -- the boss room: cleared, a mutation, a stairway, a new and bigger map
 local floor0, rooms0 = play.floor, #play.map.rooms
 play:load_room(nav:enter(play.map.boss))

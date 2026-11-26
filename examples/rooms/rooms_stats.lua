@@ -94,6 +94,15 @@ function Stats:acquire(id)
   return true
 end
 
+-- Takes one stack of a mutation away (the casino's lottery). False when it is not there.
+function Stats:lose(id)
+  if (self._stacks[id] or 0) <= 0 then return false end
+  self.mods:remove(id, 1)
+  local n = self.mods:stacks(id)
+  self._stacks[id] = n > 0 and n or nil
+  return true
+end
+
 -- A permanent stat change, for things a pact or a choice takes away for the run. `source`
 -- identifies it: applying the same source and stat again does nothing. It is serialized with the
 -- run, unlike a timed modifier.

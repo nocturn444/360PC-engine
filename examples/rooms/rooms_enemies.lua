@@ -23,6 +23,7 @@ local B = combat.behaviours
 local STOMP_SPEED = 120                     -- px/s down: falling at least this fast hurts below
 local BOUNCE = -230                         -- px/s: the slime's bounce after a stomp
 local CONTACT_KNOCKBACK = 120               -- px/s: a contact hitbox pushes the slime away
+local LEAP_CHARGE = 1.2                     -- s: the hopper's leap windup, for its crouch
 
 local SLIME_STATS = combat.stats.new({ max_health = 5, attack_damage = 1, invuln_time = 1.0 })
 local ENEMY_STATS = combat.stats.new({ max_health = 2, attack_damage = 1, invuln_time = 0.25 })
@@ -39,6 +40,9 @@ function EnemyStats:get(name)
   end
   if name == "jump_velocity" then
     return self.agent.jump_velocity or ENEMY_PARAMS.jump_velocity
+  end
+  if (name == "air_accel" or name == "ground_accel") and self.agent.move_accel then
+    return self.agent.move_accel                 -- a leap holds its arc's speed
   end
   return ENEMY_PARAMS[name]
 end
@@ -168,7 +172,8 @@ function M.new(slime, grid, spots, opts)
       stats = type_stats(base_stats, {})
       built_brains[id], built_stats[id] = brain, stats
     elseif not brain then
-      brain = combat.brains.build(spec.brain, { grid = grid, blocked = blocked })
+      brain = combat.brains.build(spec.brain, { grid = grid, blocked = blocked,
+        gravity = ENEMY_PARAMS.gravity })
       stats = type_stats(base_stats, spec)
       built_brains[id], built_stats[id] = brain, stats
     end
@@ -306,6 +311,7 @@ function Fight:draw(alpha, boss)
     local e = self.enemies[i]
     if not e.fighter.dead then
       local b = e.body
+      local crouch = 0
       local x = math.floor(b.px + (b.x - b.px) * alpha + 0.5)
       local y = math.floor(b.py + (b.y - b.py) * alpha + 0.5)
       if e.fighter:invulnerable() then g.setColor(1, 0.35, 0.35, 1)
@@ -316,8 +322,18 @@ function Fight:draw(alpha, boss)
         -- a boss's tell: it flashes faster as the windup runs out
         local t = e.director.telegraph_t
         if e.director.telegraph and math.floor(t * t * 12) % 2 == 0 then g.setColor(1, 0.95, 0.65, 1) end
-      elseif e.machine and e.machine.phase == "windup" then g.setColor(1, 0.95, 0.65, 1) end
-      rooms_art.draw_enemy(x, y, b.w, b.h, b.facing, boss, e.shape)
+      elseif e.machine and e.machine.phase == "windup" then
+        if e.shape == "hopper" then
+          -- a leap's charge: it crouches and blinks faster as the jump comes
+          local t = e.machine.time or 0
+          crouch = t / LEAP_CHARGE
+          if crouch > 1 then crouch = 1 end
+          if math.floor(t * t * 10) % 2 == 0 then g.setColor(1, 0.95, 0.65, 1) end
+        else
+          g.setColor(1, 0.95, 0.65, 1)
+        end
+      end
+      rooms_art.draw_enemy(x, y, b.w, b.h, b.facing, boss, e.shape, crouch)
       local bite = e.hitboxes and e.hitboxes.bite
       if bite and bite.active then
         local bx, by, bw, bh = bite:rect()

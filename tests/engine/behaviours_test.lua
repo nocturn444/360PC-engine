@@ -458,3 +458,80 @@ do
   grown = measured(function() m:update(dt); B.move(agent, dt) end)
   T.check(grown == 0, "fly: no allocation once warm (" .. grown .. " KB)")
 end
+
+----------------------------------------------------------------------------
+-- leap: a 1.2 s crouch, then one arc onto the target or onto another platform
+----------------------------------------------------------------------------
+do
+  local platformer = require("engine.modules.platformer")
+  -- a floor, and a raised platform on the right
+  local rows = {
+    "####################",
+    "#..................#",
+    "#..................#",
+    "#..................#",
+    "#..................#",
+    "#..................#",
+    "#..................#",
+    "#......####........#",
+    "#..................#",
+    "#..................#",
+    "#..................#",
+    "####################",
+  }
+  local params = platformer.params.new({})
+  -- the same room without the platform (an arc under it would hit its underside)
+  local open_rows = {}
+  for i = 1, #rows do open_rows[i] = rows[i] end
+  open_rows[8] = open_rows[7]
+  local function run(aim, target_x, target_y, seed, layout)
+    local grid = Grid.new(layout or rows, { tile_size = 16 })
+    local world = Collision.newWorld(grid)
+    local agent = { rng = Rng.new(seed or 3) }
+    local Stats = {}
+    function Stats:get(name)
+      if name == "max_speed" then return agent.move_speed or 0 end
+      if name == "jump_velocity" then return agent.jump_velocity or params.jump_velocity end
+      if (name == "air_accel" or name == "ground_accel") and agent.move_accel then return agent.move_accel end
+      return params[name]
+    end
+    agent.body = platformer.controller.new(world, { x = 40, y = 176 - 10, w = 12, h = 10,
+      stats = setmetatable({}, { __index = Stats }), actions = { move_x = "move_x" } })
+    agent.target = { x = target_x, y = target_y, w = 10, h = 10 }
+    local m = C.fsm.new({ initial = "leap", states = {
+      leap = B.leap({ aim = aim, windup = 1.2, recovery = 0.4, grid = grid, next = "done" }),
+      done = { update = function() end } } }, agent)
+    local input = B.input(agent)
+    local launched_at, landed_at, max_up
+    local y0 = agent.body.y
+    for i = 1, 60 * 5 do
+      m:update(dt)
+      agent.body:step(input, dt)
+      if not launched_at and m.phase == "air" then launched_at = i end
+      if launched_at and not landed_at and m.phase == "recovery" then landed_at = i end
+      if not max_up or agent.body.y < max_up then max_up = agent.body.y end
+      if m.state == "done" then break end
+    end
+    return agent, launched_at, landed_at, y0 - max_up
+  end
+
+  -- onto the target, on the floor 120 px away
+  local agent, launched, landed = run("target", 160, 166, 3, open_rows)
+  T.check(launched and launched >= 71 and launched <= 74, "leap: jumps after the 1.2 s crouch (" .. tostring(launched) .. ")")
+  T.check(landed ~= nil, "leap: lands")
+  local bx = agent.body.x + agent.body.w / 2
+  T.check(math.abs(bx - 165) <= 10, "leap: lands on the target (" .. bx .. ")")
+  T.check(agent.move_accel == nil and not agent.jump_hold, "leap: clears its wishes on landing")
+
+  -- onto the raised platform (row 8, tiles 8..11): the only other platform in reach
+  agent = run("platform", 0, 0, 5)
+  local foot = agent.body.y + agent.body.h
+  local cxp = agent.body.x + agent.body.w / 2
+  T.check(math.abs(foot - 112) < 0.5 and cxp >= 7 * 16 and cxp <= 11 * 16,
+    "leap: lands on another platform (" .. cxp .. ", " .. foot .. ")")
+
+  -- deterministic: the same seed picks the same platform
+  local a1 = run("platform", 0, 0, 9)
+  local a2 = run("platform", 0, 0, 9)
+  T.check(a1.body.x == a2.body.x and a1.body.y == a2.body.y, "leap: same seed, same landing")
+end

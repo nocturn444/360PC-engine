@@ -34,7 +34,7 @@ end
 | `stats.lua` | The combat stats and their defaults. |
 | `world.lua` | Fighters, hitboxes, hurtboxes, the overlap search, the damage pipeline, i-frames, knockback, hitstop. |
 | `fsm.lua` | A state machine: states with enter / update / exit, transitions, time in the state. |
-| `behaviours.lua` | States for enemies: patrol, chase, attack, shoot, charge, hop, fly, keep_away, and their conditions. |
+| `behaviours.lua` | States for enemies: patrol, chase, attack, shoot, charge, hop, leap, fly, keep_away, and their conditions. |
 | `brains.lua` | Brains as data: builds a `combat.fsm` definition from plain tables, with an extendable registry of behaviours and conditions. |
 | `attacks.lua` | Attacks as data: melee sweeps, ranged shots, explosive bombs, on top of a world. |
 
@@ -234,7 +234,9 @@ add `transitions` to it. What one enemy needs is read from its agent (the machin
 | `agent.hitboxes` | `{ name = hitbox }` for attack and charge. |
 | `agent.attacks` | `{ name = combat.attacks Attack }` for shoot. |
 | `agent.jump` | `true` for one step to press jump (hop). |
-| `agent.jump_velocity` | Optional per-agent jump strength (hop writes it on enter). |
+| `agent.jump_velocity` | Optional per-agent jump strength (hop writes it on enter, leap at take-off). |
+| `agent.jump_hold` | `true` while a leap rises: `behaviours.input` keeps jump held (no jump cut). |
+| `agent.move_accel` | Optional acceleration wish (px/s^2): a leap sets a very high one while airborne so the controller holds the arc's horizontal speed; a game's stats source returns it for `air_accel`/`ground_accel`. |
 | `agent.anchor` | `{ x =, y = }` home point for a flyer (default: the body centre on enter). |
 | `agent.rng` | An `engine.rng` stream: the only source of randomness. |
 
@@ -254,6 +256,7 @@ only on that step).
 | `behaviours.shoot(opts)` | Stands still and fires `volleys` (1) volleys of `agent.attacks[opts.attack]` `interval` (0.2) seconds apart, then goes to `next`. `aim`: `"facing"` (default: the config's own angle), `"target"` (at the target's centre each volley) or `"angle"` (`opts.angle` degrees above the facing); `rotate` (0) degrees more after each volley (a spiral). `windup` (0.3) and `recovery` (0.4) are the tell and the pause; `m.phase` is `"windup"`, `"firing"` or `"recovery"`. `face = false`: do not turn to the target first. A ranged config with `count = 8, spread = 315` is a ring; with `volleys = 6, rotate = 15` a spiral. The attack's own `cooldown` must not be longer than `interval` when there is more than one volley (an error at enter says so). |
 | `behaviours.charge(opts)` | Winds up (`windup`, 0.4 s), dashes at the direction fixed at the end of the windup for at most `time` (0.6 s) or `distance` px at `speed` (140 px/s), then recovers (`recovery`, 0.3 s; `stun`, 0.8 s, if `blocked(agent)` stopped it), then goes to `next`. `hitbox` (optional): a name in `agent.hitboxes`, on only during the dash. `axis`: `"x"` (default) or `"xy"`. `m.phase`: `"windup"`, `"dash"`, `"recovery"`. |
 | `behaviours.hop(opts)` | On the ground waits `wait` s (a number, or `{ min, max }` from `agent.rng`; default 0), sets `agent.jump = true` for one step, and moves `speed` (60) px/s towards the target (`toward = "target"`, default) or forwards (`"facing"`) until it lands. `grounded(agent)` (default `body.on_ground`) says where the ground is; `jump_velocity` is written to `agent.jump_velocity` on enter. Endless: leave it with transitions. |
+| `behaviours.leap(opts)` | A long aimed jump with a tell: crouches `windup` s (1.2, `m.phase = "windup"`) on the ground, then jumps in one ballistic arc (gravity `gravity`, 900; `arc` px over the higher end, 24; capped by `max_jump` 420 px/s up and `speed` 180 px/s across) onto the target (`aim = "target"`, where it stands at take-off) or onto another platform (`aim = "platform"`: a standable tile of `grid` within `reach` { 32, 160 } px across, `rise` 72 px up and `drop` 96 px down, at another height or across a gap, drawn with `agent.rng`; none: the target). Then `recovery` s (0.4) and `next`. Gives up after `time` s (2.5) in the air. Phases `windup`, `air`, `recovery`. |
 | `behaviours.fly(opts)` | Moves a body without gravity (always `"xy"`). `mode = "hover"`: bobs around `agent.anchor` on a circle of `radius` (8) with `period` (2). `"follow"`: goes for the target, keeps `keep` (60) px away, backs off closer than `keep - band` (12) and bobs vertically by `bob` (4) px while holding. `"swoop"`: flies at the target's position taken on enter for at most `time` (1 s), then goes to `next`. `speed` (40); only `sin`/`cos` of numbers, so it is deterministic. |
 | `behaviours.keep_away(opts)` | Kites the target: walks away closer than `min` (48), towards it farther than `max` (96), stands still (facing it) in between. `speed` (40), `axis` (`"x"` default, or `"xy"`). |
 | `behaviours.target_within(range, axis)`, `target_beyond(range, axis)` | Conditions for `when`. No target counts as beyond. |
