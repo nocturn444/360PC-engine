@@ -85,6 +85,7 @@ left corner when it faces right), `w`, `h`, and `tag` (anything). When the body 
 | `away` | true: `kx` points away from the fighter's centre instead of along its facing (an explosion, a body that hurts on contact). |
 | `hitstop` | Seconds both fighters freeze (default: the world's `default_hitstop`). |
 | `global_hitstop` | Seconds the whole world freezes (default 0). |
+| `ignore_invuln` | `true`: the hit lands even while the target has i-frames (default `false`). |
 
 ### Once per activation
 

@@ -434,6 +434,7 @@ check(hall ~= nil, "a floor has a hall")
 play:load_room(nav:enter(hall))
 local fight = play.fight
 check(#fight.enemies == 2 and fight:alive() == 2, "the hall has its two enemies")
+check(math.abs(fight.player.invuln - 1.0) < 1e-9, "entering a room gives 1 s of invulnerability")
 local e1 = fight.enemies[1]
 local hp0 = e1.fighter.health
 frames(30)                                            -- let everything land
@@ -447,6 +448,20 @@ end
 check(landed and e1.fighter.health < hp0, "falling onto an enemy stomps it (" .. e1.fighter.health .. " of " .. hp0 .. ")")
 local _, bounce = slime:velocity()
 check(bounce < 0, "and the slime bounces off")
+-- a stomp lands even while the enemy has i-frames (from a shot fired down just before)
+do
+  frames(30)
+  local stomps0, hp1 = fight.stomps, e1.fighter.health
+  slime:move_to(e1.body.x + e1.body.w / 2, e1.body.y - 40); slime:set_velocity(0, 0)
+  local hit = false
+  for _ = 1, 60 do
+    if not e1.fighter.dead then e1.fighter.invuln = 0.25 end   -- as if a shot had just hit it
+    fight.player.invuln = 1                                     -- keep its bite out of this check
+    love.update(1 / 60)
+    if fight.stomps > stomps0 then hit = true; break end
+  end
+  check(hit and (e1.fighter.dead or e1.fighter.health < hp1), "a stomp ignores the enemy's i-frames")
+end
 -- stand beside an enemy until it bites
 frames(60)
 local p = fight.player
@@ -685,6 +700,8 @@ check(not play.treasure and play.got == item and play.pools.mutations:taken_coun
   "the mutation is taken: " .. item.id)
 check(play.mutations[#play.mutations] == item, "it joins the run's mutations")
 check(play.fight.player.health == 1, "it does not heal the slime")
+frames(160)
+check(play.got == nil, "the GOT line goes away after a few seconds")
 local changed = before.jump ~= play.stats:get("jump") or before.speed ~= play.stats:get("speed")
   or before.damage ~= play.stats:get("damage") or before.shield ~= play.stats:get("shield")
   or before.health ~= play.stats:get("health") or before.limbs ~= #play.look.limbs
@@ -1123,6 +1140,7 @@ check(profile.get().runs == runs0 and profile.get().losses == losses0,
   "leaving from the pause menu records no run")
 tap("return")                                     -- Start Run, for the draw checks below
 check(engine.states:top() == play and play.floor == 1, "Start Run after the pause Main Menu")
+play.fight.player.invuln = 0                      -- no entry blink, so the slime is drawn
 
 -- the room is drawn, the minimap through rooms_minimap
 local minimap_mod = require("rooms_minimap")

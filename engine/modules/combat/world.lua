@@ -139,11 +139,13 @@ end
 --   away             true: kx points away from the fighter's centre instead of along its facing
 --   hitstop          seconds both fighters freeze (default: the world's default_hitstop)
 --   global_hitstop   seconds the whole world freezes (default 0)
+--   ignore_invuln    true: lands even while the target has i-frames (a stomp after a shot)
 function Fighter:hitbox(opts)
   local box = new_box(self, "hit", opts)
   box.power, box.damage = opts.power or 1, opts.damage
   box.knockback, box.kx, box.ky, box.away = opts.knockback or 0, opts.kx or 1, opts.ky or 0, opts.away or false
   box.hitstop, box.global_hitstop = opts.hitstop, opts.global_hitstop or 0
+  box.ignore_invuln = opts.ignore_invuln or false
   box.active = false
   box.time = nil                             -- seconds of activity left; nil: until deactivate
   box.hit_list, box.hit_n = {}, 0            -- the fighters hit in this activation
@@ -245,7 +247,8 @@ local function centre_x(b) return b.x + (b.w or 0) * 0.5 end
 
 -- The whole pipeline for one hit. Returns true if it landed.
 local function resolve(self, attacker, target, spec, hurtbox)
-  if target.dead or target.removed or target.invuln > 0 then return false end
+  if target.dead or target.removed then return false end
+  if target.invuln > 0 and not spec.ignore_invuln then return false end
   local list = spec.hit_list
   if list then                               -- a hitbox: once per fighter and activation
     local n = spec.hit_n + 1

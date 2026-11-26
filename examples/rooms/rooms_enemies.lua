@@ -125,7 +125,10 @@ function M.new(slime, grid, spots, opts)
     on_hurt = function(_, hit) me.box:knock(hit) end,
     on_death = opts.on_slime_death })
   self.hurt = self.player:hurtbox({ w = 1, h = 1 })
-  self.stomp = self.player:hitbox({ w = 1, h = 6, power = 1, knockback = 90, away = true, ky = -0.5 })
+  -- the stomp ignores the enemy's i-frames: a shot fired down just before (auto-fire keeps them
+  -- going) must not let the slime fall through the enemy and take its contact damage
+  self.stomp = self.player:hitbox({ w = 1, h = 6, power = 1, knockback = 90, away = true, ky = -0.5,
+    ignore_invuln = true })
   -- the slime's attacks: shots and bombs stop at the room's solid tiles
   self.arsenal = combat.attacks.new(self.fight, { grid = grid, max_projectiles = 24 })
   self.enemy_arsenal = combat.attacks.new(self.fight, { grid = grid, max_projectiles = 32 })

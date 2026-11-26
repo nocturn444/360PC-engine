@@ -137,6 +137,15 @@ a:hitbox({ w = 10, h = 10, damage = 1 }):activate()
 T.check(steps(w, 14) == 1, "an always active hitbox: one hit while the i-frames last")
 a.hitboxes[1]:activate()
 T.check(steps(w, 1) == 0 and steps(w, 1) == 1 and b.health == 8, "and the next one right when they end")
+-- ignore_invuln: such a hitbox lands through the i-frames (once per activation)
+w = C.world.new()
+a = fighter(w, 0, "player", { params = C.stats.new({ attack_damage = 1 }) })
+b = fighter(w, 12, "enemy", { params = C.stats.new({ invuln_time = 0.5 }) })
+b.invuln = 0.5
+local stomp = a:hitbox({ ox = 10, w = 8, h = 8, ignore_invuln = true })
+stomp:activate()
+T.check(steps(w, 1) == 1 and b.health == 9, "an ignore_invuln hitbox lands during the i-frames")
+T.check(steps(w, 5) == 0, "and still only once per activation")
 
 ---------------------------------------------------------------------------
 -- Knockback and resistance
