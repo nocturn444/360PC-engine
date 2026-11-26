@@ -37,8 +37,17 @@ M.types = {
     move = "walk", w = 12, h = 10,
     health = 1.0, damage = 1.0, speed = 40, jump_velocity = 260,
     contact = true,
+    -- short hops, and now and then a long leap (a 1.2 s crouch first) onto the slime or onto
+    -- another platform
     brain = { initial = "hop", states = {
       hop = { "hop", wait = { 0.8, 1.4 }, speed = 60, toward = "target", jump_velocity = 260 },
+      pick = { "rotate", pause = 0.05, options = {
+        { to = "leap_target", weight = 1 }, { to = "leap_platform", weight = 1 } } },
+      leap_target = { "leap", aim = "target", windup = 1.2, recovery = 0.4, next = "hop" },
+      leap_platform = { "leap", aim = "platform", windup = 1.2, recovery = 0.4, next = "hop" },
+    }, transitions = {
+      hop = { { to = "pick", when = { "all", { "grounded" }, { "target_within", 220, "xy" } },
+        after = 3.5 } },
     } },
     look = { shape = "hopper" },
   },
