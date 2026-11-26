@@ -200,14 +200,16 @@ function Set:refill_air()
   end
 end
 
--- The world pixel the hook needs: opts.solid, or opts.grid's solid tiles.
-local function solid_at(set, x, y)
+-- The world pixel the hook needs: opts.solid, or opts.grid's solid tiles (and its one-way
+-- tiles too when one_way is true: a hook that grabs platforms).
+local function solid_at(set, x, y, one_way)
   local solid = set.solid
-  if solid then return solid(x, y) end
+  if solid then return solid(x, y, one_way) end
   local grid = set.grid
   if not grid then return false end
   local size = grid.tile_size
-  return grid:kind(floor(x / size) + 1, floor(y / size) + 1) == "solid"
+  local kind = grid:kind(floor(x / size) + 1, floor(y / size) + 1)
+  return kind == "solid" or (one_way == true and kind == "one_way")
 end
 
 local function intends(move, side)
@@ -392,6 +394,7 @@ M.kind("hook", {
     min_length = { type = "number", default = 16 },
     pump = { type = "number", default = 260 },    -- px/s^2 with left/right while swinging
     release_boost = { type = "number", default = 1.0 },
+    one_way = { type = "boolean", default = false },   -- also grabs one-way platforms
   },
   priority = 5,
   init = function(a)
@@ -439,7 +442,7 @@ M.kind("hook", {
         local nx, ny = a.hx + a.dir_x * s, a.hy + a.dir_y * s
         a.travelled = a.travelled + s
         remain = remain - s
-        if solid_at(set, nx, ny) then hit = true; break end
+        if solid_at(set, nx, ny, a.one_way) then hit = true; break end
         a.hx, a.hy = nx, ny
       end
       if hit then

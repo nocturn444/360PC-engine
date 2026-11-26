@@ -9,6 +9,15 @@ All notable changes to 360PC-Engine. The format follows
 ## [Unreleased]
 
 ### Added
+- `combat.behaviours.leap` (brain name `"leap"`): a long aimed jump after a crouch (`windup`,
+  default 1.2 s) onto the target or onto another platform of the grid in reach, in one
+  ballistic arc; `behaviours.input` keeps jump held while `agent.jump_hold` is set. The rooms
+  example's hopper now leaps every few seconds (crouching and blinking while it charges).
+- `abilities` hook: `one_way` field (also grabs one-way platforms). The rooms example's tongue
+  hook reaches 176 px (was 112) and sticks to platforms.
+- `examples/rooms`: the shop sells three items (`rooms_shop.stock`, mutations first, then hearts
+  and bombs) next to the healer, bought with B; the casino has its genetic lottery (gives or
+  takes a mutation, once) and slot machine (3 virus a spin); `rooms_stats` `Stats:lose`.
 - `examples/rooms`: three placeholder final bosses (`rooms_final_bosses.lua`): The Mutant
   (default), The Caretaker AI (after a win, with 3+ mutations) and The Last Scientist (no heart
   picked up this run), picked with `progress.pick` when the last floor starts and fought alone

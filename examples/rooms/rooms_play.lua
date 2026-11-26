@@ -26,6 +26,8 @@ local pickups = require("rooms_pickups")
 local attack_configs = require("rooms_attacks")
 local vines = require("rooms_vines")
 local machines = require("rooms_machines")
+local shop = require("rooms_shop")
+local casino = require("rooms_casino")
 local looks = require("rooms_look")
 local rooms_spawn = require("rooms_spawn")
 local minimap = require("rooms_minimap")
@@ -202,6 +204,108 @@ end
 
 play.acquire_mutation = acquire_mutation   -- for tests and debug tools
 
+-- Takes one owned mutation away (the casino's lottery): stats, the run's list, the look, the
+-- ability and the shot it gave. Its pool count stays taken, so it does not come back.
+local function lose_mutation(self, entry)
+  if not entry or not self.stats:lose(entry.id) then return false end
+  for i = #self.mutations, 1, -1 do
+    if self.mutations[i].id == entry.id then table.remove(self.mutations, i); break end
+  end
+  self.look = looks.rebuild(self.mutations)
+  looks.palette(self.look, self.pixels)
+  self.slime:set_rest_shape(looks.physical(self.look) or { radius = 9, width = 0, height = 0 })
+  if entry.ability and self.moves and self.stats:stacks(entry.id) == 0 then
+    self.moves:revoke(entry.ability.id or entry.ability.kind)
+  end
+  if entry.shot then build_attacks(self) end
+  local max = self.stats:get("health")
+  if self.fight and self.fight.player.health > max then self.fight.player.health = max end
+  return true
+end
+
+play.lose_mutation = lose_mutation         -- for tests and debug tools
+
+-- The shop's context: a content draw from the shop, with the game's filter and weights.
+local function shop_ctx(self)
+  local ctx = drop_ctx(self, "shop")
+  ctx.filter, ctx.weight = content.filter, content.weigh
+  return ctx
+end
+
+-- Buys a shop offer with virus: a mutation is acquired, a heart heals, a bomb fills the bag.
+-- Nothing is paid when it cannot be used (full health, full bag, a unique already owned).
+local function buy_offer(self, offer)
+  if offer.sold then return end
+  if not self.wallet:can("virus", offer.price) then
+    self.message, self.message_time = "NOT ENOUGH", 1.2
+    return
+  end
+  local entry = offer.entry
+  if entry.kind == "heart" then
+    local max, hp = self.stats:get("health"), self.fight.player.health
+    if hp >= max then self.message, self.message_time = "HEALTH FULL", 1.2; return end
+    self.fight.player.health = math.min(max, hp + (entry.heal or 1))
+  elseif entry.kind == "bomb" then
+    local room = BOMB_MAX - self.wallet:get("bomb")
+    if room <= 0 then self.message, self.message_time = "BOMBS FULL", 1.2; return end
+    local n = entry.amount or 1
+    self.wallet:add("bomb", n < room and n or room)
+  else
+    offer.pool = nil                        -- acquire_mutation takes it from its pool
+    if not acquire_mutation(self, entry) then
+      self.message, self.message_time = "CANNOT TAKE", 1.2
+      return
+    end
+  end
+  shop.buy(offer, nil, self.wallet)
+  if not entry.kind then play.load_room(self) end   -- a mutation's stats count from now on
+end
+play.buy_offer = buy_offer                 -- for tests
+
+-- One casino machine used with the interact action: the lottery once, the slots per spin.
+local function use_casino(self, mc)
+  local where = self.floor .. ":" .. self.nav.index
+  if mc.kind == "lottery" then
+    local stream = self.streams:get("casino:" .. where .. ":lottery")
+    local result, lost = casino.lottery(mc.state, stream, self.stats:get("luck"), self.mutations)
+    if result == "gain" then
+      local entry = content.draw_mutation(self.pools.mutations, stream, drop_ctx(self, "treasure"))
+      if entry and acquire_mutation(self, entry) then
+        self.message, self.message_time = "LUCKY", 1.5
+        play.load_room(self)
+      else
+        self.message, self.message_time = "NOTHING", 1.5
+      end
+    elseif result == "lose" then
+      lose_mutation(self, lost)
+      self.message, self.message_time = "LOST " .. tostring(lost.name), 2.0
+    elseif result == "nothing" then
+      self.message, self.message_time = "NOTHING", 1.5
+    else
+      self.message, self.message_time = "USED UP", 1.2
+    end
+    return
+  end
+  local prize, reason = casino.spin(mc.state, self.streams:get("casino:" .. where .. ":slots"), self.wallet)
+  if not prize then
+    self.message, self.message_time = tostring(reason):upper(), 1.2
+  elseif prize.kind == "virus" then
+    self.wallet:add("virus", prize.amount)
+    self.message, self.message_time = "+" .. prize.amount .. " VIRUS", 1.2
+  elseif prize.kind == "heart" then
+    local max, hp = self.stats:get("health"), self.fight.player.health
+    if hp < max then self.fight.player.health = math.min(max, hp + prize.amount)
+    else self.wallet:add("virus", 1) end
+    self.message, self.message_time = "+" .. prize.amount .. " HEART", 1.2
+  elseif prize.kind == "bonus_key" then
+    self.wallet:add("bonus_key", prize.amount)
+    self.message, self.message_time = "+" .. prize.amount .. " KEY", 1.2
+  else
+    self.message, self.message_time = "NO LUCK", 1.0
+  end
+end
+play.use_casino = use_casino               -- for tests
+
 -- A killed enemy can drop a heart or some virus. Each enemy has its own stream and rolls once.
 local function mob_killed(self, agent)
   if not agent or not agent.body then return end
@@ -375,6 +479,32 @@ function play.load_room(self, x, y)
     if not ms then ms = {}; state.machines[1] = ms end
     self.machine = machines.new(mt.kind or "healer", (mt.tx - 1) * TS + 2, (mt.ty - 1) * TS + 4, ms)
   end
+  -- a shop's three offers, drawn the first time the room is entered (its own stream) and kept
+  -- in the room state, so leaving and coming back shows the same stock
+  self.offers, self.offer_near = nil, nil
+  if template.offers then
+    if not state.offers then
+      local stock = shop.stock(self.pools, self.streams:get("shop:" .. self.floor .. ":" .. index),
+        shop_ctx(self), #template.offers)
+      for i = 1, #stock do
+        local spot = template.offers[i]
+        stock[i].x, stock[i].y = (spot.tx - 1) * TS + 4, spot.ty * TS - 8
+      end
+      state.offers = stock
+    end
+    self.offers = state.offers
+  end
+  -- a casino's machines, each with its own state
+  self.casino, self.casino_near = nil, nil
+  if template.casino then
+    state.casino = state.casino or {}
+    local list = {}
+    for i, c in ipairs(template.casino) do
+      state.casino[i] = state.casino[i] or {}
+      list[i] = casino.new(c.kind, (c.tx - 1) * TS + 2, (c.ty - 1) * TS + 4, state.casino[i])
+    end
+    self.casino = list
+  end
   -- the room's enemies: its template spots keep their index even when cleared (the saved dead
   -- state removes them on the first step), then the enemies that fell in through a door. A
   -- template spot's type comes from the biome's weighted pool with a stream made from the room
@@ -527,7 +657,7 @@ function play.new_run(self)
   self.pools = content.new_pools({ unlocked = unlocked })
   tracker.new_run(self)
   self.stats = stats_mod.new(content.mutations)
-  self.wallet = wallet.new({ virus = 0, bomb = BOMB_START })
+  self.wallet = wallet.new({ virus = 0, bomb = BOMB_START, bonus_key = 0 })
   self.mutations = {}
   build_attacks(self)
   self.moves = self.slime and abilities.new(self.slime) or nil
@@ -927,6 +1057,31 @@ function play:update(dt)
   else
     self.machine_near = false
   end
+  -- the shop's offers and the casino's machines: interact with the one next to the slime
+  self.offer_near = nil
+  local offers = self.offers
+  if offers then
+    for i = 1, #offers do
+      local o = offers[i]
+      if not o.sold and cx > o.x - 8 and cx < o.x + 16 and cy > o.y - 20 and cy < o.y + 16 then
+        self.offer_near = o
+        break
+      end
+    end
+    if self.offer_near and input:pressed("interact") then buy_offer(self, self.offer_near) end
+  end
+  self.casino_near = nil
+  local list = self.casino
+  if list then
+    for i = 1, #list do
+      local m = list[i]
+      if cx > m.x - 12 and cx < m.x + 24 and cy > m.y - 24 and cy < m.y + 28 then
+        self.casino_near = m
+        break
+      end
+    end
+    if self.casino_near and input:pressed("interact") then use_casino(self, self.casino_near) end
+  end
   if self.got_time then                          -- "GOT <mutation>" fades after a while
     self.got_time = self.got_time - dt
     if self.got_time <= 0 then self.got, self.got_time = nil, nil end
@@ -1101,6 +1256,15 @@ function play:draw(alpha)
   for i = 1, #self.locked do local l = self.locked[i]; g.rectangle("fill", l.x, l.y, l.w, l.h) end
   vines.draw(self, g)
   if self.machine then machines.draw(self.machine, g, false) end
+  if self.offers then
+    for i = 1, #self.offers do
+      local o = self.offers[i]
+      shop.draw_offer(o, o.x, o.y, g, o == self.offer_near)
+    end
+  end
+  if self.casino then
+    for i = 1, #self.casino do casino.draw(self.casino[i], g, false) end
+  end
   if self.item then g.rectangle("fill", self.item.x, self.item.y, 8, 8) end
   local tr = self.treasure
   if tr then
@@ -1144,6 +1308,21 @@ function play:draw(alpha)
   if self.machine and self.machine_near then
     local left = machines.uses_left(self.machine)
     local text = left > 0 and ("B HEAL " .. self.machine.def.price .. " VIRUS") or "HEALER USED"
+    engine.text.draw(text, (W - engine.text.width(text)) / 2, H - 12)
+  end
+  local o = self.offer_near
+  if o then
+    local text = "B BUY " .. (o.entry.name or o.entry.id) .. " " .. o.price .. " VIRUS"
+    engine.text.draw(text, (W - engine.text.width(text)) / 2, H - 12)
+  end
+  local cm = self.casino_near
+  if cm then
+    local text
+    if cm.kind == "lottery" then
+      text = casino.used_up(cm) and "LOTTERY USED" or "B GENETIC LOTTERY"
+    else
+      text = "B SPIN " .. casino.tuning.slot_price .. " VIRUS"
+    end
     engine.text.draw(text, (W - engine.text.width(text)) / 2, H - 12)
   end
   if self.message then

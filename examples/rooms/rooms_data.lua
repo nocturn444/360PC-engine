@@ -263,22 +263,29 @@ function M.templates()
   local SPECIAL_KINDS = { "treasure", "shop", "miniboss", "super_treasure", "casino", "pact",
     "trap", "obstacle" }
   local VERTICAL_ENEMIES = { { tx = 4, ty = 11 }, { tx = 16, ty = 11 } }
+  -- the shop's three offers and the casino's two machines stand on the floor, off columns
+  -- 9..11 (a down door opens them); the shop's healer moves to column 15
+  local SHOP_OFFERS = { { tx = 4, ty = 11 }, { tx = 6, ty = 11 }, { tx = 8, ty = 11 } }
+  local CASINO = { { kind = "lottery", tx = 6, ty = 11 }, { kind = "slots", tx = 14, ty = 11 } }
+  local SHOP_MACHINE = { tx = 15, ty = 11, kind = "healer" }
   for _, kind in ipairs(SPECIAL_KINDS) do
     for _, side in ipairs({ "left", "right" }) do
       local rows = kind == "obstacle" and side == "right" and OBSTACLE_RIGHT_ROWS or SPECIAL_ROWS[kind]
       list[#list + 1] = { id = kind .. "_" .. side:sub(1, 1), type = kind, exits = lr({ side }),
         enemies = SPECIAL_ENEMIES[kind], rows = rows,
-        machine = kind == "shop" and { tx = 10, ty = 11, kind = "healer" } or nil }
+        machine = kind == "shop" and SHOP_MACHINE or nil,
+        offers = kind == "shop" and SHOP_OFFERS or nil, casino = kind == "casino" and CASINO or nil }
     end
     local enemies = kind == "miniboss" and VERTICAL_ENEMIES or SPECIAL_ENEMIES[kind]
     local rows = VERTICAL_ROWS
     list[#list + 1] = { id = kind .. "_u", type = kind, exits = { { side = "up" } },
       enemies = enemies, rows = rows,
-      machine = kind == "shop" and { tx = 10, ty = 11, kind = "healer" } or nil }
+      machine = kind == "shop" and SHOP_MACHINE or nil,
+      offers = kind == "shop" and SHOP_OFFERS or nil, casino = kind == "casino" and CASINO or nil }
     list[#list + 1] = { id = kind .. "_d", type = kind,
       exits = { { side = "down", tx = 7, ty = 11 } }, enemies = enemies, rows = rows,
-      -- off columns 9..11: the down door opens them in the floor under the machine
-      machine = kind == "shop" and { tx = 15, ty = 11, kind = "healer" } or nil }
+      machine = kind == "shop" and SHOP_MACHINE or nil,
+      offers = kind == "shop" and SHOP_OFFERS or nil, casino = kind == "casino" and CASINO or nil }
   end
   return list
 end

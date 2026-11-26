@@ -163,7 +163,8 @@ M.entries = {
     tags = { "mobility" },
     synergy = { "mobility" },
     anti = {},
-    ability = { kind = "hook", id = "hook" },
+    -- a long tongue (176 px) that also sticks to one-way platforms
+    ability = { kind = "hook", id = "hook", range = 176, one_way = true },
     look = {
       limbs = {
         { anchor = 0.50, side = 1, length = 4, width = 1, color = 5, kind = "antenna" },
