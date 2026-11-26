@@ -578,7 +578,8 @@ end
 --                   (a standable tile of ctx/opts.grid in reach, drawn with agent.rng; with no
 --                   grid or no platform in reach it aims at the target)
 --   gravity         px/s^2 of the body (default 900, the platformer default)
---   arc             extra pixels above the higher of the two ends (default 24)
+--   arc             extra pixels above the higher of the two ends (default 24); a far
+--                   landing jumps higher so the capped horizontal speed still reaches it
 --   max_jump        cap of the take-off speed upwards, px/s (default 420)
 --   speed           cap of the horizontal speed, px/s (default 180)
 --   reach           { min, max } horizontal pixels for "platform" (default { 32, 160 })
@@ -678,6 +679,19 @@ function M.leap(opts)
     local fall = apex - rise
     if fall < 0 then fall = 0 end
     local t_air = vy / g + sqrt(2 * fall / g)
+    local adx = dx < 0 and -dx or dx
+    if adx > max_speed * t_air and vy < max_jump then
+      -- too far for this arc at the capped speed: jump higher, to stay in the air longer
+      local need = adx / max_speed
+      local vy2 = (rise + 0.5 * g * need * need) / need
+      if vy2 > max_jump then vy2 = max_jump end
+      if vy2 > vy then
+        vy = vy2
+        fall = vy * vy / (2 * g) - rise
+        if fall < 0 then fall = 0 end
+        t_air = vy / g + sqrt(2 * fall / g)
+      end
+    end
     local vx = t_air > EPS and dx / t_air or 0
     local mx = vx > 0 and 1 or (vx < 0 and -1 or 0)
     if vx < 0 then vx = -vx end
