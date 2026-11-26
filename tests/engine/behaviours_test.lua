@@ -480,8 +480,12 @@ do
     "####################",
   }
   local params = platformer.params.new({})
-  local function run(aim, target_x, target_y, seed)
-    local grid = Grid.new(rows, { tile_size = 16 })
+  -- the same room without the platform (an arc under it would hit its underside)
+  local open_rows = {}
+  for i = 1, #rows do open_rows[i] = rows[i] end
+  open_rows[8] = open_rows[7]
+  local function run(aim, target_x, target_y, seed, layout)
+    local grid = Grid.new(layout or rows, { tile_size = 16 })
     local world = Collision.newWorld(grid)
     local agent = { rng = Rng.new(seed or 3) }
     local Stats = {}
@@ -512,7 +516,7 @@ do
   end
 
   -- onto the target, on the floor 120 px away
-  local agent, launched, landed = run("target", 160, 166)
+  local agent, launched, landed = run("target", 160, 166, 3, open_rows)
   T.check(launched and launched >= 71 and launched <= 74, "leap: jumps after the 1.2 s crouch (" .. tostring(launched) .. ")")
   T.check(landed ~= nil, "leap: lands")
   local bx = agent.body.x + agent.body.w / 2
