@@ -36,7 +36,11 @@ opencode reads `AGENTS.md` automatically. Review and merge its pull requests you
   merges. The agent's own shell may not run `git push`, `git remote`, `git checkout main`,
   `git reset --hard`, `gh` or GitHub API calls with curl (`OPENCODE_PERMISSION` in the workflow).
 - Sessions are not shared publicly (`share: false`).
-- The action is pinned to a commit; to update it, change the SHA in the workflow.
+- The opencode CLI is pinned to one release (`OPENCODE_VERSION` in the workflow) and cached. The
+  workflow runs the steps of the official action inline instead of `uses:` because the action
+  looks up the latest release with an unauthenticated GitHub API call, which fails on the shared
+  runners when they hit the rate limit (2026-11-24). To update opencode, change
+  `OPENCODE_VERSION`.
 
 ## Costs and limits
 
