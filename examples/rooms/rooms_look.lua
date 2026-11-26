@@ -124,11 +124,13 @@ function M.physical(look) return look.physical end
 -- and the mutations' limb colours into 6, 7, ... A missing entry 6+ is created here, so call it
 -- when the look changes (on acquisition), not per frame.
 -- Palette indices of the body's shading ramp (high, so they never meet the extra limb colours).
-M.SHADE_DARK, M.SHADE_LIGHT, M.SHADE_SHINE = 20, 21, 22
+-- SHADE_SHINE is kept for callers but no longer painted (the shine looked too glossy).
+M.SHADE_DARK, M.SHADE_LIGHT, M.SHADE_SHINE, M.SHADE_MID = 20, 21, 22, 23
 
--- M.shade(px): shades the body cells (index 1) of the pixel grid with light from the top left,
--- like the hand-drawn art: a dark side at the bottom right, a lighter top left and a small
--- shine. Call it after polygon/outline and before eyes and limbs. Allocates nothing.
+-- M.shade(px): shades the body cells (index 1) of the pixel grid with light from the top left:
+-- a soft four-tone ramp (dark, mid, base, light) of close colours, so it reads as one rounded
+-- body rather than separate colour patches. Call it after polygon/outline and before eyes and
+-- limbs. Allocates nothing.
 function M.shade(px)
   local w, h, cells = px.w, px.h, px.cells
   local x0, y0, x1, y1 = w + 1, h + 1, 0, 0
@@ -146,7 +148,7 @@ function M.shade(px)
   if x1 < x0 then return px end
   local cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
   local rx, ry = (x1 - x0) / 2 + 0.5, (y1 - y0) / 2 + 0.5
-  local dark, light, shine = M.SHADE_DARK, M.SHADE_LIGHT, M.SHADE_SHINE
+  local dark, mid, light = M.SHADE_DARK, M.SHADE_MID, M.SHADE_LIGHT
   for y = y0, y1 do
     local row = (y - 1) * w
     local ny = (y - cy) / ry
@@ -155,9 +157,9 @@ function M.shade(px)
       if cells[i] == 1 then
         local nx = (x - cx) / rx
         local l = -0.6 * nx - 0.8 * ny
-        if l > 0.62 and nx * nx + ny * ny < 0.55 then cells[i] = shine
-        elseif l > 0.3 then cells[i] = light
-        elseif l < -0.55 then cells[i] = dark end
+        if l > 0.5 then cells[i] = light
+        elseif l < -0.62 then cells[i] = dark
+        elseif l < -0.28 then cells[i] = mid end
       end
     end
   end
@@ -175,11 +177,13 @@ function M.palette(look, px)
   -- the body's shading ramp, derived from its colour so a mutation's body colour keeps it
   local b = look.body
   e = p[M.SHADE_DARK]; if not e then e = { 0, 0, 0, 1 }; p[M.SHADE_DARK] = e end
-  e[1], e[2], e[3] = b[1] * 0.80, b[2] * 0.70, b[3] * 0.56 + 0.04
+  e[1], e[2], e[3] = b[1] * 0.86, b[2] * 0.79, b[3] * 0.72
+  e = p[M.SHADE_MID]; if not e then e = { 0, 0, 0, 1 }; p[M.SHADE_MID] = e end
+  e[1], e[2], e[3] = b[1] * 0.93, b[2] * 0.895, b[3] * 0.86
   e = p[M.SHADE_LIGHT]; if not e then e = { 0, 0, 0, 1 }; p[M.SHADE_LIGHT] = e end
-  e[1], e[2], e[3] = b[1] + (1 - b[1]) * 0.45, b[2] + (1 - b[2]) * 0.45, b[3] + (0.95 - b[3]) * 0.45
+  e[1], e[2], e[3] = b[1] + (1 - b[1]) * 0.2, b[2] + (1 - b[2]) * 0.2, b[3] + (0.90 - b[3]) * 0.2
   e = p[M.SHADE_SHINE]; if not e then e = { 0, 0, 0, 1 }; p[M.SHADE_SHINE] = e end
-  e[1], e[2], e[3] = b[1] + (1 - b[1]) * 0.85, b[2] + (1 - b[2]) * 0.85, b[3] + (0.90 - b[3]) * 0.85
+  e[1], e[2], e[3] = b[1] + (1 - b[1]) * 0.2, b[2] + (1 - b[2]) * 0.2, b[3] + (0.90 - b[3]) * 0.2
   local extra = look.limb_colors
   for i = 1, #(extra or {}) do
     local c = extra[i]

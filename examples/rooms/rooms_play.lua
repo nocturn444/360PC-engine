@@ -45,6 +45,8 @@ local W, H = 320, 180
 local TS, CW, CH = data.tile_size, data.cell_w, data.cell_h
 local MOVE, AIR_MOVE, JUMP, CHARGED_JUMP = 700, 300, 260, 380
 local SIZE = 40
+local GOT_TIME = 2.5        -- seconds the "GOT <mutation>" line stays on screen
+local ENTRY_GRACE = 1.0     -- seconds of invulnerability on entering a room
 local ENEMY_H = 10                            -- the enemy box height (rooms_enemies.lua)
 local SEED = 1
 local FLOORS = 10
@@ -194,7 +196,7 @@ local function acquire_mutation(self, entry)
   if entry.shot then build_attacks(self) end
   local max = self.stats:get("health")
   if self.fight and self.fight.player.health > max then self.fight.player.health = max end
-  self.got = entry
+  self.got, self.got_time = entry, GOT_TIME
   return true
 end
 
@@ -482,6 +484,9 @@ function play.load_room(self, x, y)
   self.dash_guard, self.was_dashing = 0, false
   if x then
     self.slime:move_to(x, y)
+    -- a short grace on entering a room: nothing waiting at the door hurts the slime at once
+    local p = self.fight.player
+    if p.invuln < ENTRY_GRACE then p.invuln = ENTRY_GRACE end
     self.camera:setBounds(self.nav:bounds())
     self.camera:setPosition(x, y)
   end
@@ -529,7 +534,7 @@ function play.new_run(self)
   self.look = looks.new()
   if self.pixels then looks.palette(self.look, self.pixels) end
   if self.slime then self.slime:set_rest_shape({ radius = 9, width = 0, height = 0 }) end
-  self.kills, self.got = 0, nil
+  self.kills, self.got, self.got_time = 0, nil, nil
   self.result, self.result_recorded = nil, false
   self.last_damage_source = nil
   self.new_discoveries = { enemies = {}, bosses = {}, biomes = {} }
@@ -921,6 +926,10 @@ function play:update(dt)
     end
   else
     self.machine_near = false
+  end
+  if self.got_time then                          -- "GOT <mutation>" fades after a while
+    self.got_time = self.got_time - dt
+    if self.got_time <= 0 then self.got, self.got_time = nil, nil end
   end
   if self.message_time then
     self.message_time = self.message_time - dt

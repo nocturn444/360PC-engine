@@ -117,6 +117,11 @@ All notable changes to 360PC-Engine. The format follows
   engine version) in the bottom left corner.
 
 ### Changed
+- `examples/rooms`: softer Blob shading: a four-tone ramp of close colours (dark, mid, base,
+  light, new palette index 23 `SHADE_MID`) instead of three far-apart tones and a shine.
+- `examples/rooms`: 1 s of invulnerability on entering a room (the slime blinks).
+- `examples/rooms`: unlocks no longer show on the HUD during the run, only on the end-of-run
+  Stats list (achievements still show at once).
 - `examples/rooms`: dying ends the run: `rooms_play` pushes the game over menu after a fade
   instead of sending the slime back to the start room, and tracks `run_time` (reset by
   `play:enter`) for the Stats page. The game now starts on the title menu, not in the play state.
@@ -133,6 +138,11 @@ All notable changes to 360PC-Engine. The format follows
   with their own names and colours (enemy numbers are still placeholders).
 
 ### Fixed
+- `examples/rooms`: the "GOT <mutation>" line stayed on screen until the next run; it now goes
+  away after 2.5 s.
+- `examples/rooms`: shooting down at an enemy gave it i-frames, so a stomp right after missed and
+  the slime fell through it and took contact damage. New hitbox option `ignore_invuln` in
+  `combat.world`, used by the stomp.
 - `examples/rooms`: a mutation's `limb_color` no longer repaints every limb. Each fragment with
   an RGB `limb_color` gets its own palette slot (6, 7, ...) used only by its own limbs, so the
   limbs of mutations taken later (carapace, legs) keep the default limb colour instead of the
